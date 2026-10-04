@@ -58,6 +58,39 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 3,
+        name: "tools",
+        sql: r#"
+            -- Tool definitions offered to the model, frozen per conversation (JSON array).
+            ALTER TABLE conversations ADD COLUMN tool_specs TEXT;
+            -- Tool calls shown with an assistant message (JSON array).
+            ALTER TABLE messages ADD COLUMN tool_activity TEXT;
+
+            CREATE TABLE applications (
+                id         TEXT PRIMARY KEY NOT NULL,
+                name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                path       TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+
+            -- Append-only; intentionally not tied to conversations so it survives deletion.
+            CREATE TABLE tool_audit (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT,
+                tool            TEXT NOT NULL,
+                permission      TEXT NOT NULL,
+                actor           TEXT NOT NULL CHECK (actor IN ('assistant', 'user')),
+                description     TEXT NOT NULL,
+                input           TEXT,
+                status          TEXT NOT NULL,
+                approval        TEXT NOT NULL,
+                result          TEXT,
+                duration_ms     INTEGER,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

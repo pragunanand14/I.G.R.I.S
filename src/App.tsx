@@ -5,12 +5,16 @@ import { ChatPage } from "@/pages/ChatPage";
 import { HomePage } from "@/pages/HomePage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { PlannedPage } from "@/pages/PlannedPage";
+import { SecurityPage } from "@/pages/SecurityPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SystemPage } from "@/pages/SystemPage";
+import { ToolsPage } from "@/pages/ToolsPage";
 
 const IMPLEMENTED: Record<string, React.ReactNode> = {
   "/chat": <ChatPage />,
   "/system": <SystemPage />,
+  "/tools": <ToolsPage />,
+  "/security": <SecurityPage />,
   "/settings": <SettingsPage />,
 };
 

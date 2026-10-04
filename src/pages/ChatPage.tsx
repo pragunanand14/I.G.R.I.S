@@ -88,7 +88,7 @@ export function ChatPage() {
                 <AiCore state={coreState} size={140} />
                 <div>
                   <p className="text-base font-light text-fg">How can I help?</p>
-                  <p className="mt-1 text-xs text-faint">Conversation only for now — tools, memory and web access arrive in later phases.</p>
+                  <p className="mt-1 text-xs text-faint">I can calculate, check your system and open apps you allow. Memory and web access arrive in later phases.</p>
                 </div>
               </>
             )}
@@ -100,6 +100,7 @@ export function ChatPage() {
             streaming={streamingHere ? s.streaming : null}
             onRegenerate={() => void s.regenerate()}
             onEdit={s.edit}
+            onAnswerApproval={(id, ok) => void s.answerApproval(id, ok)}
           />
         )}
 

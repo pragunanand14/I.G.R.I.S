@@ -2,7 +2,7 @@ import { AlertTriangle, Ban, Check, Copy, Pencil, RotateCcw, Scissors, ShieldAle
 import { memo, useState, type ReactNode } from "react";
 import type { Message } from "@/types/chat";
 import { formatTime } from "@/utils/format";
-import { Markdown } from "./Markdown";
+import { AssistantBody } from "./AssistantBody";
 
 
 function ActionButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
@@ -126,7 +126,7 @@ export const MessageItem = memo(function MessageItem({ message, isLastAssistant,
           <span className="text-xs font-semibold tracking-[0.18em] text-fg">IGRIS</span>
           <span className="text-[10px] text-faint">{formatTime(message.createdAt)}</span>
         </div>
-        {message.content && <Markdown text={message.content} />}
+        <AssistantBody text={message.content} activities={message.toolActivity ?? []} />
         <StatusNote message={message} onRetry={onRegenerate} canRetry={isLastAssistant && !busy && message.status !== "refused"} />
         <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {message.content && (

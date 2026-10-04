@@ -3,10 +3,11 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::conversations::{self, Conversation, Message};
-use crate::core::chat::{self, ChatEvent, GenerationParams};
+use crate::core::chat::{self, ChatEvent, GenerationParams, Tooling};
 use crate::error::{AppError, AppResult};
 use crate::settings;
-use crate::state::AppState;
+use crate::state::{AppState, UiApprover, APPROVAL_TIMEOUT};
+use crate::tools::executor::Policy;
 
 fn validate_request_id(id: &str) -> AppResult<()> {
     if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
@@ -23,7 +24,16 @@ fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
         .filter(|m| !m.is_empty())
         .or(status.configured_model)
         .ok_or_else(|| AppError::AiUnavailable("No model configured. Set AI_MODEL or choose a model in Settings.".into()))?;
-    Ok(GenerationParams { provider, model, effort: Some(settings.ai_effort) })
+    Ok(GenerationParams {
+        provider,
+        model,
+        effort: Some(settings.ai_effort),
+        tooling: Tooling {
+            registry: state.tools.clone(),
+            policy: Policy { confirm_low: settings.confirm_low_risk },
+            approver: std::sync::Arc::new(UiApprover { pending: state.approvals.clone(), timeout: APPROVAL_TIMEOUT }),
+        },
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -59,7 +69,7 @@ pub async fn chat_send(
     let guard = state.generations.begin(&request_id, conversation_id.as_deref())?;
     let user_name = settings::load(&*state.db.conn()?)?.user_name;
 
-    let (conversation, message) = chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &user_name)?;
+    let (conversation, message) = chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &user_name, &state.tools.defs())?;
     guard.attach(&conversation.id);
     let _ = on_event.send(ChatEvent::UserMessage { conversation: conversation.clone(), message });
     run_generation(&state, &conversation.id, &guard.token, params, &on_event).await
@@ -91,6 +101,14 @@ pub async fn chat_edit(state: State<'_, AppState>, request_id: String, message_i
     }
     tracing::info!(event = "MESSAGE_EDITED", conversation_id = %conversation_id);
     run_generation(&state, &conversation_id, &guard.token, params, &on_event).await
+}
+
+/// Answer a pending tool approval. Returns false if it already expired or finished.
+#[tauri::command]
+pub fn respond_tool_approval(state: State<'_, AppState>, call_id: String, approved: bool) -> bool {
+    let delivered = state.approvals.respond(&call_id, approved);
+    tracing::info!(event = "TOOL_APPROVAL_ANSWERED", approved, delivered);
+    delivered
 }
 
 /// Stop an in-flight generation. Returns false if it already finished.

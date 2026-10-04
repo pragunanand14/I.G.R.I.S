@@ -13,6 +13,8 @@ export interface Settings {
   /** Model override; empty = AI_MODEL or provider default. */
   aiModel: string;
   aiEffort: Effort;
+  /** Ask before LOW-risk tool actions (sensitive and critical always ask). */
+  confirmLowRisk: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;

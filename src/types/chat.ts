@@ -1,4 +1,6 @@
 // Mirrors `src-tauri/src/conversations` and `src-tauri/src/core/chat.rs`. Keep in sync.
+import type { ToolActivity } from "./tools";
+
 export type Role = "user" | "assistant";
 export type MessageStatus = "complete" | "error" | "cancelled" | "refused" | "truncated";
 
@@ -23,6 +25,7 @@ export interface Message {
   inputTokens: number | null;
   outputTokens: number | null;
   createdAt: string;
+  toolActivity: ToolActivity[] | null;
 }
 
 export interface ConversationDetail {
@@ -35,6 +38,7 @@ export type ChatEvent =
   | { type: "userMessage"; conversation: Conversation; message: Message }
   | { type: "generating"; conversationId: string; model: string }
   | { type: "delta"; text: string }
+  | { type: "tool"; activity: ToolActivity }
   | { type: "finished"; message: Message };
 
 export interface TurnResult {

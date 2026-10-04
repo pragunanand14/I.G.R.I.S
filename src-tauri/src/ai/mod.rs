@@ -27,14 +27,59 @@ pub enum Role {
     Assistant,
 }
 
+/// A tool invocation requested by the model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+    /// Set when the provider sent arguments that weren't valid JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invalid_input: Option<String>,
+}
+
+/// The result of a tool call, sent back to the model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolResult {
+    pub call_id: String,
+    pub content: String,
+    pub is_error: bool,
+}
+
+/// A tool definition offered to the model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolDef {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
 /// One turn of conversation context sent to a provider.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatTurn {
     pub role: Role,
+    #[serde(default)]
     pub text: String,
     /// Provider-native content (e.g. Anthropic content blocks) to replay
     /// unchanged. Only set when produced by the same provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
+    /// Assistant turns: tools the model asked to run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCall>,
+    /// User turns: results returned for the previous assistant turn's calls.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_results: Vec<ToolResult>,
+}
+
+impl ChatTurn {
+    pub fn user(text: impl Into<String>) -> Self {
+        Self { role: Role::User, text: text.into(), raw: None, tool_calls: Vec::new(), tool_results: Vec::new() }
+    }
+
+    pub fn assistant(text: impl Into<String>) -> Self {
+        Self { role: Role::Assistant, ..Self::user(text) }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +107,7 @@ pub struct ChatRequest {
     pub turns: Vec<ChatTurn>,
     pub max_tokens: u32,
     pub effort: Option<Effort>,
+    pub tools: Vec<ToolDef>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +120,7 @@ pub enum StreamEvent {
 pub enum StopReason {
     EndTurn,
     MaxTokens,
+    ToolUse,
     Refusal { category: Option<String> },
     Other { reason: String },
 }
@@ -93,6 +140,8 @@ pub struct Completion {
     pub model: String,
     pub stop_reason: StopReason,
     pub usage: Usage,
+    /// Tools the model wants to run (only meaningful with `StopReason::ToolUse`).
+    pub tool_calls: Vec<ToolCall>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

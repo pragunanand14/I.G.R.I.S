@@ -1,8 +1,11 @@
-//! One assistant turn: load context → stream from the provider → persist.
+//! One assistant message: load context → (stream → run tools)* → persist.
 //!
-//! Every outcome is persisted as an assistant message whose `status` says what
-//! happened (complete, truncated, refused, cancelled, error), so the UI never
-//! has to guess and a failure is never reported as success.
+//! The model may request tools; each request goes through the tool executor
+//! (validation, permission policy, audit) and the results are sent back until
+//! the model produces a final answer or the step limit is reached. Every
+//! outcome is persisted with a `status` (complete, truncated, refused,
+//! cancelled, error), so the UI never has to guess and a failure is never
+//! reported as success.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -10,16 +13,20 @@ use std::time::Instant;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use super::context::build_turns;
+use super::context::{build_turns, encode_turns};
 use super::prompt::{self, PromptContext};
-use crate::ai::{AiErrorKind, AiProvider, ChatRequest, Effort, Role, StopReason, StreamEvent};
+use crate::ai::{AiError, AiErrorKind, AiProvider, ChatRequest, ChatTurn, Effort, Role, StopReason, StreamEvent, ToolDef, Usage};
 use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
+use crate::tools::executor::{self, Actor, Approver, ExecContext, Policy, ToolActivity};
+use crate::tools::ToolRegistry;
 
 pub const MAX_INPUT_CHARS: usize = 100_000;
 /// Per-response output cap. Streaming keeps large values safe from HTTP timeouts.
 pub const MAX_OUTPUT_TOKENS: u32 = 64_000;
+/// Maximum model ↔ tool round trips for one message.
+pub const MAX_TOOL_ROUNDS: usize = 8;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -30,16 +37,25 @@ pub enum ChatEvent {
     Generating { conversation_id: String, model: String },
     /// Streamed response text.
     Delta { text: String },
+    /// A tool call started, needs approval, or finished (upsert by `activity.id`).
+    Tool { activity: ToolActivity },
     /// The assistant turn ended; `message.status` says how.
     Finished { message: Message },
 }
 
 pub type Emit<'a> = &'a mut (dyn FnMut(ChatEvent) + Send);
 
+pub struct Tooling {
+    pub registry: Arc<ToolRegistry>,
+    pub policy: Policy,
+    pub approver: Arc<dyn Approver>,
+}
+
 pub struct GenerationParams {
     pub provider: Arc<dyn AiProvider>,
     pub model: String,
     pub effort: Option<Effort>,
+    pub tooling: Tooling,
 }
 
 pub fn validate_input(content: &str) -> AppResult<String> {
@@ -54,15 +70,21 @@ pub fn validate_input(content: &str) -> AppResult<String> {
 }
 
 /// Save a user message, creating the conversation (with its frozen system
-/// prompt) when `conversation_id` is `None`.
-pub fn save_user_message(db: &Database, conversation_id: Option<&str>, content: &str, user_name: &str) -> AppResult<(Conversation, Message)> {
+/// prompt and tool set) when `conversation_id` is `None`.
+pub fn save_user_message(
+    db: &Database,
+    conversation_id: Option<&str>,
+    content: &str,
+    user_name: &str,
+    tools: &[ToolDef],
+) -> AppResult<(Conversation, Message)> {
     let mut conn = db.conn()?;
     let conversation = match conversation_id {
         Some(id) => conversations::require(&conn, id)?,
         None => {
             let system = prompt::system_prompt(&PromptContext { user_name, date: &prompt::today(), os: prompt::os_label() });
-            let c = conversations::create(&conn, &conversations::title_from(content), &system)?;
-            tracing::info!(event = "CONVERSATION_CREATED", conversation_id = %c.id);
+            let c = conversations::create(&conn, &conversations::title_from(content), &system, tools)?;
+            tracing::info!(event = "CONVERSATION_CREATED", conversation_id = %c.id, tools = tools.len());
             c
         }
     };
@@ -71,49 +93,149 @@ pub fn save_user_message(db: &Database, conversation_id: Option<&str>, content: 
     Ok((conversation, message))
 }
 
+enum Outcome {
+    Finished(StopReason),
+    Failed(AiError),
+    Cancelled,
+    StepLimit,
+}
+
 /// Generate and persist the assistant reply to the conversation's last user message.
-pub async fn generate(db: &Database, conversation_id: &str, params: &GenerationParams, cancel: &CancellationToken, emit: Emit<'_>) -> AppResult<Message> {
-    let (system, history) = {
+pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &GenerationParams, cancel: &CancellationToken, emit: Emit<'_>) -> AppResult<Message> {
+    let (system, history, offered) = {
         let conn = db.conn()?;
-        (conversations::system_prompt(&conn, conversation_id)?, conversations::messages(&conn, conversation_id)?)
+        (
+            conversations::system_prompt(&conn, conversation_id)?,
+            conversations::messages(&conn, conversation_id)?,
+            conversations::tool_specs(&conn, conversation_id)?,
+        )
     };
     if history.last().map(|m| m.role) != Some(Role::User) {
         return Err(AppError::validation("There is no message to respond to."));
     }
 
     let provider_id = params.provider.id();
-    let request = ChatRequest {
-        model: params.model.clone(),
-        system,
-        turns: build_turns(&history, provider_id),
-        max_tokens: MAX_OUTPUT_TOKENS,
-        effort: params.effort,
-    };
+    let base_turns = build_turns(&history, provider_id);
+    let allowed: Vec<String> = offered.iter().map(|t| t.name.clone()).collect();
 
     emit(ChatEvent::Generating { conversation_id: conversation_id.to_string(), model: params.model.clone() });
-    tracing::info!(event = "CHAT_REQUEST_STARTED", provider = provider_id, model = %params.model, turns = request.turns.len());
+    tracing::info!(event = "CHAT_REQUEST_STARTED", provider = provider_id, model = %params.model, turns = base_turns.len(), tools = offered.len());
 
     let started = Instant::now();
     let mut first_token_ms: Option<u128> = None;
-    let mut partial = String::new();
-    let result = params
-        .provider
-        .stream(&request, cancel, &mut |ev| match ev {
-            StreamEvent::TextDelta(text) => {
-                if first_token_ms.is_none() {
-                    first_token_ms = Some(started.elapsed().as_millis());
-                }
-                partial.push_str(&text);
-                emit(ChatEvent::Delta { text });
-            }
-        })
-        .await;
+    let mut text = String::new();
+    let mut new_turns: Vec<ChatTurn> = Vec::new();
+    let mut activities: Vec<ToolActivity> = Vec::new();
+    let mut usage = Usage::default();
+    let mut served_model = params.model.clone();
+    let mut outcome = Outcome::StepLimit;
 
-    let base = NewMessage { role: Role::Assistant, provider: Some(provider_id.to_string()), model: Some(params.model.clone()), ..NewMessage::user("") };
-    let new_message = match result {
-        Ok(c) => {
-            let (status, error) = match &c.stop_reason {
-                StopReason::EndTurn | StopReason::Other { .. } => (MessageStatus::Complete, None),
+    for round in 0..=MAX_TOOL_ROUNDS {
+        let mut turns = base_turns.clone();
+        turns.extend(new_turns.iter().cloned());
+        let request = ChatRequest {
+            model: params.model.clone(),
+            system: system.clone(),
+            turns,
+            max_tokens: MAX_OUTPUT_TOKENS,
+            effort: params.effort,
+            tools: offered.clone(),
+        };
+
+        let mut round_has_text = false;
+        let result = params
+            .provider
+            .stream(&request, cancel, &mut |ev| match ev {
+                StreamEvent::TextDelta(t) => {
+                    if first_token_ms.is_none() {
+                        first_token_ms = Some(started.elapsed().as_millis());
+                    }
+                    // Separate text written before and after tool calls.
+                    if !round_has_text && round > 0 && !text.is_empty() && !text.ends_with("\n\n") {
+                        text.push_str("\n\n");
+                        emit(ChatEvent::Delta { text: "\n\n".into() });
+                    }
+                    round_has_text = true;
+                    text.push_str(&t);
+                    emit(ChatEvent::Delta { text: t });
+                }
+            })
+            .await;
+
+        let completion = match result {
+            Ok(c) => c,
+            Err(e) if e.kind == AiErrorKind::Cancelled => {
+                outcome = Outcome::Cancelled;
+                break;
+            }
+            Err(e) => {
+                outcome = Outcome::Failed(e);
+                break;
+            }
+        };
+        usage.input_tokens = Some(usage.input_tokens.unwrap_or(0) + completion.usage.input_tokens.unwrap_or(0));
+        usage.output_tokens = Some(usage.output_tokens.unwrap_or(0) + completion.usage.output_tokens.unwrap_or(0));
+        served_model = completion.model.clone();
+
+        // Only act on tool calls when the model actually stopped to use them —
+        // a refusal or max_tokens stop can leave a call cut off mid-input.
+        let wants_tools = completion.stop_reason == StopReason::ToolUse && !completion.tool_calls.is_empty();
+        new_turns.push(ChatTurn {
+            raw: completion.raw.clone(),
+            tool_calls: completion.tool_calls.clone(),
+            ..ChatTurn::assistant(completion.text.clone())
+        });
+        if !wants_tools {
+            outcome = Outcome::Finished(completion.stop_reason);
+            break;
+        }
+        if round == MAX_TOOL_ROUNDS {
+            break; // StepLimit
+        }
+
+        let ctx = ExecContext {
+            registry: &params.tooling.registry,
+            db,
+            conversation_id: Some(conversation_id),
+            actor: Actor::Assistant,
+            policy: params.tooling.policy,
+            allowed: Some(&allowed),
+            approver: params.tooling.approver.as_ref(),
+            cancel,
+        };
+        let mut results = Vec::new();
+        let offset = Some(text.chars().count());
+        for call in &completion.tool_calls {
+            let (result, mut activity) =
+                executor::execute(call, &ctx, &mut |a| emit(ChatEvent::Tool { activity: ToolActivity { text_offset: offset, ..a.clone() } })).await;
+            activity.text_offset = offset;
+            emit(ChatEvent::Tool { activity: activity.clone() });
+            activities.push(activity);
+            results.push(result);
+        }
+        new_turns.push(ChatTurn { tool_results: results, ..ChatTurn::user("") });
+        if cancel.is_cancelled() {
+            outcome = Outcome::Cancelled;
+            break;
+        }
+    }
+
+    // Raw turns are only replayable when every tool call in them was answered.
+    let answered = new_turns.last().is_some_and(|t| t.tool_calls.is_empty());
+    let base = NewMessage {
+        role: Role::Assistant,
+        provider: Some(provider_id.to_string()),
+        model: Some(served_model.clone()),
+        content: text.clone(),
+        input_tokens: usage.input_tokens.map(|v| v as i64),
+        output_tokens: usage.output_tokens.map(|v| v as i64),
+        tool_activity: (!activities.is_empty()).then(|| serde_json::to_string(&activities).unwrap_or_default()),
+        ..NewMessage::user("")
+    };
+    let new_message = match outcome {
+        Outcome::Finished(stop) => {
+            let (status, error) = match &stop {
+                StopReason::EndTurn | StopReason::ToolUse | StopReason::Other { .. } => (MessageStatus::Complete, None),
                 StopReason::MaxTokens => (MessageStatus::Truncated, Some("The response hit the output length limit.".to_string())),
                 StopReason::Refusal { category } => (
                     MessageStatus::Refused,
@@ -126,31 +248,31 @@ pub async fn generate(db: &Database, conversation_id: &str, params: &GenerationP
             tracing::info!(
                 event = "CHAT_COMPLETED",
                 status = ?status,
-                served_model = %c.model,
+                served_model = %served_model,
+                tool_calls = activities.len(),
                 first_token_ms = first_token_ms.map(|v| v as u64),
                 total_ms = started.elapsed().as_millis() as u64,
-                input_tokens = c.usage.input_tokens,
-                output_tokens = c.usage.output_tokens,
+                input_tokens = usage.input_tokens,
+                output_tokens = usage.output_tokens,
             );
-            let keep_raw = matches!(status, MessageStatus::Complete | MessageStatus::Truncated);
+            let keep_raw = matches!(status, MessageStatus::Complete | MessageStatus::Truncated) && answered;
+            NewMessage { status, error, raw: keep_raw.then(|| encode_turns(&new_turns).to_string()), ..base }
+        }
+        Outcome::Cancelled => {
+            tracing::info!(event = "CHAT_CANCELLED", partial_chars = text.chars().count(), tool_calls = activities.len());
+            NewMessage { status: MessageStatus::Cancelled, ..base }
+        }
+        Outcome::Failed(e) => {
+            tracing::warn!(event = "CHAT_FAILED", kind = ?e.kind, provider = provider_id);
+            NewMessage { status: MessageStatus::Error, error: Some(e.message), ..base }
+        }
+        Outcome::StepLimit => {
+            tracing::warn!(event = "CHAT_TOOL_STEP_LIMIT", rounds = MAX_TOOL_ROUNDS);
             NewMessage {
-                content: c.text,
-                status,
-                error,
-                model: Some(c.model),
-                raw: if keep_raw { c.raw.map(|r| r.to_string()) } else { None },
-                input_tokens: c.usage.input_tokens.map(|v| v as i64),
-                output_tokens: c.usage.output_tokens.map(|v| v as i64),
+                status: MessageStatus::Error,
+                error: Some(format!("Stopped after {MAX_TOOL_ROUNDS} tool steps without a final answer.")),
                 ..base
             }
-        }
-        Err(e) if e.kind == AiErrorKind::Cancelled => {
-            tracing::info!(event = "CHAT_CANCELLED", partial_chars = partial.chars().count());
-            NewMessage { content: partial, status: MessageStatus::Cancelled, ..base }
-        }
-        Err(e) => {
-            tracing::warn!(event = "CHAT_FAILED", kind = ?e.kind, provider = provider_id);
-            NewMessage { content: partial, status: MessageStatus::Error, error: Some(e.message), ..base }
         }
     };
 
@@ -176,10 +298,44 @@ mod tests {
     use super::*;
     use crate::ai::anthropic::AnthropicProvider;
     use crate::ai::testutil::MockServer;
+    use crate::tools::calculator::CalculatorTool;
+    use crate::tools::executor::{ActivityStatus, Approval};
+    use crate::tools::{PermissionLevel, Tool, ToolOutput, ToolResultT, ToolSpec};
     use serde_json::json;
+    use std::sync::Mutex;
+
+    struct FixedApprover(Approval);
+
+    #[async_trait::async_trait]
+    impl Approver for FixedApprover {
+        async fn request(&self, _a: &ToolActivity, _c: &CancellationToken) -> Approval {
+            self.0
+        }
+    }
+
+    /// A LOW-risk tool that records whether it ran.
+    struct Opener(ToolSpec, Mutex<u32>);
+
+    #[async_trait::async_trait]
+    impl Tool for Opener {
+        fn spec(&self) -> &ToolSpec {
+            &self.0
+        }
+        fn describe(&self, _i: &serde_json::Value) -> String {
+            "Open thing".into()
+        }
+        async fn execute(&self, _i: &serde_json::Value) -> ToolResultT {
+            *self.1.lock().unwrap() += 1;
+            Ok(ToolOutput { content: "opened".into(), summary: "opened".into() })
+        }
+    }
+
+    fn events(evs: &[serde_json::Value]) -> String {
+        evs.iter().map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap())).collect()
+    }
 
     fn sse_reply(text: &str) -> String {
-        [
+        events(&[
             json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10}}}),
             json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}),
             json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}),
@@ -189,47 +345,72 @@ mod tests {
             json!({"type":"content_block_stop","index":1}),
             json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}),
             json!({"type":"message_stop"}),
-        ]
-        .iter()
-        .map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap()))
-        .collect()
+        ])
     }
 
-    fn params(url: String) -> GenerationParams {
+    fn sse_tool_use(id: &str, name: &str, input: serde_json::Value) -> String {
+        events(&[
+            json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Let me check."}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":id,"name":name,"input":{}}}),
+            json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":input.to_string()}}),
+            json!({"type":"content_block_stop","index":1}),
+            json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}),
+            json!({"type":"message_stop"}),
+        ])
+    }
+
+    fn registry_with(extra: Option<Arc<dyn Tool>>) -> Arc<ToolRegistry> {
+        let mut r = ToolRegistry::default();
+        r.register(Arc::new(CalculatorTool::default()));
+        if let Some(t) = extra {
+            r.register(t);
+        }
+        Arc::new(r)
+    }
+
+    fn params(url: String, registry: Arc<ToolRegistry>, policy: Policy, approval: Approval) -> GenerationParams {
         GenerationParams {
             provider: Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()),
             model: "claude-opus-5-5".into(),
             effort: Some(Effort::Medium),
+            tooling: Tooling { registry, policy, approver: Arc::new(FixedApprover(approval)) },
         }
+    }
+
+    fn db() -> Arc<Database> {
+        Arc::new(Database::open_in_memory().unwrap())
     }
 
     #[tokio::test]
     async fn full_turn_persists_and_replays_history_unchanged() {
-        let db = Database::open_in_memory().unwrap();
+        let db = db();
         let server = MockServer::start(vec![
             (200, "text/event-stream", sse_reply("Hello.")),
             (200, "text/event-stream", sse_reply("Still here.")),
         ])
         .await;
-        let p = params(server.url());
+        let reg = registry_with(None);
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
 
-        let (conv, _) = save_user_message(&db, None, "Hi IGRIS", "Ada").unwrap();
-        let mut events = Vec::new();
-        let m1 = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| events.push(e)).await.unwrap();
+        let (conv, _) = save_user_message(&db, None, "Hi IGRIS", "Ada", &reg.defs()).unwrap();
+        let mut evs = Vec::new();
+        let m1 = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| evs.push(e)).await.unwrap();
         assert_eq!(m1.status, MessageStatus::Complete);
         assert_eq!(m1.content, "Hello.");
-        assert!(matches!(events.first(), Some(ChatEvent::Generating { .. })));
-        assert!(matches!(events.last(), Some(ChatEvent::Finished { .. })));
+        assert!(matches!(evs.first(), Some(ChatEvent::Generating { .. })));
+        assert!(matches!(evs.last(), Some(ChatEvent::Finished { .. })));
 
-        save_user_message(&db, Some(&conv.id), "Are you there?", "Ada").unwrap();
+        save_user_message(&db, Some(&conv.id), "Are you there?", "Ada", &reg.defs()).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
 
         let reqs = server.requests().await;
         let (first, second) = (reqs[0].json(), reqs[1].json());
-        // System prompt is frozen across turns.
-        assert_eq!(first["system"], second["system"]);
+        assert_eq!(first["system"], second["system"], "system prompt is frozen");
+        assert_eq!(first["tools"], second["tools"], "tool set is frozen");
         assert!(first["system"].as_str().unwrap().contains("Ada"));
-        // Prior assistant turn replayed with its thinking block intact.
         let replay = &second["messages"][1]["content"];
         assert_eq!(replay[0]["type"], "thinking");
         assert_eq!(replay[0]["signature"], "sig");
@@ -238,12 +419,143 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runs_a_tool_and_sends_the_result_back() {
+        let db = db();
+        let server = MockServer::start(vec![
+            (200, "text/event-stream", sse_tool_use("toolu_1", "calculator", json!({"expression":"6*7"}))),
+            (200, "text/event-stream", sse_reply("It's 42.")),
+            (200, "text/event-stream", sse_reply("You're welcome.")),
+        ])
+        .await;
+        let reg = registry_with(None);
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Denied);
+        let (conv, _) = save_user_message(&db, None, "What's 6*7?", "", &reg.defs()).unwrap();
+        let mut tool_events = Vec::new();
+        let mut deltas = String::new();
+        let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| match e {
+            ChatEvent::Tool { activity } => tool_events.push(activity),
+            ChatEvent::Delta { text } => deltas.push_str(&text),
+            _ => {}
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(m.status, MessageStatus::Complete);
+        assert_eq!(m.content, "Let me check.\n\nIt's 42.");
+        assert_eq!(deltas, m.content, "streamed text matches the stored text");
+        assert_eq!(tool_events.last().unwrap().status, ActivityStatus::Completed);
+        assert_eq!(tool_events.last().unwrap().result.as_deref(), Some("= 42"));
+        assert_eq!(tool_events.last().unwrap().text_offset, Some("Let me check.".len()), "tool sits after the text written before it");
+        assert_eq!(m.tool_activity.as_ref().unwrap()[0]["status"], "completed");
+
+        let second = server.requests().await[1].json();
+        let msgs = second["messages"].as_array().unwrap();
+        assert_eq!(msgs[1]["content"][1]["type"], "tool_use");
+        assert_eq!(msgs[2]["content"][0]["type"], "tool_result");
+        assert_eq!(msgs[2]["content"][0]["content"], "6*7 = 42");
+        assert_eq!(msgs[2]["content"][0]["is_error"], false);
+
+        // The whole tool exchange is replayed on the next turn.
+        save_user_message(&db, Some(&conv.id), "Thanks", "", &reg.defs()).unwrap();
+        generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        let third = server.requests().await[2].json();
+        let roles: Vec<&str> = third["messages"].as_array().unwrap().iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, vec!["user", "assistant", "user", "assistant", "user"]);
+        assert_eq!(third["messages"][3]["content"][1]["text"], "It's 42.");
+    }
+
+    #[tokio::test]
+    async fn denied_action_is_not_executed_and_the_model_is_told() {
+        let db = db();
+        let opener = Arc::new(Opener(
+            ToolSpec {
+                name: "open_thing",
+                title: "Open",
+                description: "d",
+                input_schema: json!({"type":"object","properties":{},"required":[],"additionalProperties":false}),
+                permission: PermissionLevel::Low,
+            },
+            Mutex::new(0),
+        ));
+        let reg = registry_with(Some(opener.clone()));
+        let server = MockServer::start(vec![
+            (200, "text/event-stream", sse_tool_use("toolu_2", "open_thing", json!({}))),
+            (200, "text/event-stream", sse_reply("Okay, I won't.")),
+        ])
+        .await;
+        let p = params(server.url(), reg.clone(), Policy { confirm_low: true }, Approval::Denied);
+        let (conv, _) = save_user_message(&db, None, "Open it", "", &reg.defs()).unwrap();
+        let mut statuses = Vec::new();
+        let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| {
+            if let ChatEvent::Tool { activity } = e {
+                statuses.push(activity.status)
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(*opener.1.lock().unwrap(), 0);
+        assert!(statuses.contains(&ActivityStatus::AwaitingApproval));
+        assert_eq!(*statuses.last().unwrap(), ActivityStatus::Denied);
+        assert_eq!(m.status, MessageStatus::Complete);
+        let result = &server.requests().await[1].json()["messages"][2]["content"][0];
+        assert_eq!(result["is_error"], true);
+        assert!(result["content"].as_str().unwrap().contains("denied"));
+    }
+
+    #[tokio::test]
+    async fn hallucinated_tool_gets_an_error_result_not_a_fake_success() {
+        let db = db();
+        let reg = registry_with(None);
+        let server = MockServer::start(vec![
+            (200, "text/event-stream", sse_tool_use("toolu_3", "delete_all_files", json!({}))),
+            (200, "text/event-stream", sse_reply("I can't do that.")),
+        ])
+        .await;
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        let (conv, _) = save_user_message(&db, None, "Delete everything", "", &reg.defs()).unwrap();
+        let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(m.tool_activity.unwrap()[0]["status"], "invalid");
+        let result = &server.requests().await[1].json()["messages"][2]["content"][0];
+        assert_eq!(result["is_error"], true);
+        assert!(result["content"].as_str().unwrap().contains("Unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn stops_after_the_tool_step_limit() {
+        let db = db();
+        let reg = registry_with(None);
+        let responses = (0..=MAX_TOOL_ROUNDS)
+            .map(|i| (200u16, "text/event-stream", sse_tool_use(&format!("toolu_{i}"), "calculator", json!({"expression":"1+1"}))))
+            .collect();
+        let server = MockServer::start(responses).await;
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        let (conv, _) = save_user_message(&db, None, "loop", "", &reg.defs()).unwrap();
+        let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(m.status, MessageStatus::Error);
+        assert!(m.error.unwrap().contains("tool steps"));
+        assert_eq!(server.requests().await.len(), MAX_TOOL_ROUNDS + 1);
+    }
+
+    #[tokio::test]
+    async fn legacy_conversations_without_a_tool_snapshot_get_no_tools() {
+        let db = db();
+        let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("Hi."))]).await;
+        let reg = registry_with(None);
+        let p = params(server.url(), reg, Policy::default(), Approval::Approved);
+        let (conv, _) = save_user_message(&db, None, "Hi", "", &[]).unwrap();
+        generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert!(server.requests().await[0].json().get("tools").is_none());
+    }
+
+    #[tokio::test]
     async fn provider_failure_is_persisted_as_error_not_success() {
-        let db = Database::open_in_memory().unwrap();
+        let db = db();
         let err = json!({"type":"error","error":{"type":"authentication_error","message":"bad key"}}).to_string();
         let server = MockServer::start(vec![(401, "application/json", err)]).await;
-        let (conv, _) = save_user_message(&db, None, "Hi", "").unwrap();
-        let m = generate(&db, &conv.id, &params(server.url()), &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        let reg = registry_with(None);
+        let (conv, _) = save_user_message(&db, None, "Hi", "", &reg.defs()).unwrap();
+        let p = params(server.url(), reg, Policy::default(), Approval::Approved);
+        let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         assert_eq!(m.status, MessageStatus::Error);
         assert!(m.error.unwrap().contains("API key"));
         assert!(m.content.is_empty());
@@ -251,29 +563,30 @@ mod tests {
 
     #[tokio::test]
     async fn regenerate_replaces_last_answer() {
-        let db = Database::open_in_memory().unwrap();
+        let db = db();
         let server = MockServer::start(vec![
             (200, "text/event-stream", sse_reply("First.")),
             (200, "text/event-stream", sse_reply("Second.")),
         ])
         .await;
-        let p = params(server.url());
-        let (conv, _) = save_user_message(&db, None, "Q", "").unwrap();
+        let reg = registry_with(None);
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        let (conv, _) = save_user_message(&db, None, "Q", "", &reg.defs()).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         prepare_regenerate(&db, &conv.id).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         let ms = conversations::messages(&db.conn().unwrap(), &conv.id).unwrap();
         assert_eq!(ms.iter().map(|m| m.content.as_str()).collect::<Vec<_>>(), vec!["Q", "Second."]);
-        // The regenerated request must not include the discarded answer.
         assert_eq!(server.requests().await[1].json()["messages"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn refuses_to_generate_without_a_pending_user_message() {
-        let db = Database::open_in_memory().unwrap();
+        let db = db();
         let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("A."))]).await;
-        let p = params(server.url());
-        let (conv, _) = save_user_message(&db, None, "Q", "").unwrap();
+        let reg = registry_with(None);
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        let (conv, _) = save_user_message(&db, None, "Q", "", &reg.defs()).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         assert!(generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.is_err());
     }

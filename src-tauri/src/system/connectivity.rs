@@ -77,6 +77,11 @@ impl ConnectivityMonitor {
         Self { state }
     }
 
+    /// A monitor pinned to one value (tests).
+    pub fn fixed(state: Connectivity) -> Self {
+        Self { state: Arc::new(AtomicU8::new(state.to_u8())) }
+    }
+
     pub fn current(&self) -> Connectivity {
         Connectivity::from_u8(self.state.load(Ordering::Relaxed))
     }

@@ -3,6 +3,7 @@ import type { AppInfo, PublicConfig, ReloadResult } from "@/types/app";
 import type { Conversation, ConversationDetail } from "@/types/chat";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
+import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
 import { call } from "./backend";
 
 /** All IPC commands in one place — mirrors `generate_handler!` in `src-tauri/src/lib.rs`. */
@@ -19,4 +20,13 @@ export const api = {
   renameConversation: (id: string, title: string) => call<Conversation>("rename_conversation", { id, title }),
   deleteConversation: (id: string) => call<void>("delete_conversation", { id }),
   cancelChat: (requestId: string) => call<boolean>("chat_cancel", { requestId }),
+  respondToolApproval: (callId: string, approved: boolean) => call<boolean>("respond_tool_approval", { callId, approved }),
+  listTools: () => call<ToolInfo[]>("list_tools"),
+  listToolAudit: (limit?: number) => call<AuditEntry[]>("list_tool_audit", { limit }),
+  getPermissionPolicy: () => call<PermissionRule[]>("get_permission_policy"),
+  listApplications: () => call<AppEntry[]>("list_applications"),
+  addApplication: (name: string, path: string) => call<AppEntry>("add_application", { name, path }),
+  removeApplication: (id: string) => call<void>("remove_application", { id }),
+  detectApplications: () => call<AppCandidate[]>("detect_applications"),
+  launchApplication: (id: string) => call<ToolActivity>("launch_application", { id }),
 };

@@ -15,6 +15,7 @@ const base: Message = {
   inputTokens: null,
   outputTokens: null,
   createdAt: "2026-10-04T10:00:00Z",
+  toolActivity: null,
 };
 
 const renderItem = (m: Partial<Message>, isLast = true) =>

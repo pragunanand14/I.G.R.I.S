@@ -3,7 +3,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 
-use crate::ai::Role;
+use crate::ai::{Role, ToolDef};
 use crate::error::{AppError, AppResult};
 
 pub const TITLE_MAX_CHARS: usize = 80;
@@ -68,6 +68,8 @@ pub struct Message {
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub created_at: String,
+    /// Tool calls made while producing this message (JSON array of ToolActivity).
+    pub tool_activity: Option<serde_json::Value>,
 }
 
 /// Fields for a new message; ids and sequence numbers are assigned here.
@@ -82,6 +84,7 @@ pub struct NewMessage {
     pub raw: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
+    pub tool_activity: Option<String>,
 }
 
 impl NewMessage {
@@ -96,6 +99,7 @@ impl NewMessage {
             raw: None,
             input_tokens: None,
             output_tokens: None,
+            tool_activity: None,
         }
     }
 }
@@ -138,15 +142,20 @@ fn message_from_row(r: &Row) -> rusqlite::Result<Message> {
         input_tokens: r.get(10)?,
         output_tokens: r.get(11)?,
         created_at: r.get(12)?,
+        tool_activity: r.get::<_, Option<String>>(13)?.and_then(|s| serde_json::from_str(&s).ok()),
     })
 }
 
 const MESSAGE_COLS: &str =
-    "id, conversation_id, seq, role, content, status, error, provider, model, raw, input_tokens, output_tokens, created_at";
+    "id, conversation_id, seq, role, content, status, error, provider, model, raw, input_tokens, output_tokens, created_at, tool_activity";
 
-pub fn create(conn: &Connection, title: &str, system_prompt: &str) -> AppResult<Conversation> {
+pub fn create(conn: &Connection, title: &str, system_prompt: &str, tools: &[ToolDef]) -> AppResult<Conversation> {
     let id = new_id();
-    conn.execute("INSERT INTO conversations (id, title, system_prompt) VALUES (?1, ?2, ?3)", params![id, title, system_prompt])?;
+    let tool_specs = serde_json::to_string(tools)?;
+    conn.execute(
+        "INSERT INTO conversations (id, title, system_prompt, tool_specs) VALUES (?1, ?2, ?3, ?4)",
+        params![id, title, system_prompt, tool_specs],
+    )?;
     get(conn, &id)?.ok_or_else(|| AppError::internal("conversation vanished after insert"))
 }
 
@@ -162,6 +171,13 @@ pub fn require(conn: &Connection, id: &str) -> AppResult<Conversation> {
 
 pub fn system_prompt(conn: &Connection, id: &str) -> AppResult<String> {
     Ok(conn.query_row("SELECT system_prompt FROM conversations WHERE id = ?1", [id], |r| r.get(0))?)
+}
+
+/// Tools frozen for this conversation. Conversations created before tools
+/// existed have none, which keeps their history valid.
+pub fn tool_specs(conn: &Connection, id: &str) -> AppResult<Vec<ToolDef>> {
+    let raw: Option<String> = conn.query_row("SELECT tool_specs FROM conversations WHERE id = ?1", [id], |r| r.get(0))?;
+    Ok(raw.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
 }
 
 pub fn list(conn: &Connection) -> AppResult<Vec<Conversation>> {
@@ -212,7 +228,7 @@ pub fn append(conn: &mut Connection, conversation_id: &str, m: NewMessage) -> Ap
     let tx = conn.transaction()?;
     let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE conversation_id = ?1", [conversation_id], |r| r.get(0))?;
     tx.execute(
-        &format!("INSERT INTO messages ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))", MESSAGE_COLS),
+        &format!("INSERT INTO messages ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?13)", MESSAGE_COLS),
         params![
             id,
             conversation_id,
@@ -226,6 +242,7 @@ pub fn append(conn: &mut Connection, conversation_id: &str, m: NewMessage) -> Ap
             m.raw,
             m.input_tokens,
             m.output_tokens,
+            m.tool_activity,
         ],
     )?;
     touch(&tx, conversation_id)?;
@@ -266,7 +283,7 @@ mod tests {
     fn creates_appends_and_lists_in_order() {
         let db = Database::open_in_memory().unwrap();
         let mut conn = db.conn().unwrap();
-        let c = create(&conn, "Hello", "sys").unwrap();
+        let c = create(&conn, "Hello", "sys", &[]).unwrap();
         append(&mut conn, &c.id, NewMessage::user("hi")).unwrap();
         append(&mut conn, &c.id, assistant("hello")).unwrap();
         let ms = messages(&conn, &c.id).unwrap();
@@ -275,13 +292,25 @@ mod tests {
         assert_eq!(ms[1].raw.as_deref(), Some("[]"));
         assert_eq!(list(&conn).unwrap()[0].message_count, 2);
         assert_eq!(system_prompt(&conn, &c.id).unwrap(), "sys");
+        assert!(tool_specs(&conn, &c.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tool_snapshot_roundtrips_and_legacy_rows_have_none() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.conn().unwrap();
+        let defs = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: serde_json::json!({"type":"object"}) }];
+        let c = create(&conn, "t", "s", &defs).unwrap();
+        assert_eq!(tool_specs(&conn, &c.id).unwrap(), defs);
+        conn.execute("UPDATE conversations SET tool_specs = NULL WHERE id = ?1", [&c.id]).unwrap();
+        assert!(tool_specs(&conn, &c.id).unwrap().is_empty());
     }
 
     #[test]
     fn raw_blocks_are_not_serialized_to_the_ui() {
         let db = Database::open_in_memory().unwrap();
         let mut conn = db.conn().unwrap();
-        let c = create(&conn, "t", "s").unwrap();
+        let c = create(&conn, "t", "s", &[]).unwrap();
         let m = append(&mut conn, &c.id, assistant("x")).unwrap();
         assert!(serde_json::to_value(&m).unwrap().get("raw").is_none());
     }
@@ -290,7 +319,7 @@ mod tests {
     fn edit_truncates_following_messages() {
         let db = Database::open_in_memory().unwrap();
         let mut conn = db.conn().unwrap();
-        let c = create(&conn, "t", "s").unwrap();
+        let c = create(&conn, "t", "s", &[]).unwrap();
         let u1 = append(&mut conn, &c.id, NewMessage::user("one")).unwrap();
         append(&mut conn, &c.id, assistant("a1")).unwrap();
         append(&mut conn, &c.id, NewMessage::user("two")).unwrap();
@@ -303,7 +332,7 @@ mod tests {
     fn cannot_edit_assistant_messages() {
         let db = Database::open_in_memory().unwrap();
         let mut conn = db.conn().unwrap();
-        let c = create(&conn, "t", "s").unwrap();
+        let c = create(&conn, "t", "s", &[]).unwrap();
         let a = append(&mut conn, &c.id, assistant("a")).unwrap();
         assert!(edit_user_message(&mut conn, &a.id, "x").is_err());
     }
@@ -312,7 +341,7 @@ mod tests {
     fn delete_cascades_to_messages() {
         let db = Database::open_in_memory().unwrap();
         let mut conn = db.conn().unwrap();
-        let c = create(&conn, "t", "s").unwrap();
+        let c = create(&conn, "t", "s", &[]).unwrap();
         append(&mut conn, &c.id, NewMessage::user("hi")).unwrap();
         assert!(delete(&conn, &c.id).unwrap());
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap();
@@ -324,7 +353,7 @@ mod tests {
     fn rename_validates() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.conn().unwrap();
-        let c = create(&conn, "t", "s").unwrap();
+        let c = create(&conn, "t", "s", &[]).unwrap();
         assert!(rename(&conn, &c.id, "  ").is_err());
         assert!(rename(&conn, &c.id, &"x".repeat(TITLE_MAX_CHARS + 1)).is_err());
         assert_eq!(rename(&conn, &c.id, " Plans ").unwrap().title, "Plans");

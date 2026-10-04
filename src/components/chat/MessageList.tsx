@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { StreamingState } from "@/stores/chatStore";
 import type { Message } from "@/types/chat";
-import { Markdown } from "./Markdown";
 import { MessageItem } from "./MessageItem";
+import { AssistantBody } from "./AssistantBody";
 
 interface Props {
   messages: Message[];
@@ -10,9 +10,10 @@ interface Props {
   streaming: StreamingState | null;
   onRegenerate: () => void;
   onEdit: (id: string, content: string) => Promise<boolean>;
+  onAnswerApproval: (callId: string, approved: boolean) => void;
 }
 
-export function MessageList({ messages, pendingUser, streaming, onRegenerate, onEdit }: Props) {
+export function MessageList({ messages, pendingUser, streaming, onRegenerate, onEdit, onAnswerApproval }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const busy = streaming !== null;
@@ -23,7 +24,7 @@ export function MessageList({ messages, pendingUser, streaming, onRegenerate, on
   useEffect(() => {
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [messages, pendingUser, streaming?.text]);
+  }, [messages, pendingUser, streaming?.text, streaming?.activities]);
 
   return (
     <div
@@ -60,13 +61,10 @@ export function MessageList({ messages, pendingUser, streaming, onRegenerate, on
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-baseline gap-2">
                 <span className="text-xs font-semibold tracking-[0.18em] text-fg">IGRIS</span>
-                <span className="text-[10px] text-faint">{streaming.phase === "waiting" ? "Thinking…" : "Responding…"}</span>
+                <span className="text-[10px] text-faint">{streamingLabel(streaming)}</span>
               </div>
-              {streaming.text ? (
-                <div className="stream-caret">
-                  <Markdown text={streaming.text} />
-                </div>
-              ) : (
+              <AssistantBody text={streaming.text} activities={streaming.activities} onAnswer={onAnswerApproval} streaming />
+              {streaming.text || streaming.activities.length > 0 ? null : (
                 <div className="flex gap-1 py-2" aria-label="Thinking">
                   {[0, 1, 2].map((i) => (
                     <span key={i} className="size-1.5 animate-bounce rounded-full bg-faint" style={{ animationDelay: `${i * 0.15}s` }} />
@@ -79,4 +77,11 @@ export function MessageList({ messages, pendingUser, streaming, onRegenerate, on
       </div>
     </div>
   );
+}
+
+function streamingLabel(s: StreamingState): string {
+  const last = s.activities.at(-1);
+  if (last?.status === "awaitingApproval") return "Waiting for approval…";
+  if (last?.status === "running") return `${last.title}…`;
+  return s.phase === "waiting" ? "Thinking…" : "Responding…";
 }

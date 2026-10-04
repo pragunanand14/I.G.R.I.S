@@ -58,17 +58,13 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/tools",
     label: "Tools",
     icon: Wrench,
-    plannedPhase: 3,
     summary: "The controlled tool layer IGRIS uses to act.",
-    planned: ["Tool registry with typed schemas", "Calculator, system info, app launcher", "Execution log"],
   },
   {
     path: "/security",
     label: "Security",
     icon: ShieldCheck,
-    plannedPhase: 3,
     summary: "Permissions and audit trail.",
-    planned: ["SAFE / LOW / SENSITIVE / CRITICAL permission levels", "Confirmation prompts", "Audit log of every action"],
   },
   { path: "/settings", label: "Settings", icon: Settings, summary: "Preferences and configuration." },
 ];

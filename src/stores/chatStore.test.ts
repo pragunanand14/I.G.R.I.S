@@ -20,6 +20,7 @@ const msg = (over: Partial<Message>): Message => ({
   inputTokens: null,
   outputTokens: null,
   createdAt: "2026-10-04T10:00:00Z",
+  toolActivity: null,
   ...over,
 });
 
@@ -81,8 +82,43 @@ describe("chat store", () => {
   });
 
   it("ignores events from a different request", async () => {
-    useChatStore.setState({ streaming: { requestId: "other", conversationId: "c1", text: "", phase: "waiting", model: null } });
+    useChatStore.setState({ streaming: { requestId: "other", conversationId: "c1", text: "", phase: "waiting", model: null, activities: [] } });
     expect(await useChatStore.getState().send("Hi")).toBe(false);
+  });
+
+  it("tracks tool activity and drives the executing / approval states", async () => {
+    const act = { id: "t1", tool: "calculator", title: "Calculator", permission: "safe" as const, description: "Calculate 6*7", result: null, durationMs: null };
+    const seen = mockTurn([
+      { type: "userMessage", conversation: conv, message: msg({ id: "u1" }) },
+      { type: "tool", activity: { ...act, status: "awaitingApproval" } },
+      { type: "tool", activity: { ...act, status: "running" } },
+      { type: "tool", activity: { ...act, status: "completed", result: "= 42", durationMs: 3 } },
+      { type: "delta", text: "42" },
+      {
+        type: "finished",
+        message: msg({ id: "a1", seq: 2, role: "assistant", content: "42", toolActivity: [{ ...act, status: "completed", result: "= 42", durationMs: 3 }] }),
+      },
+    ]);
+    let mid: unknown = null;
+    const unsub = useChatStore.subscribe((st) => {
+      if (st.streaming?.activities.length) mid = st.streaming.activities;
+    });
+    await useChatStore.getState().send("6*7?");
+    await vi.waitFor(() => expect(useChatStore.getState().streaming).toBeNull());
+    unsub();
+    expect(mid).toEqual([{ ...act, status: "completed", result: "= 42", durationMs: 3 }]);
+    expect(seen).toEqual(["userMessage:thinking", "tool:listening", "tool:executing", "tool:thinking", "delta:speaking", "finished:idle"]);
+    expect(useChatStore.getState().messages.at(-1)?.toolActivity?.[0]?.result).toBe("= 42");
+  });
+
+  it("forwards approval answers to the backend", async () => {
+    const spy = vi.spyOn(api, "respondToolApproval").mockResolvedValue(true);
+    await useChatStore.getState().answerApproval("t1", false);
+    expect(spy).toHaveBeenCalledWith("t1", false);
+    expect(useChatStore.getState().error).toBeNull();
+    spy.mockResolvedValue(false);
+    await useChatStore.getState().answerApproval("t1", true);
+    expect(useChatStore.getState().error).toMatch(/no longer waiting/);
   });
 
   it("regenerate trims trailing assistant turns locally", async () => {

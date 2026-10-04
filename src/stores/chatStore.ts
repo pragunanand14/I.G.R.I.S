@@ -4,6 +4,7 @@ import { BackendError } from "@/services/backend";
 import { newRequestId, startTurn } from "@/services/chat";
 import type { AiStatus } from "@/types/ai";
 import type { ChatEvent, Conversation, Message } from "@/types/chat";
+import type { ToolActivity } from "@/types/tools";
 import { useAssistantStore } from "./assistantStore";
 
 export interface StreamingState {
@@ -13,6 +14,8 @@ export interface StreamingState {
   text: string;
   phase: "waiting" | "streaming";
   model: string | null;
+  /** Tool calls in this turn, in order (upserted by id). */
+  activities: ToolActivity[];
 }
 
 interface ChatStore {
@@ -36,6 +39,8 @@ interface ChatStore {
   regenerate: () => Promise<void>;
   edit: (messageId: string, content: string) => Promise<boolean>;
   cancel: () => Promise<void>;
+  /** Answer a tool approval prompt. */
+  answerApproval: (callId: string, approved: boolean) => Promise<void>;
   rename: (id: string, title: string) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
   dismissError: () => void;
@@ -74,9 +79,18 @@ export const useChatStore = create<ChatStore>((set, get) => {
         setActivity("thinking");
         break;
       case "delta":
-        if (s.streaming.phase === "waiting") setActivity("speaking");
+        if (useAssistantStore.getState().activity !== "speaking") setActivity("speaking");
         set({ streaming: { ...s.streaming, phase: "streaming", text: s.streaming.text + ev.text } });
         break;
+      case "tool": {
+        const list = s.streaming.activities;
+        const idx = list.findIndex((a) => a.id === ev.activity.id);
+        const activities = idx >= 0 ? list.map((a, i) => (i === idx ? ev.activity : a)) : [...list, ev.activity];
+        set({ streaming: { ...s.streaming, activities } });
+        const st = ev.activity.status;
+        setActivity(st === "running" ? "executing" : st === "awaitingApproval" ? "listening" : "thinking");
+        break;
+      }
       case "finished": {
         const isActive = s.activeId === ev.message.conversationId;
         set({
@@ -95,7 +109,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
   /** Run a turn; resolves when the turn ends. */
   const runTurn = async (start: Parameters<typeof startTurn>[1], conversationId: string | null, onSaved?: () => void) => {
     const requestId = newRequestId();
-    set({ streaming: { requestId, conversationId, text: "", phase: "waiting", model: null }, error: null, errorKind: null });
+    set({ streaming: { requestId, conversationId, text: "", phase: "waiting", model: null, activities: [] }, error: null, errorKind: null });
     setActivity("thinking");
     try {
       await startTurn(requestId, start, (ev) => handleEvent(requestId, ev, onSaved));
@@ -195,6 +209,15 @@ export const useChatStore = create<ChatStore>((set, get) => {
       if (!s) return;
       try {
         await api.cancelChat(s.requestId);
+      } catch (err) {
+        fail(err);
+      }
+    },
+
+    answerApproval: async (callId, approved) => {
+      try {
+        const delivered = await api.respondToolApproval(callId, approved);
+        if (!delivered) set({ error: "That request is no longer waiting for an answer.", errorKind: "validation" });
       } catch (err) {
         fail(err);
       }

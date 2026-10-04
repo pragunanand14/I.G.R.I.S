@@ -15,7 +15,7 @@ validated commands.
 | --- | --- | --- |
 | 1 — Foundation | App shell, theme, home screen + AI core, navigation, settings, real system telemetry, SQLite + migrations, structured logging | ✅ Done |
 | 2 — AI chat | Provider abstraction (Anthropic, OpenAI, local OpenAI-compatible), streaming chat, conversation history, edit/regenerate/stop | ✅ Done |
-| 3 — Tools | Tool registry, permission layer, calculator, system info, app launcher | Planned |
+| 3 — Tools | Tool registry + router, SAFE/LOW/SENSITIVE/CRITICAL permission layer with in-chat approvals, audit log, calculator, system info, allowlisted app launcher | ✅ Done |
 | 4 — Memory | Long-term + knowledge memory, management UI | Planned |
 | 5–10 | Web, voice, computer control, productivity, multimodal, hardening | Planned |
 
@@ -44,7 +44,12 @@ AI_API_KEY=sk-ant-...        # not needed for local
 # AI_BASE_URL=http://localhost:11434/v1   # local servers only
 ```
 
-After editing `.env`, use **Settings → AI → Reload configuration** (no restart needed). IGRIS reads `.env` from the app config directory
+After editing `.env`, use **Settings → AI → Reload configuration** (no restart needed).
+
+### Letting IGRIS open apps
+
+Open **Tools → Applications IGRIS may open** and add apps (use *Find installed apps* or *Browse…*). IGRIS can
+only open apps on that list, by name. To be asked before every launch, turn on **Security → Low → Ask first**. IGRIS reads `.env` from the app config directory
 (`%APPDATA%\dev.igris.app\` on Windows) and from the working directory; real environment variables win. Secrets are
 read only by the Rust backend and are never sent to the UI — the UI only learns whether a key is configured.
 
@@ -69,7 +74,9 @@ src/                  React UI
   types/ utils/ config/
 src-tauri/src/        Rust backend
   commands/           thin IPC handlers (the entire UI-facing surface)
-  ai/                 provider trait, Anthropic + OpenAI-compatible providers, SSE parser
+  ai/                 provider trait, Anthropic + OpenAI-compatible providers (incl. tool calling), SSE parser
+  tools/              tool registry, schema validation, executor (permissions + audit), calculator,
+                      system_info, application allowlist + launcher
   core/               orchestration: system prompt, context building, the chat turn pipeline
   conversations/      conversation + message persistence
   config.rs           env/.env loading, secret redaction

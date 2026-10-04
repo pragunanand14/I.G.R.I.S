@@ -46,6 +46,8 @@ pub struct Settings {
     pub ai_model: String,
     /// Reasoning effort for providers that support it.
     pub ai_effort: Effort,
+    /// Ask before LOW-risk tool actions (SENSITIVE/CRITICAL always ask).
+    pub confirm_low_risk: bool,
 }
 
 impl Default for Settings {
@@ -58,6 +60,7 @@ impl Default for Settings {
             telemetry_interval_ms: 2_000,
             ai_model: String::new(),
             ai_effort: Effort::Medium,
+            confirm_low_risk: false,
         }
     }
 }
@@ -73,6 +76,7 @@ pub struct SettingsPatch {
     pub telemetry_interval_ms: Option<u32>,
     pub ai_model: Option<String>,
     pub ai_effort: Option<Effort>,
+    pub confirm_low_risk: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -120,6 +124,7 @@ impl SettingsPatch {
         if self.telemetry_interval_ms.is_some() { f.push("telemetryIntervalMs"); }
         if self.ai_model.is_some() { f.push("aiModel"); }
         if self.ai_effort.is_some() { f.push("aiEffort"); }
+        if self.confirm_low_risk.is_some() { f.push("confirmLowRisk"); }
         f
     }
 }
@@ -133,6 +138,7 @@ impl Settings {
         if let Some(v) = patch.telemetry_interval_ms { self.telemetry_interval_ms = v; }
         if let Some(v) = patch.ai_model { self.ai_model = v; }
         if let Some(v) = patch.ai_effort { self.ai_effort = v; }
+        if let Some(v) = patch.confirm_low_risk { self.confirm_low_risk = v; }
     }
 }
 
@@ -168,7 +174,7 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
 /// Slow path: apply each stored value individually, skipping invalid ones.
 fn load_per_field(conn: &Connection) -> AppResult<Settings> {
     let mut settings = Settings::default();
-    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort"];
+    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort", "confirmLowRisk"];
     for key in keys {
         let raw: Option<String> = conn
             .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))

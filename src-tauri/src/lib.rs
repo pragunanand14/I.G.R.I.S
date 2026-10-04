@@ -15,8 +15,9 @@ pub mod logging;
 pub mod settings;
 pub mod state;
 pub mod system;
+pub mod tools;
 
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use tauri::Manager;
@@ -24,7 +25,11 @@ use tauri::Manager;
 use crate::ai::AiRuntime;
 use crate::config::AppConfig;
 use crate::db::Database;
-use crate::state::{AppPaths, AppState, Generations};
+use crate::state::{AppPaths, AppState, Generations, PendingApprovals};
+use crate::tools::apps::{LaunchApplicationTool, ListApplicationsTool};
+use crate::tools::calculator::CalculatorTool;
+use crate::tools::system_info::SystemInfoTool;
+use crate::tools::ToolRegistry;
 use crate::system::{ConnectivityMonitor, SystemMonitor};
 
 const CONNECTIVITY_INTERVAL: Duration = Duration::from_secs(15);
@@ -32,6 +37,7 @@ const CONNECTIVITY_INTERVAL: Duration = Duration::from_secs(15);
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let resolver = app.path();
             let data_dir = resolver.app_data_dir()?;
@@ -48,10 +54,10 @@ pub fn run() {
             tracing::info!(event = "CONFIG_LOADED", env_files = config.env_files.len(), ai_provider = ?config.ai_provider);
 
             let db_path = config.database_url.clone().unwrap_or_else(|| data_dir.join("igris.db"));
-            let db = Database::open(&db_path).map_err(|e| {
+            let db = Arc::new(Database::open(&db_path).map_err(|e| {
                 tracing::error!(event = "DB_OPEN_FAILED", path = %db_path.display(), error = %e);
                 e
-            })?;
+            })?);
             tracing::info!(event = "DB_READY", path = %db_path.display());
 
             let ai = AiRuntime::from_config(&config);
@@ -60,13 +66,24 @@ pub fn run() {
                 Some(problem) => tracing::warn!(event = "AI_PROVIDER_UNAVAILABLE", reason = %problem),
             }
 
+            let system = Arc::new(Mutex::new(SystemMonitor::new()));
+            let connectivity = ConnectivityMonitor::start(CONNECTIVITY_INTERVAL);
+            let mut tools = ToolRegistry::default();
+            tools.register(Arc::new(CalculatorTool::default()));
+            tools.register(Arc::new(SystemInfoTool::new(system.clone(), connectivity.clone())));
+            tools.register(Arc::new(ListApplicationsTool::new(db.clone())));
+            tools.register(Arc::new(LaunchApplicationTool::new(db.clone())));
+            tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
+
             app.manage(AppState {
                 config: RwLock::new(config),
                 ai: RwLock::new(ai),
                 generations: Generations::default(),
                 db,
-                system: Mutex::new(SystemMonitor::new()),
-                connectivity: ConnectivityMonitor::start(CONNECTIVITY_INTERVAL),
+                system,
+                connectivity,
+                tools: Arc::new(tools),
+                approvals: Arc::new(PendingApprovals::default()),
                 paths: AppPaths { data_dir, config_dir, log_dir, db_path },
             });
             tracing::info!(event = "APP_STARTED");
@@ -88,6 +105,15 @@ pub fn run() {
             commands::chat::get_conversation,
             commands::chat::rename_conversation,
             commands::chat::delete_conversation,
+            commands::chat::respond_tool_approval,
+            commands::tools::list_tools,
+            commands::tools::list_tool_audit,
+            commands::tools::list_applications,
+            commands::tools::add_application,
+            commands::tools::remove_application,
+            commands::tools::detect_applications,
+            commands::tools::launch_application,
+            commands::tools::get_permission_policy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");

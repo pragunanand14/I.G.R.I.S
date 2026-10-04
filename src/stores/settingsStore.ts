@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
   telemetryIntervalMs: 2000,
   aiModel: "",
   aiEffort: "medium",
+  confirmLowRisk: false,
 };
 
 type Status = "idle" | "loading" | "ready" | "error";

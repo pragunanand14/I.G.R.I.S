@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::http::{self, cancelled};
 use super::sse::SseParser;
-use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion, EventSink, Role, StopReason, StreamEvent, Usage};
+use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Role, StopReason, StreamEvent, ToolCall, Usage};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -59,18 +59,39 @@ pub fn sanitize_replay_blocks(blocks: &[Value]) -> Vec<Value> {
     }
 }
 
-pub fn build_body(req: &ChatRequest, first_party: bool) -> Value {
-    let messages: Vec<Value> = req
-        .turns
+fn tool_result_blocks(turn: &ChatTurn) -> Vec<Value> {
+    let mut blocks: Vec<Value> = turn
+        .tool_results
         .iter()
-        .map(|t| match (t.role, &t.raw) {
-            (Role::Assistant, Some(Value::Array(blocks))) if !blocks.is_empty() => {
-                json!({ "role": "assistant", "content": sanitize_replay_blocks(blocks) })
-            }
-            (Role::Assistant, _) => json!({ "role": "assistant", "content": t.text }),
-            (Role::User, _) => json!({ "role": "user", "content": t.text }),
-        })
+        .map(|r| json!({ "type": "tool_result", "tool_use_id": r.call_id, "content": r.content, "is_error": r.is_error }))
         .collect();
+    if !turn.text.is_empty() {
+        blocks.push(json!({ "type": "text", "text": turn.text }));
+    }
+    blocks
+}
+
+fn message_for(turn: &ChatTurn) -> Value {
+    match turn.role {
+        Role::User if !turn.tool_results.is_empty() => json!({ "role": "user", "content": tool_result_blocks(turn) }),
+        Role::User => json!({ "role": "user", "content": turn.text }),
+        Role::Assistant => match &turn.raw {
+            Some(Value::Array(blocks)) if !blocks.is_empty() => json!({ "role": "assistant", "content": sanitize_replay_blocks(blocks) }),
+            _ if !turn.tool_calls.is_empty() => {
+                let mut blocks = Vec::new();
+                if !turn.text.is_empty() {
+                    blocks.push(json!({ "type": "text", "text": turn.text }));
+                }
+                blocks.extend(turn.tool_calls.iter().map(|c| json!({ "type": "tool_use", "id": c.id, "name": c.name, "input": c.input })));
+                json!({ "role": "assistant", "content": blocks })
+            }
+            _ => json!({ "role": "assistant", "content": turn.text }),
+        },
+    }
+}
+
+pub fn build_body(req: &ChatRequest, first_party: bool) -> Value {
+    let messages: Vec<Value> = req.turns.iter().map(message_for).collect();
 
     let mut body = json!({
         "model": req.model,
@@ -86,6 +107,16 @@ pub fn build_body(req: &ChatRequest, first_party: bool) -> Value {
     }
     if first_party && supports_default_fallback(&req.model) {
         body["fallbacks"] = json!("default");
+    }
+    if !req.tools.is_empty() {
+        // Strict mode guarantees schema-valid arguments; inputs are small, so
+        // eager (unbuffered) input streaming isn't worth losing that guarantee.
+        body["tools"] = Value::Array(
+            req.tools
+                .iter()
+                .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.input_schema, "strict": true }))
+                .collect(),
+        );
     }
     body
 }
@@ -109,6 +140,8 @@ fn error_kind_from_type(t: &str) -> AiErrorKind {
 struct BlockAccumulator {
     blocks: Vec<Value>,
     partial_json: Vec<String>,
+    /// Raw tool-input text that failed to parse, by block index.
+    invalid_inputs: Vec<Option<String>>,
     /// Set when we see a delta we don't know how to apply; raw replay is then unsafe.
     unreliable: bool,
 }
@@ -118,6 +151,7 @@ impl BlockAccumulator {
         while self.blocks.len() <= index {
             self.blocks.push(Value::Null);
             self.partial_json.push(String::new());
+            self.invalid_inputs.push(None);
         }
         self.blocks[index] = block;
     }
@@ -171,7 +205,11 @@ impl BlockAccumulator {
             if !pj.is_empty() {
                 match serde_json::from_str::<Value>(pj) {
                     Ok(v) => block["input"] = v,
-                    Err(_) => self.unreliable = true,
+                    Err(_) => {
+                        // Keep the block replayable; the call is answered with an INVALID_JSON error.
+                        block["input"] = json!({});
+                        self.invalid_inputs[index] = Some(pj.clone());
+                    }
                 }
             }
         }
@@ -179,6 +217,23 @@ impl BlockAccumulator {
 
     fn text(&self) -> String {
         self.blocks.iter().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect()
+    }
+
+    /// Tool calls after the last fallback boundary (earlier ones belong to a declined attempt).
+    fn tool_calls(&self) -> Vec<ToolCall> {
+        let start = self.blocks.iter().rposition(|b| b["type"] == "fallback").map(|i| i + 1).unwrap_or(0);
+        self.blocks
+            .iter()
+            .enumerate()
+            .skip(start)
+            .filter(|(_, b)| b["type"] == "tool_use")
+            .map(|(i, b)| ToolCall {
+                id: b["id"].as_str().unwrap_or_default().to_string(),
+                name: b["name"].as_str().unwrap_or_default().to_string(),
+                input: b["input"].clone(),
+                invalid_input: self.invalid_inputs.get(i).cloned().flatten(),
+            })
+            .collect()
     }
 
     fn raw(&self) -> Option<Value> {
@@ -229,6 +284,7 @@ impl StreamState {
                     self.stop_reason = Some(match r {
                         "end_turn" | "stop_sequence" => StopReason::EndTurn,
                         "max_tokens" => StopReason::MaxTokens,
+                        "tool_use" => StopReason::ToolUse,
                         "refusal" => StopReason::Refusal {
                             category: v["delta"]["stop_details"]["category"].as_str().map(str::to_string),
                         },
@@ -316,6 +372,7 @@ impl AiProvider for AnthropicProvider {
 
         Ok(Completion {
             text: state.acc.text(),
+            tool_calls: state.acc.tool_calls(),
             raw: state.acc.raw(),
             model: state.model,
             stop_reason: state.stop_reason.unwrap_or(StopReason::EndTurn),
@@ -328,15 +385,16 @@ impl AiProvider for AnthropicProvider {
 mod tests {
     use super::*;
     use crate::ai::testutil::MockServer;
-    use crate::ai::{ChatTurn, Effort};
+    use crate::ai::{Effort, ToolDef, ToolResult};
 
     fn req(model: &str) -> ChatRequest {
         ChatRequest {
             model: model.into(),
             system: "sys".into(),
-            turns: vec![ChatTurn { role: Role::User, text: "hi".into(), raw: None }],
+            turns: vec![ChatTurn::user("hi")],
             max_tokens: 1000,
             effort: Some(Effort::Medium),
+            tools: vec![],
         }
     }
 
@@ -384,8 +442,8 @@ mod tests {
     fn assistant_turns_replay_raw_blocks_unchanged() {
         let mut r = req("claude-opus-5-5");
         let blocks = json!([{"type":"thinking","thinking":"","signature":"s"},{"type":"text","text":"Hi"}]);
-        r.turns.push(ChatTurn { role: Role::Assistant, text: "Hi".into(), raw: Some(blocks.clone()) });
-        r.turns.push(ChatTurn { role: Role::User, text: "again".into(), raw: None });
+        r.turns.push(ChatTurn { raw: Some(blocks.clone()), ..ChatTurn::assistant("Hi") });
+        r.turns.push(ChatTurn::user("again"));
         let b = build_body(&r, true);
         assert_eq!(b["messages"][1]["content"], blocks);
         assert_eq!(b["messages"][2]["content"], "again");
@@ -429,6 +487,68 @@ mod tests {
         assert_eq!(reqs.len(), 1);
         assert_eq!(reqs[0].header("x-api-key").as_deref(), Some("test-key"));
         assert_eq!(reqs[0].header("anthropic-version").as_deref(), Some(API_VERSION));
+    }
+
+    #[test]
+    fn tools_are_strict_and_results_become_tool_result_blocks() {
+        let mut r = req("claude-opus-5-5");
+        r.tools = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: json!({"type":"object"}) }];
+        r.turns.push(ChatTurn {
+            tool_calls: vec![ToolCall { id: "toolu_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
+            ..ChatTurn::assistant("Let me check.")
+        });
+        r.turns.push(ChatTurn {
+            tool_results: vec![ToolResult { call_id: "toolu_1".into(), content: "2".into(), is_error: false }],
+            ..ChatTurn::user("")
+        });
+        let b = build_body(&r, true);
+        assert_eq!(b["tools"][0]["strict"], true);
+        assert!(b["tools"][0].get("eager_input_streaming").is_none());
+        assert_eq!(b["messages"][1]["content"][1]["type"], "tool_use");
+        assert_eq!(b["messages"][2]["content"][0]["type"], "tool_result");
+        assert_eq!(b["messages"][2]["content"][0]["tool_use_id"], "toolu_1");
+        assert_eq!(b["messages"][2]["content"].as_array().unwrap().len(), 1, "no empty text block");
+        assert!(build_body(&req("claude-opus-5-5"), true).get("tools").is_none());
+    }
+
+    #[tokio::test]
+    async fn parses_tool_use_blocks() {
+        let body = sse(&[
+            ("message_start", json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":5}}})),
+            ("content_block_start", json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})),
+            ("content_block_delta", json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Checking."}})),
+            ("content_block_stop", json!({"type":"content_block_stop","index":0})),
+            ("content_block_start", json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_9","name":"calculator","input":{}}})),
+            ("content_block_delta", json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"expression\": "}})),
+            ("content_block_delta", json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"2*21\"}"}})),
+            ("content_block_stop", json!({"type":"content_block_stop","index":1})),
+            ("content_block_start", json!({"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_10","name":"calculator","input":{}}})),
+            ("content_block_delta", json!({"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"expression\": \"oops"}})),
+            ("content_block_stop", json!({"type":"content_block_stop","index":2})),
+            ("message_delta", json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}})),
+            ("message_stop", json!({"type":"message_stop"})),
+        ]);
+        let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
+        let p = AnthropicProvider::new("k".into(), Some(server.url())).unwrap();
+        let c = p.stream(&req("claude-opus-5-5"), &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(c.stop_reason, StopReason::ToolUse);
+        assert_eq!(c.tool_calls.len(), 2);
+        assert_eq!(c.tool_calls[0].input, json!({"expression":"2*21"}));
+        assert!(c.tool_calls[0].invalid_input.is_none());
+        assert!(c.tool_calls[1].invalid_input.as_deref().unwrap().contains("oops"));
+        let raw = c.raw.expect("raw stays replayable");
+        assert_eq!(raw[1]["input"]["expression"], "2*21");
+        assert_eq!(raw[2]["input"], json!({}));
+    }
+
+    #[test]
+    fn tool_calls_before_a_fallback_boundary_are_not_executed() {
+        let mut acc = BlockAccumulator::default();
+        acc.start(0, json!({"type":"tool_use","id":"a","name":"calculator","input":{}}));
+        acc.start(1, json!({"type":"fallback","from":{"model":"x"},"to":{"model":"y"}}));
+        acc.start(2, json!({"type":"tool_use","id":"b","name":"calculator","input":{}}));
+        let ids: Vec<String> = acc.tool_calls().into_iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec!["b"]);
     }
 
     #[tokio::test]

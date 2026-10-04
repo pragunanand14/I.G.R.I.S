@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::http::{self, cancelled};
 use super::sse::SseParser;
-use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion, EventSink, Role, StopReason, StreamEvent, Usage};
+use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion, EventSink, Role, StopReason, StreamEvent, ToolCall, Usage};
 
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
@@ -34,20 +34,69 @@ impl OpenAiCompatibleProvider {
     }
 }
 
-pub fn build_body(req: &ChatRequest, include_usage: bool) -> Value {
+pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, strict_tools: bool) -> Value {
     let mut messages = vec![json!({ "role": "system", "content": req.system })];
-    messages.extend(req.turns.iter().map(|t| {
-        let role = match t.role {
-            Role::User => "user",
-            Role::Assistant => "assistant",
-        };
-        json!({ "role": role, "content": t.text })
-    }));
+    for t in &req.turns {
+        match t.role {
+            Role::User => {
+                for r in &t.tool_results {
+                    messages.push(json!({ "role": "tool", "tool_call_id": r.call_id, "content": r.content }));
+                }
+                if !t.text.is_empty() || t.tool_results.is_empty() {
+                    messages.push(json!({ "role": "user", "content": t.text }));
+                }
+            }
+            Role::Assistant if !t.tool_calls.is_empty() && with_tools => {
+                let calls: Vec<Value> = t
+                    .tool_calls
+                    .iter()
+                    .map(|c| json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.input.to_string() } }))
+                    .collect();
+                let content = if t.text.is_empty() { Value::Null } else { Value::String(t.text.clone()) };
+                messages.push(json!({ "role": "assistant", "content": content, "tool_calls": calls }));
+            }
+            Role::Assistant => messages.push(json!({ "role": "assistant", "content": t.text })),
+        }
+    }
     let mut body = json!({ "model": req.model, "stream": true, "messages": messages });
     if include_usage {
         body["stream_options"] = json!({ "include_usage": true });
     }
+    if with_tools && !req.tools.is_empty() {
+        body["tools"] = Value::Array(
+            req.tools
+                .iter()
+                .map(|t| {
+                    let mut f = json!({ "name": t.name, "description": t.description, "parameters": t.input_schema });
+                    if strict_tools {
+                        f["strict"] = json!(true);
+                    }
+                    json!({ "type": "function", "function": f })
+                })
+                .collect(),
+        );
+    }
     body
+}
+
+/// Without tools, earlier tool exchanges are flattened to text so the request stays valid.
+fn strip_tool_turns(req: &ChatRequest) -> ChatRequest {
+    let mut r = req.clone();
+    r.tools.clear();
+    r.turns.retain(|t| !(t.role == Role::User && t.text.is_empty() && !t.tool_results.is_empty()));
+    for t in &mut r.turns {
+        t.tool_calls.clear();
+        t.tool_results.clear();
+    }
+    r.turns.retain(|t| !(t.role == Role::Assistant && t.text.is_empty()));
+    r
+}
+
+#[derive(Default)]
+struct PendingCall {
+    id: String,
+    name: String,
+    arguments: String,
 }
 
 #[async_trait::async_trait]
@@ -57,7 +106,20 @@ impl AiProvider for OpenAiCompatibleProvider {
     }
 
     async fn stream(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>) -> AiResult<Completion> {
-        let body = build_body(req, self.id == "openai");
+        match self.stream_once(req, cancel, on_event, true).await {
+            // Many local models don't support tool calling; fall back to plain chat.
+            Err(e) if self.id == "local" && !req.tools.is_empty() && e.kind == AiErrorKind::InvalidRequest => {
+                tracing::warn!(event = "AI_TOOLS_UNSUPPORTED_RETRY", provider = self.id);
+                self.stream_once(&strip_tool_turns(req), cancel, on_event, false).await
+            }
+            other => other,
+        }
+    }
+}
+
+impl OpenAiCompatibleProvider {
+    async fn stream_once(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>, with_tools: bool) -> AiResult<Completion> {
+        let body = build_body(req, self.id == "openai", with_tools, self.id == "openai");
         let url = format!("{}/chat/completions", self.base_url);
         let label = self.label;
 
@@ -90,6 +152,7 @@ impl AiProvider for OpenAiCompatibleProvider {
         let mut model = req.model.clone();
         let mut stop: Option<StopReason> = None;
         let mut usage = Usage::default();
+        let mut calls: Vec<PendingCall> = Vec::new();
         let mut done = false;
         let mut parser = SseParser::new();
         let mut bytes = resp.bytes_stream();
@@ -120,10 +183,29 @@ impl AiProvider for OpenAiCompatibleProvider {
                         }
                     }
                 }
+                if let Some(deltas) = choice["delta"]["tool_calls"].as_array() {
+                    for d in deltas {
+                        let idx = d["index"].as_u64().unwrap_or(calls.len() as u64) as usize;
+                        while calls.len() <= idx {
+                            calls.push(PendingCall::default());
+                        }
+                        let c = &mut calls[idx];
+                        if let Some(id) = d["id"].as_str() {
+                            c.id = id.to_string();
+                        }
+                        if let Some(n) = d["function"]["name"].as_str() {
+                            c.name.push_str(n);
+                        }
+                        if let Some(a) = d["function"]["arguments"].as_str() {
+                            c.arguments.push_str(a);
+                        }
+                    }
+                }
                 if let Some(r) = choice["finish_reason"].as_str() {
                     stop = Some(match r {
                         "stop" => stop.take().unwrap_or(StopReason::EndTurn),
                         "length" => StopReason::MaxTokens,
+                        "tool_calls" | "function_call" => StopReason::ToolUse,
                         "content_filter" => StopReason::Refusal { category: Some("content_filter".into()) },
                         other => StopReason::Other { reason: other.to_string() },
                     });
@@ -155,7 +237,24 @@ impl AiProvider for OpenAiCompatibleProvider {
             return Err(AiError::new(AiErrorKind::Network, "The connection closed before the response finished."));
         }
 
-        Ok(Completion { text, raw: None, model, stop_reason: stop.unwrap_or(StopReason::EndTurn), usage })
+        let tool_calls: Vec<ToolCall> = calls
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let args = if c.arguments.trim().is_empty() { "{}".to_string() } else { c.arguments };
+                let (input, invalid_input) = match serde_json::from_str::<Value>(&args) {
+                    Ok(v) => (v, None),
+                    Err(_) => (json!({}), Some(args)),
+                };
+                ToolCall { id: if c.id.is_empty() { format!("call_{i}") } else { c.id }, name: c.name, input, invalid_input }
+            })
+            .collect();
+        let mut stop_reason = stop.unwrap_or(StopReason::EndTurn);
+        // Some local servers report "stop" even when they emitted tool calls.
+        if !tool_calls.is_empty() && stop_reason == StopReason::EndTurn {
+            stop_reason = StopReason::ToolUse;
+        }
+        Ok(Completion { text, raw: None, model, stop_reason, usage, tool_calls })
     }
 }
 
@@ -163,29 +262,93 @@ impl AiProvider for OpenAiCompatibleProvider {
 mod tests {
     use super::*;
     use crate::ai::testutil::MockServer;
-    use crate::ai::ChatTurn;
+    use crate::ai::{ChatTurn, ToolDef, ToolResult};
 
     fn req() -> ChatRequest {
         ChatRequest {
             model: "test-model".into(),
             system: "sys".into(),
             turns: vec![
-                ChatTurn { role: Role::User, text: "hi".into(), raw: None },
-                ChatTurn { role: Role::Assistant, text: "hello".into(), raw: Some(json!([{"type":"text"}])) },
-                ChatTurn { role: Role::User, text: "again".into(), raw: None },
+                ChatTurn::user("hi"),
+                ChatTurn { raw: Some(json!([{"type":"text"}])), ..ChatTurn::assistant("hello") },
+                ChatTurn::user("again"),
             ],
             max_tokens: 1000,
             effort: None,
+            tools: vec![],
         }
     }
 
     #[test]
     fn body_puts_system_first_and_sends_text_only() {
-        let b = build_body(&req(), true);
+        let b = build_body(&req(), true, true, true);
         assert_eq!(b["messages"][0]["role"], "system");
         assert_eq!(b["messages"][2]["content"], "hello");
         assert_eq!(b["stream_options"]["include_usage"], true);
-        assert!(build_body(&req(), false).get("stream_options").is_none());
+        assert!(build_body(&req(), false, true, false).get("stream_options").is_none());
+    }
+
+    fn tool_req() -> ChatRequest {
+        let mut r = req();
+        r.tools = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: json!({"type":"object"}) }];
+        r.turns.push(ChatTurn {
+            tool_calls: vec![ToolCall { id: "call_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
+            ..ChatTurn::assistant("")
+        });
+        r.turns.push(ChatTurn { tool_results: vec![ToolResult { call_id: "call_1".into(), content: "2".into(), is_error: false }], ..ChatTurn::user("") });
+        r
+    }
+
+    #[test]
+    fn tool_turns_map_to_function_calls_and_tool_messages() {
+        let b = build_body(&tool_req(), true, true, true);
+        let msgs = b["messages"].as_array().unwrap();
+        let assistant = &msgs[msgs.len() - 2];
+        assert_eq!(assistant["tool_calls"][0]["function"]["arguments"], "{\"expression\":\"1+1\"}");
+        assert!(assistant["content"].is_null());
+        assert_eq!(msgs.last().unwrap()["role"], "tool");
+        assert_eq!(b["tools"][0]["function"]["strict"], true);
+        assert!(build_body(&tool_req(), false, true, false)["tools"][0]["function"].get("strict").is_none());
+    }
+
+    #[test]
+    fn stripping_tools_leaves_a_valid_text_conversation() {
+        let r = strip_tool_turns(&tool_req());
+        assert!(r.tools.is_empty());
+        assert!(r.turns.iter().all(|t| t.tool_calls.is_empty() && t.tool_results.is_empty()));
+        assert!(r.turns.iter().all(|t| !t.text.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn accumulates_streamed_tool_call_arguments() {
+        let body = [
+            json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"calculator","arguments":""}}]}}]}),
+            json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"expression\":"}}]}}]}),
+            json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"6*7\"}"}}]},"finish_reason":"tool_calls"}]}),
+        ]
+        .iter()
+        .map(|v| format!("data: {v}\n\n"))
+        .collect::<String>()
+            + "data: [DONE]\n\n";
+        let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
+        let p = OpenAiCompatibleProvider::openai("k".into(), Some(server.url())).unwrap();
+        let c = p.stream(&tool_req(), &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(c.stop_reason, StopReason::ToolUse);
+        assert_eq!(c.tool_calls[0].id, "call_a");
+        assert_eq!(c.tool_calls[0].input, json!({"expression":"6*7"}));
+    }
+
+    #[tokio::test]
+    async fn local_server_without_tool_support_falls_back_to_plain_chat() {
+        let err = json!({"error":{"message":"model does not support tools"}}).to_string();
+        let ok = format!("data: {}\n\ndata: [DONE]\n\n", json!({"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}));
+        let server = MockServer::start(vec![(400, "application/json", err), (200, "text/event-stream", ok)]).await;
+        let p = OpenAiCompatibleProvider::local(None, Some(server.url())).unwrap();
+        let c = p.stream(&tool_req(), &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(c.text, "hi");
+        let reqs = server.requests().await;
+        assert!(reqs[0].json().get("tools").is_some());
+        assert!(reqs[1].json().get("tools").is_none());
     }
 
     #[tokio::test]
