@@ -13,17 +13,52 @@ pub struct Migration {
     pub sql: &'static str,
 }
 
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "settings",
-    sql: r#"
-        CREATE TABLE settings (
-            key        TEXT PRIMARY KEY NOT NULL,
-            value      TEXT NOT NULL,
-            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );
-    "#,
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "settings",
+        sql: r#"
+            CREATE TABLE settings (
+                key        TEXT PRIMARY KEY NOT NULL,
+                value      TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+        "#,
+    },
+    Migration {
+        version: 2,
+        name: "conversations",
+        sql: r#"
+            CREATE TABLE conversations (
+                id            TEXT PRIMARY KEY NOT NULL,
+                title         TEXT NOT NULL,
+                -- Frozen at creation: providers bind reasoning to the exact prefix.
+                system_prompt TEXT NOT NULL,
+                created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            CREATE INDEX idx_conversations_updated ON conversations(updated_at DESC);
+
+            CREATE TABLE messages (
+                id              TEXT PRIMARY KEY NOT NULL,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                seq             INTEGER NOT NULL,
+                role            TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content         TEXT NOT NULL,
+                status          TEXT NOT NULL CHECK (status IN ('complete', 'error', 'cancelled', 'refused', 'truncated')),
+                error           TEXT,
+                provider        TEXT,
+                model           TEXT,
+                -- Provider-native content blocks for unchanged replay (JSON).
+                raw             TEXT,
+                input_tokens    INTEGER,
+                output_tokens   INTEGER,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                UNIQUE (conversation_id, seq)
+            );
+        "#,
+    },
+];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {
     Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)

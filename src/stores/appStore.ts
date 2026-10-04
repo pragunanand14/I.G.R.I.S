@@ -11,6 +11,7 @@ interface AppStore {
   info: AppInfo | null;
   config: PublicConfig | null;
   init: () => Promise<void>;
+  setConfig: (config: PublicConfig) => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -18,6 +19,7 @@ export const useAppStore = create<AppStore>((set) => ({
   backendError: null,
   info: null,
   config: null,
+  setConfig: (config) => set({ config }),
   init: async () => {
     if (!hasBackend()) {
       set({

@@ -43,10 +43,42 @@ The UI polls at the user-configured interval and pauses while the window is hidd
 `SETTINGS_UPDATED`, `CONNECTIVITY_CHANGED`, …). Human-readable to stdout; JSON to a daily-rotated file in the app
 log dir. Secrets are redacted (`AppConfig`'s `Debug` impl), and settings updates log field names, not values.
 
+## AI chat (Phase 2)
+
+```
+Composer ─chat_send(requestId, content, Channel)─▶ commands/chat
+                                                     │ validate, resolve provider/model/effort
+                                                     ▼
+                         core/chat: save user msg → build context → provider.stream()
+                                                     │ Delta events ──Channel──▶ UI (live text)
+                                                     ▼
+                         persist assistant msg with status → Finished event
+```
+
+* **Providers** implement `AiProvider` (`ai/mod.rs`): `AnthropicProvider` (Messages API over raw HTTP + SSE —
+  there is no official Rust SDK) and `OpenAiCompatibleProvider` (OpenAI, or local servers such as Ollama).
+  Gemini is not implemented and is reported as such. The provider is built from config at startup and can be
+  rebuilt with `reload_config`.
+* **Anthropic specifics**: default model `claude-opus-5-5`; thinking parameter omitted (adaptive by default);
+  `output_config.effort` from Settings; automatic prompt caching; `fallbacks: "default"` (refusal fallback, beta
+  `server-side-fallback-2026-07-01`) on the first-party endpoint for models that support it.
+* **History integrity**: each conversation stores its system prompt at creation and never re-renders it;
+  assistant turns store the provider's raw content blocks and replay them unchanged (thinking-block signatures
+  bind to the exact prefix). Editing and regenerating only truncate from the tail. Failed / cancelled / refused
+  turns are excluded from context, and raw blocks are never replayed to a different provider.
+* **Outcomes are explicit**: every turn is persisted with a status — `complete`, `truncated`, `refused`,
+  `cancelled` or `error` (with an actionable message). Nothing is shown as success unless the provider finished.
+* **Cancellation**: each request has a client-generated id; `chat_cancel` trips a `CancellationToken` that aborts
+  the HTTP stream. One generation per conversation at a time.
+* **Retries**: 429 / 529 / 5xx / network errors are retried (max 3 attempts, honouring `retry-after`) only before
+  any output has streamed.
+* **Rendering**: Markdown via `react-markdown` without raw HTML (model output can't inject markup); links open in
+  the system browser through the opener plugin (http/https only) rather than navigating the app window.
+* **Limits / TODO**: no context-window management yet (very long conversations will eventually be rejected by the
+  provider with a clear error); API keys come from `.env` only (OS keychain storage is a TODO).
+
 ## Planned architecture (later phases)
 
-* **AI layer** — `AiProvider` trait in Rust (Anthropic, OpenAI-compatible incl. local models, Gemini later),
-  streaming to the UI over Tauri channels. Keys never leave the backend.
 * **Orchestrator** — intent → memory retrieval → plan → permission check → tool execution → validation → response.
 * **Tools** — each tool declares `name`, `description`, `inputSchema`, `permissionLevel`, `validate()`,
   `execute()`. Permission levels: SAFE, LOW, SENSITIVE (confirm), CRITICAL (always explicit confirm).

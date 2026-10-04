@@ -27,9 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/chat",
     label: "Chat",
     icon: MessageSquare,
-    plannedPhase: 2,
     summary: "Streaming conversations with IGRIS.",
-    planned: ["Provider abstraction (Anthropic, OpenAI, local models)", "Streaming responses with markdown and code", "Persistent conversation history"],
   },
   {
     path: "/tasks",

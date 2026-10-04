@@ -5,6 +5,7 @@ import { TitleBar } from "@/components/layout/TitleBar";
 import { useTelemetryPolling } from "@/hooks/useTelemetryPolling";
 import { useThemeEffect } from "@/hooks/useThemeEffect";
 import { useAppStore } from "@/stores/appStore";
+import { useChatStore } from "@/stores/chatStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 export function AppShell() {
@@ -17,9 +18,12 @@ export function AppShell() {
     void initApp();
   }, [initApp]);
 
+  const loadAiStatus = useChatStore((s) => s.loadAiStatus);
   useEffect(() => {
-    if (backend === "ready") void loadSettings();
-  }, [backend, loadSettings]);
+    if (backend !== "ready") return;
+    void loadSettings();
+    void loadAiStatus();
+  }, [backend, loadSettings, loadAiStatus]);
 
   useThemeEffect(settings);
   useTelemetryPolling(backend === "ready", settings.telemetryIntervalMs);

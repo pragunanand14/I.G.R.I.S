@@ -1,6 +1,7 @@
 import { createHashRouter, RouterProvider } from "react-router";
 import { NAV_ITEMS } from "@/config/navigation";
 import { AppShell } from "@/layouts/AppShell";
+import { ChatPage } from "@/pages/ChatPage";
 import { HomePage } from "@/pages/HomePage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { PlannedPage } from "@/pages/PlannedPage";
@@ -8,6 +9,7 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { SystemPage } from "@/pages/SystemPage";
 
 const IMPLEMENTED: Record<string, React.ReactNode> = {
+  "/chat": <ChatPage />,
   "/system": <SystemPage />,
   "/settings": <SettingsPage />,
 };

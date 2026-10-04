@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS: Settings = {
   accent: "azure",
   reducedMotion: false,
   telemetryIntervalMs: 2000,
+  aiModel: "",
+  aiEffort: "medium",
 };
 
 type Status = "idle" | "loading" | "ready" | "error";

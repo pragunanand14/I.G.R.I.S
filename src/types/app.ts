@@ -22,3 +22,8 @@ export interface PublicConfig {
   sttProvider: string | null;
   envFiles: string[];
 }
+
+export interface ReloadResult {
+  config: PublicConfig;
+  ai: import("./ai").AiStatus;
+}

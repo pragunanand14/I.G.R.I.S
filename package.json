@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "IGRIS \u2014 Intelligent General-purpose Responsive Intelligence System",
+  "description": "IGRIS — Intelligent General-purpose Responsive Intelligence System",
   "scripts": {
     "postinstall": "node scripts/ensure-icons.mjs",
     "dev": "vite",
@@ -21,10 +21,14 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-opener": "^2.7.0",
     "lucide-react": "^1.52.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
     "react-router": "^8.4.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

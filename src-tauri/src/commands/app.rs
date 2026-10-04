@@ -40,6 +40,6 @@ pub fn get_app_info(state: State<'_, AppState>) -> AppResult<AppInfo> {
 
 /// Redacted configuration status — never includes secret values.
 #[tauri::command]
-pub fn get_config_status(state: State<'_, AppState>) -> PublicConfig {
-    state.config.public()
+pub fn get_config_status(state: State<'_, AppState>) -> AppResult<PublicConfig> {
+    Ok(state.config.read().map_err(|_| crate::error::AppError::internal("config lock poisoned"))?.public())
 }

@@ -1,13 +1,17 @@
-import { Check } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Toggle } from "@/components/ui/Toggle";
+import { api } from "@/services/api";
+import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
+import { useChatStore } from "@/stores/chatStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { USER_NAME_MAX_CHARS, type Accent, type Theme } from "@/types/settings";
+import type { Effort } from "@/types/ai";
+import { AI_MODEL_MAX_CHARS, USER_NAME_MAX_CHARS, type Accent, type Theme } from "@/types/settings";
 
 const ACCENTS: { value: Accent; label: string; swatch: string }[] = [
   { value: "azure", label: "Azure", swatch: "rgb(94 184 255)" },
@@ -49,7 +53,6 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
 export function SettingsPage() {
   const backend = useAppStore((s) => s.backend);
   const info = useAppStore((s) => s.info);
-  const config = useAppStore((s) => s.config);
   const { settings, status, error, saving, update } = useSettingsStore();
   const disabled = backend !== "ready" || status !== "ready" || saving;
 
@@ -136,33 +139,7 @@ export function SettingsPage() {
           </Field>
         </Panel>
 
-        <Panel title="AI provider">
-          {config ? (
-            <>
-              <div className="mb-2 flex items-center gap-2 text-sm">
-                <StatusDot tone={config.aiProvider && config.aiKeyConfigured ? "ok" : "idle"} />
-                <span className="text-fg">
-                  {config.aiProvider ? `${config.aiProvider}${config.aiModel ? ` · ${config.aiModel}` : ""}` : "No provider configured"}
-                </span>
-              </div>
-              <InfoRow label="API key" value={config.aiKeyConfigured ? "Configured (hidden)" : "Not set"} />
-              <InfoRow label="Web search key" value={config.searchConfigured ? "Configured (hidden)" : "Not set"} />
-              <InfoRow label="Loaded .env files" value={config.envFiles.length ? config.envFiles.join(", ") : "None"} />
-              <p className="mt-3 text-xs text-muted">
-                Secrets are read only by the native backend from environment variables or a <code className="font-mono">.env</code> file
-                {info ? (
-                  <>
-                    {" "}
-                    in <code className="font-mono" data-selectable>{info.configDir}</code>
-                  </>
-                ) : null}
-                . They are never sent to the interface. Restart IGRIS after changing them.
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-muted">Unavailable without the desktop backend.</p>
-          )}
-        </Panel>
+        <AiPanel disabled={disabled} configDir={info?.configDir ?? null} />
 
         <Panel title="About">
           {info ? (
@@ -219,5 +196,137 @@ function NameField({
         className="h-8 w-56 rounded-lg border border-line bg-surface px-3 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-40"
       />
     </div>
+  );
+}
+
+function AiPanel({ disabled, configDir }: { disabled: boolean; configDir: string | null }) {
+  const config = useAppStore((s) => s.config);
+  const setConfig = useAppStore((s) => s.setConfig);
+  const aiStatus = useChatStore((s) => s.aiStatus);
+  const setAiStatus = useChatStore((s) => s.setAiStatus);
+  const { settings, status, update } = useSettingsStore();
+  const [reloading, setReloading] = useState(false);
+  const [reloadMsg, setReloadMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const reload = async () => {
+    setReloading(true);
+    setReloadMsg(null);
+    try {
+      const r = await api.reloadConfig();
+      setConfig(r.config);
+      setAiStatus(r.ai);
+      setReloadMsg(r.ai.ready ? { ok: true, text: "Configuration reloaded. AI is ready." } : { ok: false, text: r.ai.problem ?? "AI is not ready." });
+    } catch (err) {
+      setReloadMsg({ ok: false, text: BackendError.from(err).message });
+    } finally {
+      setReloading(false);
+    }
+  };
+
+  const commitModel = async (value: string) => {
+    if (value.trim() === settings.aiModel) return;
+    if (await update({ aiModel: value })) {
+      const fresh = await api.getAiStatus().catch(() => null);
+      if (fresh) setAiStatus(fresh);
+    }
+  };
+
+  return (
+    <Panel
+      title="AI"
+      action={
+        <button
+          type="button"
+          onClick={() => void reload()}
+          disabled={reloading || !config}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+        >
+          <RefreshCw className={`size-3.5 ${reloading ? "animate-spin" : ""}`} />
+          Reload configuration
+        </button>
+      }
+    >
+      {aiStatus && config ? (
+        <>
+          <div className="mb-3 flex items-start gap-2 text-sm">
+            <span className="mt-1.5">
+              <StatusDot tone={aiStatus.ready ? "ok" : "warn"} />
+            </span>
+            <div>
+              <div className="text-fg">
+                {aiStatus.ready ? `Ready — ${aiStatus.provider} · ${aiStatus.effectiveModel ?? "no model"}` : "Not ready"}
+              </div>
+              {aiStatus.problem && <div className="mt-0.5 text-xs text-warning">{aiStatus.problem}</div>}
+            </div>
+          </div>
+          {reloadMsg && <p className={`mb-3 text-xs ${reloadMsg.ok ? "text-success" : "text-warning"}`}>{reloadMsg.text}</p>}
+
+          <Field label="Model override" description={`Leave empty to use ${aiStatus.configuredModel ? `the configured model (${aiStatus.configuredModel})` : "AI_MODEL"}.`}>
+            <ModelField key={`${status}-${settings.aiModel}`} saved={settings.aiModel} disabled={disabled} onCommit={commitModel} placeholder={aiStatus.configuredModel ?? "model id"} />
+          </Field>
+          <Field label="Response depth" description="How much the model reasons before answering (Anthropic models). Higher is slower and costs more.">
+            <Segmented<Effort>
+              label="Response depth"
+              value={settings.aiEffort}
+              disabled={disabled}
+              onChange={(aiEffort) => void update({ aiEffort })}
+              options={[
+                { value: "low", label: "Fast" },
+                { value: "medium", label: "Balanced" },
+                { value: "high", label: "Deep" },
+              ]}
+            />
+          </Field>
+
+          <div className="mt-2 border-t border-line pt-3">
+            <InfoRow label="Provider" value={config.aiProvider ?? "Not set"} />
+            <InfoRow label="API key" value={config.aiKeyConfigured ? "Configured (hidden)" : "Not set"} />
+            {config.aiBaseUrl && <InfoRow label="Endpoint" value={config.aiBaseUrl} />}
+            <InfoRow label="Loaded .env files" value={config.envFiles.length ? config.envFiles.join(", ") : "None"} />
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            Set <code className="font-mono">AI_PROVIDER</code> (anthropic, openai or local), <code className="font-mono">AI_API_KEY</code> and optionally{" "}
+            <code className="font-mono">AI_MODEL</code> in a <code className="font-mono">.env</code> file
+            {configDir ? (
+              <>
+                {" "}
+                in <code className="font-mono" data-selectable>{configDir}</code>
+              </>
+            ) : null}
+            , then reload. Keys are read only by the native backend and never shown here.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-muted">Unavailable without the desktop backend.</p>
+      )}
+    </Panel>
+  );
+}
+
+function ModelField({
+  saved,
+  disabled,
+  onCommit,
+  placeholder,
+}: {
+  saved: string;
+  disabled: boolean;
+  onCommit: (v: string) => Promise<void>;
+  placeholder: string;
+}) {
+  const [draft, setDraft] = useState(saved);
+  return (
+    <input
+      value={draft}
+      maxLength={AI_MODEL_MAX_CHARS}
+      disabled={disabled}
+      spellCheck={false}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => void onCommit(draft)}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      aria-label="Model override"
+      placeholder={placeholder}
+      className="h-8 w-56 rounded-lg border border-line bg-surface px-3 font-mono text-xs text-fg placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-40"
+    />
   );
 }

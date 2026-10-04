@@ -1,0 +1,43 @@
+// Mirrors `src-tauri/src/conversations` and `src-tauri/src/core/chat.rs`. Keep in sync.
+export type Role = "user" | "assistant";
+export type MessageStatus = "complete" | "error" | "cancelled" | "refused" | "truncated";
+
+export interface Conversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  seq: number;
+  role: Role;
+  content: string;
+  status: MessageStatus;
+  error: string | null;
+  provider: string | null;
+  model: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  createdAt: string;
+}
+
+export interface ConversationDetail {
+  conversation: Conversation;
+  messages: Message[];
+  busy: boolean;
+}
+
+export type ChatEvent =
+  | { type: "userMessage"; conversation: Conversation; message: Message }
+  | { type: "generating"; conversationId: string; model: string }
+  | { type: "delta"; text: string }
+  | { type: "finished"; message: Message };
+
+export interface TurnResult {
+  conversationId: string;
+  assistantMessage: Message;
+}

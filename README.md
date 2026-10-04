@@ -14,7 +14,7 @@ validated commands.
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 — Foundation | App shell, theme, home screen + AI core, navigation, settings, real system telemetry, SQLite + migrations, structured logging | ✅ Done |
-| 2 — AI chat | Provider abstraction, streaming, conversation storage | Planned |
+| 2 — AI chat | Provider abstraction (Anthropic, OpenAI, local OpenAI-compatible), streaming chat, conversation history, edit/regenerate/stop | ✅ Done |
 | 3 — Tools | Tool registry, permission layer, calculator, system info, app launcher | Planned |
 | 4 — Memory | Long-term + knowledge memory, management UI | Planned |
 | 5–10 | Web, voice, computer control, productivity, multimodal, hardening | Planned |
@@ -35,7 +35,16 @@ unavailable rather than showing fake data.
 
 ### Configuration
 
-Copy `.env.example` to `.env` and fill in what you need. IGRIS reads `.env` from the app config directory
+Copy `.env.example` to `.env` and fill in what you need. To enable chat, set at least:
+
+```ini
+AI_PROVIDER=anthropic        # or openai, or local (Ollama / LM Studio / llama.cpp server)
+AI_API_KEY=sk-ant-...        # not needed for local
+# AI_MODEL=claude-opus-5-5   # default for anthropic; required for openai/local
+# AI_BASE_URL=http://localhost:11434/v1   # local servers only
+```
+
+After editing `.env`, use **Settings → AI → Reload configuration** (no restart needed). IGRIS reads `.env` from the app config directory
 (`%APPDATA%\dev.igris.app\` on Windows) and from the working directory; real environment variables win. Secrets are
 read only by the Rust backend and are never sent to the UI — the UI only learns whether a key is configured.
 
@@ -60,6 +69,9 @@ src/                  React UI
   types/ utils/ config/
 src-tauri/src/        Rust backend
   commands/           thin IPC handlers (the entire UI-facing surface)
+  ai/                 provider trait, Anthropic + OpenAI-compatible providers, SSE parser
+  core/               orchestration: system prompt, context building, the chat turn pipeline
+  conversations/      conversation + message persistence
   config.rs           env/.env loading, secret redaction
   db/                 SQLite connection + forward-only migrations
   settings/           typed settings, validation, persistence

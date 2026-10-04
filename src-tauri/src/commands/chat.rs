@@ -1,0 +1,144 @@
+use serde::Serialize;
+use tauri::ipc::Channel;
+use tauri::State;
+
+use crate::conversations::{self, Conversation, Message};
+use crate::core::chat::{self, ChatEvent, GenerationParams};
+use crate::error::{AppError, AppResult};
+use crate::settings;
+use crate::state::AppState;
+
+fn validate_request_id(id: &str) -> AppResult<()> {
+    if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(AppError::validation("Invalid request id."));
+    }
+    Ok(())
+}
+
+/// Resolve provider + model + effort for a new generation.
+fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
+    let (provider, status) = state.ai_provider()?;
+    let settings = settings::load(&*state.db.conn()?)?;
+    let model = Some(settings.ai_model.clone())
+        .filter(|m| !m.is_empty())
+        .or(status.configured_model)
+        .ok_or_else(|| AppError::AiUnavailable("No model configured. Set AI_MODEL or choose a model in Settings.".into()))?;
+    Ok(GenerationParams { provider, model, effort: Some(settings.ai_effort) })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnResult {
+    pub conversation_id: String,
+    pub assistant_message: Message,
+}
+
+async fn run_generation(state: &AppState, conversation_id: &str, guard_token: &tokio_util::sync::CancellationToken, params: GenerationParams, on_event: &Channel<ChatEvent>) -> AppResult<TurnResult> {
+    let mut emit = |ev: ChatEvent| {
+        if let Err(e) = on_event.send(ev) {
+            tracing::warn!(event = "CHAT_EVENT_DELIVERY_FAILED", error = %e);
+        }
+    };
+    let message = chat::generate(&state.db, conversation_id, &params, guard_token, &mut emit).await?;
+    Ok(TurnResult { conversation_id: conversation_id.to_string(), assistant_message: message })
+}
+
+/// Send a message (creating a conversation when `conversation_id` is null) and stream the reply.
+#[tauri::command]
+pub async fn chat_send(
+    state: State<'_, AppState>,
+    request_id: String,
+    conversation_id: Option<String>,
+    content: String,
+    on_event: Channel<ChatEvent>,
+) -> AppResult<TurnResult> {
+    validate_request_id(&request_id)?;
+    let content = chat::validate_input(&content)?;
+    // Check AI availability before saving anything.
+    let params = generation_params(&state)?;
+    let guard = state.generations.begin(&request_id, conversation_id.as_deref())?;
+    let user_name = settings::load(&*state.db.conn()?)?.user_name;
+
+    let (conversation, message) = chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &user_name)?;
+    guard.attach(&conversation.id);
+    let _ = on_event.send(ChatEvent::UserMessage { conversation: conversation.clone(), message });
+    run_generation(&state, &conversation.id, &guard.token, params, &on_event).await
+}
+
+/// Discard the last answer and generate a new one.
+#[tauri::command]
+pub async fn chat_regenerate(state: State<'_, AppState>, request_id: String, conversation_id: String, on_event: Channel<ChatEvent>) -> AppResult<TurnResult> {
+    validate_request_id(&request_id)?;
+    let params = generation_params(&state)?;
+    let guard = state.generations.begin(&request_id, Some(&conversation_id))?;
+    chat::prepare_regenerate(&state.db, &conversation_id)?;
+    run_generation(&state, &conversation_id, &guard.token, params, &on_event).await
+}
+
+/// Edit one of the user's messages, drop everything after it, and respond again.
+#[tauri::command]
+pub async fn chat_edit(state: State<'_, AppState>, request_id: String, message_id: String, content: String, on_event: Channel<ChatEvent>) -> AppResult<TurnResult> {
+    validate_request_id(&request_id)?;
+    let content = chat::validate_input(&content)?;
+    let params = generation_params(&state)?;
+    let conversation_id = conversations::get_message(&*state.db.conn()?, &message_id)?
+        .ok_or_else(|| AppError::validation("That message no longer exists."))?
+        .conversation_id;
+    let guard = state.generations.begin(&request_id, Some(&conversation_id))?;
+    {
+        let mut conn = state.db.conn()?;
+        conversations::edit_user_message(&mut conn, &message_id, &content)?;
+    }
+    tracing::info!(event = "MESSAGE_EDITED", conversation_id = %conversation_id);
+    run_generation(&state, &conversation_id, &guard.token, params, &on_event).await
+}
+
+/// Stop an in-flight generation. Returns false if it already finished.
+#[tauri::command]
+pub fn chat_cancel(state: State<'_, AppState>, request_id: String) -> bool {
+    let cancelled = state.generations.cancel(&request_id);
+    if cancelled {
+        tracing::info!(event = "CHAT_CANCEL_REQUESTED");
+    }
+    cancelled
+}
+
+#[tauri::command]
+pub fn list_conversations(state: State<'_, AppState>) -> AppResult<Vec<Conversation>> {
+    conversations::list(&*state.db.conn()?)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationDetail {
+    pub conversation: Conversation,
+    pub messages: Vec<Message>,
+    pub busy: bool,
+}
+
+#[tauri::command]
+pub fn get_conversation(state: State<'_, AppState>, id: String) -> AppResult<ConversationDetail> {
+    let conn = state.db.conn()?;
+    Ok(ConversationDetail {
+        conversation: conversations::require(&conn, &id)?,
+        messages: conversations::messages(&conn, &id)?,
+        busy: state.generations.is_busy(&id),
+    })
+}
+
+#[tauri::command]
+pub fn rename_conversation(state: State<'_, AppState>, id: String, title: String) -> AppResult<Conversation> {
+    conversations::rename(&*state.db.conn()?, &id, &title)
+}
+
+#[tauri::command]
+pub fn delete_conversation(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    if state.generations.is_busy(&id) {
+        return Err(AppError::validation("Stop the response before deleting this conversation."));
+    }
+    if !conversations::delete(&*state.db.conn()?, &id)? {
+        return Err(AppError::validation("That conversation no longer exists."));
+    }
+    tracing::info!(event = "CONVERSATION_DELETED", conversation_id = %id);
+    Ok(())
+}

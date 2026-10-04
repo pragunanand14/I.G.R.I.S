@@ -1,9 +1,11 @@
-import { ArrowUp } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Composer } from "@/components/chat/Composer";
 import { AiCore } from "@/components/core/AiCore";
 import { TelemetryStrip } from "@/components/system/TelemetryStrip";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { useCoreState } from "@/hooks/useCoreState";
 import { useAppStore } from "@/stores/appStore";
+import { useChatStore } from "@/stores/chatStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { CORE_STATE_LABELS } from "@/types/assistant";
 import { greetingFor } from "@/utils/format";
@@ -13,6 +15,25 @@ export function HomePage() {
   const backend = useAppStore((s) => s.backend);
   const backendError = useAppStore((s) => s.backendError);
   const userName = useSettingsStore((s) => s.settings.userName);
+  const aiStatus = useChatStore((s) => s.aiStatus);
+  const streaming = useChatStore((s) => s.streaming);
+  const navigate = useNavigate();
+
+  const disabledReason =
+    backend !== "ready"
+      ? "The IGRIS backend is unavailable."
+      : aiStatus && !aiStatus.ready
+        ? "Configure an AI provider in Settings to start chatting."
+        : streaming
+          ? "IGRIS is responding…"
+          : undefined;
+
+  const startConversation = async (text: string) => {
+    const chat = useChatStore.getState();
+    void chat.openConversation(null); // synchronous for a new conversation
+    void navigate("/chat");
+    return chat.send(text);
+  };
 
   const status =
     backend === "ready"
@@ -48,27 +69,15 @@ export function HomePage() {
       </div>
 
       <div className="flex w-full flex-col items-center gap-6">
-        <form className="w-full max-w-2xl" onSubmit={(e) => e.preventDefault()} aria-describedby="prompt-note">
-          <div className="flex items-center gap-2 rounded-2xl border border-line bg-elevated/70 py-2 pr-2 pl-5 shadow-[var(--shadow)] backdrop-blur">
-            <input
-              disabled
-              aria-label="Message IGRIS"
-              placeholder="Ask IGRIS anything…"
-              className="h-9 min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-faint focus:outline-none disabled:cursor-not-allowed"
-            />
-            <button
-              type="submit"
-              disabled
-              aria-label="Send"
-              className="grid size-9 place-items-center rounded-xl bg-surface-strong text-faint disabled:cursor-not-allowed"
-            >
-              <ArrowUp className="size-4" />
-            </button>
-          </div>
-          <p id="prompt-note" className="mt-2 text-center text-[11px] text-faint">
-            Conversation is not connected yet — it arrives with the AI chat layer (Phase 2).
-          </p>
-        </form>
+        <div className="w-full max-w-2xl">
+          <Composer onSend={startConversation} onStop={() => undefined} streaming={false} disabled={disabledReason !== undefined} disabledReason={disabledReason} />
+          {aiStatus?.ready && aiStatus.effectiveModel && (
+            <p className="mt-2 text-center font-mono text-[10px] text-faint">
+              {aiStatus.provider} · {aiStatus.effectiveModel}
+            </p>
+          )}
+          {aiStatus && !aiStatus.ready && <p className="mt-2 text-center text-[11px] text-warning">{aiStatus.problem}</p>}
+        </div>
         <TelemetryStrip />
       </div>
     </div>

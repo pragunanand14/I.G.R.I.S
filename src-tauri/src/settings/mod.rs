@@ -7,11 +7,13 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+use crate::ai::Effort;
 use crate::error::{AppError, AppResult};
 
 pub const USER_NAME_MAX_CHARS: usize = 48;
 pub const TELEMETRY_INTERVAL_MIN_MS: u32 = 1_000;
 pub const TELEMETRY_INTERVAL_MAX_MS: u32 = 10_000;
+pub const AI_MODEL_MAX_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -40,6 +42,10 @@ pub struct Settings {
     pub reduced_motion: bool,
     /// How often the UI refreshes system telemetry.
     pub telemetry_interval_ms: u32,
+    /// Model override. Empty means "use AI_MODEL or the provider default".
+    pub ai_model: String,
+    /// Reasoning effort for providers that support it.
+    pub ai_effort: Effort,
 }
 
 impl Default for Settings {
@@ -50,6 +56,8 @@ impl Default for Settings {
             accent: Accent::Azure,
             reduced_motion: false,
             telemetry_interval_ms: 2_000,
+            ai_model: String::new(),
+            ai_effort: Effort::Medium,
         }
     }
 }
@@ -63,6 +71,8 @@ pub struct SettingsPatch {
     pub accent: Option<Accent>,
     pub reduced_motion: Option<bool>,
     pub telemetry_interval_ms: Option<u32>,
+    pub ai_model: Option<String>,
+    pub ai_effort: Option<Effort>,
 }
 
 impl SettingsPatch {
@@ -87,6 +97,16 @@ impl SettingsPatch {
                 )));
             }
         }
+        if let Some(model) = self.ai_model.take() {
+            let model = model.trim().to_string();
+            if model.chars().count() > AI_MODEL_MAX_CHARS {
+                return Err(AppError::validation(format!("Model id must be at most {AI_MODEL_MAX_CHARS} characters.")));
+            }
+            if !model.chars().all(|c| c.is_ascii_alphanumeric() || "._:/@-".contains(c)) {
+                return Err(AppError::validation("Model id may only contain letters, digits and . _ : / @ -"));
+            }
+            self.ai_model = Some(model);
+        }
         Ok(self)
     }
 
@@ -98,6 +118,8 @@ impl SettingsPatch {
         if self.accent.is_some() { f.push("accent"); }
         if self.reduced_motion.is_some() { f.push("reducedMotion"); }
         if self.telemetry_interval_ms.is_some() { f.push("telemetryIntervalMs"); }
+        if self.ai_model.is_some() { f.push("aiModel"); }
+        if self.ai_effort.is_some() { f.push("aiEffort"); }
         f
     }
 }
@@ -109,6 +131,8 @@ impl Settings {
         if let Some(v) = patch.accent { self.accent = v; }
         if let Some(v) = patch.reduced_motion { self.reduced_motion = v; }
         if let Some(v) = patch.telemetry_interval_ms { self.telemetry_interval_ms = v; }
+        if let Some(v) = patch.ai_model { self.ai_model = v; }
+        if let Some(v) = patch.ai_effort { self.ai_effort = v; }
     }
 }
 
@@ -144,7 +168,7 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
 /// Slow path: apply each stored value individually, skipping invalid ones.
 fn load_per_field(conn: &Connection) -> AppResult<Settings> {
     let mut settings = Settings::default();
-    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs"];
+    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort"];
     for key in keys {
         let raw: Option<String> = conn
             .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))
@@ -241,6 +265,19 @@ mod tests {
         let bad = patch(r#"{"accent":"amber","telemetryIntervalMs":1}"#).unwrap();
         assert!(update(&mut conn, bad).is_err());
         assert_eq!(load(&conn).unwrap().accent, Accent::Azure);
+    }
+
+    #[test]
+    fn validates_ai_model_and_effort() {
+        assert!(patch(r#"{"aiModel":"claude-opus-5-5"}"#).unwrap().validate().is_ok());
+        assert!(patch(r#"{"aiModel":"org/model:7b@q4"}"#).unwrap().validate().is_ok());
+        assert!(patch(r#"{"aiModel":"bad model; rm -rf"}"#).unwrap().validate().is_err());
+        assert!(patch(r#"{"aiEffort":"max"}"#).is_err());
+        let db = Database::open_in_memory().unwrap();
+        let mut conn = db.conn().unwrap();
+        let s = update(&mut conn, patch(r#"{"aiEffort":"high","aiModel":" x "}"#).unwrap()).unwrap();
+        assert_eq!(s.ai_effort, Effort::High);
+        assert_eq!(s.ai_model, "x");
     }
 
     #[test]

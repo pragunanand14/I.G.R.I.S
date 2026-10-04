@@ -20,6 +20,10 @@ pub enum AppError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The AI provider isn't configured or usable; the message says how to fix it.
+    #[error("{0}")]
+    AiUnavailable(String),
+
     #[error("{0}")]
     Internal(String),
 }
@@ -31,6 +35,7 @@ impl AppError {
             AppError::Database(_) => "database",
             AppError::Serialization(_) => "serialization",
             AppError::Io(_) => "io",
+            AppError::AiUnavailable(_) => "ai_unavailable",
             AppError::Internal(_) => "internal",
         }
     }
