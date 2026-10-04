@@ -25,7 +25,7 @@ Prerequisites: Node 20+, Rust (stable), and the [Tauri prerequisites](https://v2
 for your OS (on Windows: WebView2 + MSVC build tools).
 
 ```bash
-npm install
+npm install           # also generates app icons from assets/igris-logo.svg
 npm run tauri dev       # run the desktop app with hot reload
 npm run tauri build     # produce an installer (NSIS/MSI on Windows)
 ```

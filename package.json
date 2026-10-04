@@ -3,8 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "IGRIS — Intelligent General-purpose Responsive Intelligence System",
+  "description": "IGRIS \u2014 Intelligent General-purpose Responsive Intelligence System",
   "scripts": {
+    "postinstall": "node scripts/ensure-icons.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
