@@ -1,0 +1,165 @@
+.ai-core {
+  --core-rgb: var(--accent-rgb);
+  --spin: 48s;
+  --breath: 5s;
+  position: relative;
+  display: grid;
+  place-items: center;
+  contain: layout paint;
+}
+.ai-core--error {
+  --core-rgb: var(--danger-rgb);
+}
+
+.ai-core__halo {
+  position: absolute;
+  inset: 12%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgb(var(--core-rgb) / 0.22), transparent 65%);
+  filter: blur(18px);
+  animation: core-breathe var(--breath) ease-in-out infinite;
+}
+
+.ai-core__svg {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ai-core__ticks,
+.ai-core__arc,
+.ai-core__dash,
+.ai-core__pulses circle,
+.ai-core__glow,
+.ai-core__nucleus {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+.ai-core__ticks line {
+  stroke: rgb(var(--core-rgb) / 0.22);
+  stroke-width: 1;
+}
+.ai-core__ticks line.major {
+  stroke: rgb(var(--core-rgb) / 0.5);
+}
+.ai-core__ticks {
+  animation: core-spin calc(var(--spin) * 3) linear infinite reverse;
+}
+
+.ai-core__track {
+  fill: none;
+  stroke: rgb(var(--core-rgb) / 0.12);
+  stroke-width: 1;
+}
+.ai-core__arc circle {
+  fill: none;
+  stroke: rgb(var(--core-rgb) / 0.85);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.ai-core__arc {
+  animation: core-spin var(--spin) linear infinite;
+}
+.ai-core__dash circle {
+  fill: none;
+  stroke: rgb(var(--core-rgb) / 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 2 9;
+}
+.ai-core__dash {
+  animation: core-spin calc(var(--spin) * 1.6) linear infinite reverse;
+}
+
+.ai-core__glow {
+  animation: core-breathe var(--breath) ease-in-out infinite;
+}
+.ai-core__nucleus {
+  fill: rgb(var(--core-rgb));
+  filter: drop-shadow(0 0 12px rgb(var(--core-rgb) / 0.9));
+  animation: core-breathe var(--breath) ease-in-out infinite;
+}
+[data-theme="light"] .ai-core__nucleus {
+  filter: drop-shadow(0 0 8px rgb(var(--core-rgb) / 0.6));
+}
+
+/* Pulses (listening) and bars (speaking) are hidden unless their state is active. */
+.ai-core__pulses circle {
+  fill: none;
+  stroke: rgb(var(--core-rgb) / 0.6);
+  stroke-width: 1.5;
+  opacity: 0;
+}
+.ai-core__bars line {
+  stroke: rgb(var(--core-rgb) / 0.75);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+  /* Each bar sits in a rotated group; scale along its own length, from the inner end. */
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+/* ---- States ---- */
+
+.ai-core--listening {
+  --breath: 2.4s;
+}
+.ai-core--listening .ai-core__pulses circle {
+  animation: core-pulse 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+.ai-core--listening .ai-core__pulses circle:nth-child(2) { animation-delay: 0.8s; }
+.ai-core--listening .ai-core__pulses circle:nth-child(3) { animation-delay: 1.6s; }
+
+.ai-core--thinking {
+  --spin: 3.2s;
+  --breath: 1.8s;
+}
+
+.ai-core--speaking {
+  --spin: 16s;
+  --breath: 1.2s;
+}
+.ai-core--speaking .ai-core__bars line {
+  opacity: 1;
+  animation: core-bar 0.9s ease-in-out infinite alternate;
+}
+
+.ai-core--executing {
+  --spin: 1.4s;
+  --breath: 0.9s;
+}
+.ai-core--executing .ai-core__arc circle {
+  stroke-width: 3;
+}
+
+.ai-core--error {
+  --spin: 120s;
+}
+.ai-core--error .ai-core__nucleus,
+.ai-core--error .ai-core__glow {
+  animation: core-flicker 3s steps(1, end) infinite;
+}
+
+@keyframes core-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes core-breathe {
+  0%, 100% { transform: scale(0.94); opacity: 0.75; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+@keyframes core-pulse {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(2); opacity: 0; }
+}
+@keyframes core-bar {
+  0% { transform: scaleY(0.25); }
+  100% { transform: scaleY(1.6); }
+}
+@keyframes core-flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  94% { opacity: 0.35; }
+  96% { opacity: 0.9; }
+  98% { opacity: 0.4; }
+}

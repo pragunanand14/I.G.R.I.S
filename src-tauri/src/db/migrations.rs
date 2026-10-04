@@ -1,0 +1,83 @@
+//! Forward-only schema migrations tracked with SQLite's `user_version`.
+//!
+//! To change the schema, append a new entry to [`MIGRATIONS`]. Never edit or
+//! reorder an existing migration once it has shipped.
+
+use rusqlite::Connection;
+
+use crate::error::AppResult;
+
+pub struct Migration {
+    pub version: u32,
+    pub name: &'static str,
+    pub sql: &'static str,
+}
+
+pub const MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    name: "settings",
+    sql: r#"
+        CREATE TABLE settings (
+            key        TEXT PRIMARY KEY NOT NULL,
+            value      TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+    "#,
+}];
+
+pub fn current_version(conn: &Connection) -> AppResult<u32> {
+    Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
+}
+
+/// Apply all pending migrations, each in its own transaction.
+pub fn run(conn: &mut Connection) -> AppResult<u32> {
+    let start = current_version(conn)?;
+    let mut version = start;
+    for m in MIGRATIONS.iter().filter(|m| m.version > start) {
+        let tx = conn.transaction()?;
+        tx.execute_batch(m.sql)?;
+        tx.pragma_update(None, "user_version", m.version)?;
+        tx.commit()?;
+        version = m.version;
+        tracing::info!(event = "DB_MIGRATION_APPLIED", version = m.version, name = m.name);
+    }
+    Ok(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrations_are_strictly_increasing() {
+        let mut prev = 0;
+        for m in MIGRATIONS {
+            assert!(m.version > prev, "migration {} is out of order", m.name);
+            prev = m.version;
+        }
+    }
+
+    #[test]
+    fn applies_all_and_is_idempotent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        let latest = MIGRATIONS.last().unwrap().version;
+        assert_eq!(run(&mut conn).unwrap(), latest);
+        assert_eq!(run(&mut conn).unwrap(), latest);
+        assert_eq!(current_version(&conn).unwrap(), latest);
+    }
+
+    #[test]
+    fn persists_across_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("igris.db");
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            run(&mut conn).unwrap();
+            conn.execute("INSERT INTO settings (key, value) VALUES ('k', '\"v\"')", []).unwrap();
+        }
+        let mut conn = Connection::open(&path).unwrap();
+        run(&mut conn).unwrap();
+        let v: String = conn.query_row("SELECT value FROM settings WHERE key = 'k'", [], |r| r.get(0)).unwrap();
+        assert_eq!(v, "\"v\"");
+    }
+}

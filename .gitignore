@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Environment / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Local data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+logs/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,17 @@
+// Mirrors `src-tauri/src/settings/mod.rs`. Keep in sync.
+export type Theme = "dark" | "light" | "system";
+export type Accent = "azure" | "violet" | "emerald" | "amber";
+
+export interface Settings {
+  userName: string;
+  theme: Theme;
+  accent: Accent;
+  reducedMotion: boolean;
+  telemetryIntervalMs: number;
+}
+
+export type SettingsPatch = Partial<Settings>;
+
+export const USER_NAME_MAX_CHARS = 48;
+export const TELEMETRY_INTERVAL_MIN_MS = 1000;
+export const TELEMETRY_INTERVAL_MAX_MS = 10000;
