@@ -64,6 +64,9 @@ pub fn add(conn: &Connection, path: &str, writable: bool) -> AppResult<AllowedFo
             "That folder is too broad to grant (a drive root or system folder). Choose a more specific folder, e.g. your user folder.",
         ));
     }
+    if canon.file_name().is_some_and(is_secret_dir_name) {
+        return Err(AppError::validation("That folder holds credentials or app data. IGRIS doesn't share those."));
+    }
     let s = canon.display().to_string();
     match conn.execute("INSERT INTO allowed_folders (path, writable) VALUES (?1, ?2)", params![s, writable as i64]) {
         Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::ConstraintViolation => {
@@ -90,18 +93,29 @@ pub fn remove(conn: &Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+// Credential stores and app-data folders (browser profiles hold saved passwords
+// and cookies). Matters most when the whole home folder is shared.
+const SECRET_DIRS: &[&str] =
+    &[".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store", "appdata", ".config", ".local", ".mozilla", ".thunderbird", "keychains"];
+
+fn is_secret_dir_name(name: &std::ffi::OsStr) -> bool {
+    SECRET_DIRS.contains(&name.to_string_lossy().to_ascii_lowercase().as_str())
+}
+
+/// Whether `path` (inside the shared folder `root`) is never read or written by tools:
+/// credential files anywhere, and anything in a secret folder below the shared folder.
+/// Only the part below `root` is checked for secret folders, so a folder the user
+/// deliberately shared (which may itself live under e.g. AppData) still works.
+pub fn is_secret(root: &Path, path: &Path) -> bool {
+    let below = path.strip_prefix(root).unwrap_or(path);
+    below.components().any(|c| matches!(c, Component::Normal(n) if is_secret_dir_name(n))) || is_secret_file(path)
+}
+
 /// File names that are never read or written by tools, even inside allowed folders.
 pub fn is_secret_file(path: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    // Credential stores and app-data folders (browser profiles hold saved passwords
-    // and cookies). Matters most when the whole home folder is shared.
-    const SECRET_DIRS: &[&str] =
-        &[".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store", "appdata", ".config", ".local", ".mozilla", ".thunderbird", "keychains"];
-    let in_secret_dir =
-        path.components().any(|c| matches!(c, Component::Normal(n) if SECRET_DIRS.contains(&n.to_string_lossy().to_ascii_lowercase().as_str())));
-    in_secret_dir
-        || name == ".env"
+    name == ".env"
         || name.starts_with(".env.")
         || name.starts_with("id_rsa")
         || name.starts_with("id_ed25519")
@@ -177,7 +191,7 @@ pub fn guard(roots: &[AllowedFolder], requested: &str, access: Access) -> Result
     if access == Access::Write && !writable {
         return Err(format!("{} is shared read-only. The user can allow changes on the Tools page.", root.display()));
     }
-    if is_secret_file(&resolved) {
+    if is_secret(&root, &resolved) {
         return Err("That looks like a credentials or key file. IGRIS doesn't read or change those.".into());
     }
     Ok(GuardedPath { path: resolved, root })
@@ -259,9 +273,15 @@ mod tests {
         assert!(add(&conn, &root, false).unwrap_err().to_string().contains("too broad"), "{root}");
         assert!(add(&conn, "/etc", false).is_err());
         // The home folder itself may be shared; its app-data and credential folders stay off-limits.
-        assert!(is_secret_file(std::path::Path::new("/home/u/AppData/Local/Google/Chrome/User Data/Default/Login Data")));
-        assert!(is_secret_file(std::path::Path::new("/home/u/.config/app/settings.json")));
-        assert!(!is_secret_file(std::path::Path::new("/home/u/Documents/config-notes.txt")));
+        let home = Path::new("/home/u");
+        assert!(is_secret(home, Path::new("/home/u/AppData/Local/Google/Chrome/User Data/Default/Login Data")));
+        assert!(is_secret(home, Path::new("/home/u/.config/app/settings.json")));
+        assert!(!is_secret(home, Path::new("/home/u/Documents/config-notes.txt")));
+        // A folder deliberately shared from inside app data is usable; secret folders can't be shared.
+        assert!(!is_secret(Path::new("/home/u/AppData/Local/Temp/x"), Path::new("/home/u/AppData/Local/Temp/x/a.txt")));
+        let ssh = dir.path().join(".ssh");
+        std::fs::create_dir(&ssh).unwrap();
+        assert!(add(&conn, &ssh.display().to_string(), false).unwrap_err().to_string().contains("credentials"));
         set_writable(&conn, f.id, true).unwrap();
         assert!(list(&conn).unwrap()[0].writable);
         remove(&conn, f.id).unwrap();
