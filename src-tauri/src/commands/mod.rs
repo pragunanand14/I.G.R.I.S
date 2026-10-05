@@ -10,3 +10,4 @@ pub mod memory;
 pub mod settings;
 pub mod system;
 pub mod tools;
+pub mod voice;

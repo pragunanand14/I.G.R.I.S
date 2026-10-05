@@ -50,6 +50,12 @@ pub struct Settings {
     pub confirm_low_risk: bool,
     /// Use and update persistent memory. When off, nothing is attached or saved.
     pub memory_enabled: bool,
+    /// Speak replies aloud when the request was spoken.
+    pub voice_auto_speak: bool,
+    /// Experimental "IGRIS" wake word (needs browser speech recognition).
+    pub wake_word_enabled: bool,
+    /// Preferred browser voice name; empty = system default.
+    pub tts_voice: String,
 }
 
 impl Default for Settings {
@@ -64,6 +70,9 @@ impl Default for Settings {
             ai_effort: Effort::Medium,
             confirm_low_risk: false,
             memory_enabled: true,
+            voice_auto_speak: true,
+            wake_word_enabled: false,
+            tts_voice: String::new(),
         }
     }
 }
@@ -81,6 +90,9 @@ pub struct SettingsPatch {
     pub ai_effort: Option<Effort>,
     pub confirm_low_risk: Option<bool>,
     pub memory_enabled: Option<bool>,
+    pub voice_auto_speak: Option<bool>,
+    pub wake_word_enabled: Option<bool>,
+    pub tts_voice: Option<String>,
 }
 
 impl SettingsPatch {
@@ -115,6 +127,13 @@ impl SettingsPatch {
             }
             self.ai_model = Some(model);
         }
+        if let Some(v) = self.tts_voice.take() {
+            let v = v.trim().to_string();
+            if v.chars().count() > 200 || v.chars().any(char::is_control) {
+                return Err(AppError::validation("Invalid voice name."));
+            }
+            self.tts_voice = Some(v);
+        }
         Ok(self)
     }
 
@@ -130,6 +149,9 @@ impl SettingsPatch {
         if self.ai_effort.is_some() { f.push("aiEffort"); }
         if self.confirm_low_risk.is_some() { f.push("confirmLowRisk"); }
         if self.memory_enabled.is_some() { f.push("memoryEnabled"); }
+        if self.voice_auto_speak.is_some() { f.push("voiceAutoSpeak"); }
+        if self.wake_word_enabled.is_some() { f.push("wakeWordEnabled"); }
+        if self.tts_voice.is_some() { f.push("ttsVoice"); }
         f
     }
 }
@@ -145,6 +167,9 @@ impl Settings {
         if let Some(v) = patch.ai_effort { self.ai_effort = v; }
         if let Some(v) = patch.confirm_low_risk { self.confirm_low_risk = v; }
         if let Some(v) = patch.memory_enabled { self.memory_enabled = v; }
+        if let Some(v) = patch.voice_auto_speak { self.voice_auto_speak = v; }
+        if let Some(v) = patch.wake_word_enabled { self.wake_word_enabled = v; }
+        if let Some(v) = patch.tts_voice { self.tts_voice = v; }
     }
 }
 
@@ -180,7 +205,7 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
 /// Slow path: apply each stored value individually, skipping invalid ones.
 fn load_per_field(conn: &Connection) -> AppResult<Settings> {
     let mut settings = Settings::default();
-    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort", "confirmLowRisk", "memoryEnabled"];
+    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort", "confirmLowRisk", "memoryEnabled", "voiceAutoSpeak", "wakeWordEnabled", "ttsVoice"];
     for key in keys {
         let raw: Option<String> = conn
             .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))

@@ -113,6 +113,7 @@ export function ChatPage() {
             disabled={disabledReason !== undefined}
             disabledReason={disabledReason}
             autoFocus
+            voice={backend === "ready"}
           />
           <p className="mt-1.5 text-center text-[10px] text-faint">Enter to send · Shift+Enter for a new line · AI can make mistakes.</p>
         </div>

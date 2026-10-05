@@ -17,11 +17,12 @@ pub mod settings;
 pub mod state;
 pub mod system;
 pub mod tools;
+pub mod voice;
 
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::ai::AiRuntime;
 use crate::config::AppConfig;
@@ -41,6 +42,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let resolver = app.path();
             let data_dir = resolver.app_data_dir()?;
@@ -96,6 +98,7 @@ pub fn run() {
                 approvals: Arc::new(PendingApprovals::default()),
                 paths: AppPaths { data_dir, config_dir, log_dir, db_path },
             });
+            register_voice_hotkey(app.handle());
             tracing::info!(event = "APP_STARTED");
             Ok(())
         })
@@ -128,7 +131,31 @@ pub fn run() {
             commands::memory::add_memory,
             commands::memory::update_memory,
             commands::memory::delete_memory,
+            commands::voice::get_voice_status,
+            commands::voice::transcribe_audio,
+            commands::voice::synthesize_speech,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");
+}
+
+/// Global push-to-talk hotkey. Failing to register (e.g. another app owns the
+/// combination) is logged, not fatal — the in-app mic button still works.
+pub const VOICE_HOTKEY: &str = "ctrl+shift+space";
+
+fn register_voice_hotkey(app: &tauri::AppHandle) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    let result = app.global_shortcut().on_shortcut(VOICE_HOTKEY, |app, _shortcut, event| {
+        if event.state == ShortcutState::Pressed {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            let _ = app.emit("voice-toggle", ());
+        }
+    });
+    match result {
+        Ok(()) => tracing::info!(event = "VOICE_HOTKEY_REGISTERED", hotkey = VOICE_HOTKEY),
+        Err(e) => tracing::warn!(event = "VOICE_HOTKEY_UNAVAILABLE", hotkey = VOICE_HOTKEY, error = %e),
+    }
 }

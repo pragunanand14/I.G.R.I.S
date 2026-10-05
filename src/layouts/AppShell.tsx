@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { useTelemetryPolling } from "@/hooks/useTelemetryPolling";
 import { useThemeEffect } from "@/hooks/useThemeEffect";
+import { useVoice } from "@/hooks/useVoice";
 import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -27,6 +28,7 @@ export function AppShell() {
 
   useThemeEffect(settings);
   useTelemetryPolling(backend === "ready", settings.telemetryIntervalMs);
+  useVoice(backend === "ready");
 
   return (
     <div className="flex h-full flex-col">

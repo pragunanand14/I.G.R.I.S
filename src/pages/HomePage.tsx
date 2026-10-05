@@ -70,7 +70,7 @@ export function HomePage() {
 
       <div className="flex w-full flex-col items-center gap-6">
         <div className="w-full max-w-2xl">
-          <Composer onSend={startConversation} onStop={() => undefined} streaming={false} disabled={disabledReason !== undefined} disabledReason={disabledReason} />
+          <Composer onSend={startConversation} onStop={() => undefined} streaming={false} disabled={disabledReason !== undefined} disabledReason={disabledReason} voice={backend === "ready"} />
           {aiStatus?.ready && aiStatus.effectiveModel && (
             <p className="mt-2 text-center font-mono text-[10px] text-faint">
               {aiStatus.provider} · {aiStatus.effectiveModel}

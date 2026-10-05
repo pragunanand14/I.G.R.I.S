@@ -1,5 +1,5 @@
 import { Check, RefreshCw } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { Segmented } from "@/components/ui/Segmented";
@@ -9,6 +9,10 @@ import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useVoiceStore } from "@/stores/voiceStore";
+import { browserRecognitionAvailable } from "@/services/voice/browserSpeech";
+import { browserTtsAvailable, browserVoices } from "@/services/voice/speaker";
+import { VOICE_HOTKEY_LABEL } from "@/types/voice";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { Effort } from "@/types/ai";
 import { AI_MODEL_MAX_CHARS, USER_NAME_MAX_CHARS, type Accent, type Theme } from "@/types/settings";
@@ -140,6 +144,8 @@ export function SettingsPage() {
         </Panel>
 
         <AiPanel disabled={disabled} configDir={info?.configDir ?? null} />
+
+        <VoicePanel disabled={disabled} />
 
         <Panel title="About">
           {info ? (
@@ -340,5 +346,103 @@ function ModelField({
       placeholder={placeholder}
       className="h-8 w-56 rounded-lg border border-line bg-surface px-3 font-mono text-xs text-fg placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-40"
     />
+  );
+}
+
+const MODE_LABEL: Record<string, string> = { browser: "Built-in (this system)", openai: "OpenAI", local: "Local server" };
+
+function VoicePanel({ disabled }: { disabled: boolean }) {
+  const { settings, update } = useSettingsStore();
+  const status = useVoiceStore((s) => s.status);
+  const voiceError = useVoiceStore((s) => s.error);
+  const phase = useVoiceStore((s) => s.phase);
+  const say = useVoiceStore((s) => s.say);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => browserVoices());
+
+  useEffect(() => {
+    if (!browserTtsAvailable()) return;
+    const refresh = () => setVoices(browserVoices());
+    window.speechSynthesis.addEventListener?.("voiceschanged", refresh);
+    return () => window.speechSynthesis.removeEventListener?.("voiceschanged", refresh);
+  }, []);
+
+  const recognition = browserRecognitionAvailable();
+  const sttText = !status
+    ? "Unavailable without the desktop backend"
+    : status.stt.problem
+      ? status.stt.problem
+      : status.stt.mode === "browser"
+        ? recognition
+          ? MODE_LABEL.browser
+          : "Not available here — set STT_PROVIDER=openai or local"
+        : MODE_LABEL[status.stt.mode] ?? status.stt.mode;
+  const ttsText = !status
+    ? "—"
+    : status.tts.problem
+      ? status.tts.problem
+      : status.tts.mode === "browser"
+        ? browserTtsAvailable()
+          ? `${MODE_LABEL.browser} · ${voices.length} voice${voices.length === 1 ? "" : "s"}`
+          : "No system voices available"
+        : MODE_LABEL[status.tts.mode] ?? status.tts.mode;
+
+  return (
+    <Panel title="Voice">
+      <InfoRow label="Speech recognition" value={sttText} />
+      <InfoRow label="Speech output" value={ttsText} />
+      <InfoRow label="Push-to-talk hotkey" value={VOICE_HOTKEY_LABEL} />
+      {voiceError && <p className="mt-2 text-xs text-warning">{voiceError}</p>}
+
+      <div className="mt-2">
+        <Field label="Speak replies" description="Read answers aloud when you asked by voice. Talk over IGRIS, press Esc or the mic to interrupt.">
+          <Toggle label="Speak replies" checked={settings.voiceAutoSpeak} disabled={disabled} onChange={(voiceAutoSpeak) => void update({ voiceAutoSpeak })} />
+        </Field>
+        {status?.tts.mode === "browser" && voices.length > 0 && (
+          <Field label="Voice">
+            <div className="flex items-center gap-2">
+              <select
+                value={settings.ttsVoice}
+                disabled={disabled}
+                onChange={(e) => void update({ ttsVoice: e.target.value })}
+                aria-label="Voice"
+                className="h-8 max-w-56 rounded-lg border border-line bg-surface px-2 text-xs text-fg focus:border-accent focus:outline-none"
+              >
+                <option value="">System default</option>
+                {voices.map((v) => (
+                  <option key={v.name} value={v.name}>
+                    {v.name} ({v.lang})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </Field>
+        )}
+        <Field label="Test voice">
+          <button
+            type="button"
+            disabled={phase === "speaking"}
+            onClick={() => void say("Hello. I'm IGRIS, and this is how I sound.")}
+            className="rounded-lg border border-line px-3 py-1 text-xs text-fg hover:bg-surface-hover disabled:opacity-40"
+          >
+            {phase === "speaking" ? "Speaking…" : "Play sample"}
+          </button>
+        </Field>
+        <Field
+          label="Wake word “IGRIS” (experimental)"
+          description={
+            recognition
+              ? "Listens continuously with the system speech recognizer while IGRIS is open. Say “IGRIS, …”."
+              : "Needs built-in speech recognition, which this system's webview doesn't provide."
+          }
+        >
+          <Toggle
+            label="Wake word"
+            checked={settings.wakeWordEnabled && recognition}
+            disabled={disabled || !recognition}
+            onChange={(wakeWordEnabled) => void update({ wakeWordEnabled })}
+          />
+        </Field>
+      </div>
+    </Panel>
   );
 }

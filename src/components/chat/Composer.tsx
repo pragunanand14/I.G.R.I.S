@@ -1,5 +1,7 @@
 import { ArrowUp, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { MicButton } from "./MicButton";
+import { VoiceNotice } from "./VoiceNotice";
 
 interface Props {
   onSend: (text: string) => Promise<boolean>;
@@ -9,12 +11,14 @@ interface Props {
   disabledReason?: string;
   autoFocus?: boolean;
   placeholder?: string;
+  /** Show the push-to-talk button. */
+  voice?: boolean;
 }
 
 const MAX_HEIGHT = 220;
 
 /** Enter sends, Shift+Enter inserts a newline. Text is restored if sending is rejected. */
-export function Composer({ onSend, onStop, streaming, disabled, disabledReason, autoFocus, placeholder = "Ask IGRIS anything…" }: Props) {
+export function Composer({ onSend, onStop, streaming, disabled, disabledReason, autoFocus, placeholder = "Ask IGRIS anything…", voice = false }: Props) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -60,6 +64,7 @@ export function Composer({ onSend, onStop, streaming, disabled, disabledReason, 
           placeholder={disabled && disabledReason ? disabledReason : placeholder}
           className="max-h-[220px] min-h-9 min-w-0 flex-1 resize-none bg-transparent py-2 text-sm leading-5 text-fg placeholder:text-faint focus:outline-none disabled:cursor-not-allowed"
         />
+        {voice && <MicButton disabled={disabled} />}
         {streaming ? (
           <button
             type="button"
@@ -82,6 +87,7 @@ export function Composer({ onSend, onStop, streaming, disabled, disabledReason, 
           </button>
         )}
       </form>
+      {voice && <VoiceNotice />}
     </div>
   );
 }

@@ -14,6 +14,9 @@ export const DEFAULT_SETTINGS: Settings = {
   aiEffort: "medium",
   confirmLowRisk: false,
   memoryEnabled: true,
+  voiceAutoSpeak: true,
+  wakeWordEnabled: false,
+  ttsVoice: "",
 };
 
 type Status = "idle" | "loading" | "ready" | "error";

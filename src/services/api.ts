@@ -2,6 +2,7 @@ import type { AiStatus } from "@/types/ai";
 import type { AppInfo, PublicConfig, ReloadResult } from "@/types/app";
 import type { Conversation, ConversationDetail } from "@/types/chat";
 import type { Memory, MemoryKind } from "@/types/memory";
+import type { VoiceStatus } from "@/types/voice";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
@@ -34,4 +35,7 @@ export const api = {
   addMemory: (kind: MemoryKind, content: string) => call<Memory>("add_memory", { kind, content }),
   updateMemory: (id: number, content: string, kind?: MemoryKind) => call<Memory>("update_memory", { id, content, kind }),
   deleteMemory: (id: number) => call<void>("delete_memory", { id }),
+  getVoiceStatus: () => call<VoiceStatus>("get_voice_status"),
+  transcribeAudio: (audioBase64: string, mimeType: string) => call<string>("transcribe_audio", { audioBase64, mimeType }),
+  synthesizeSpeech: (text: string) => call<string>("synthesize_speech", { text }),
 };

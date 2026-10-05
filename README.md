@@ -18,7 +18,8 @@ validated commands.
 | 3 — Tools | Tool registry + router, SAFE/LOW/SENSITIVE/CRITICAL permission layer with in-chat approvals, audit log, calculator, system info, allowlisted app launcher | ✅ Done |
 | 4 — Memory | Long-term + knowledge memory (SQLite FTS5), automatic relevant-memory retrieval, remember / search / update / forget tools, sensitive-data guard, Memory page | ✅ Done |
 | 5 — Web | `web_search` (Anthropic built-in, Brave or Tavily), `fetch_url` with SSRF protection, untrusted-content marking, source links | ✅ Done |
-| 6–10 | Voice, computer control, productivity, multimodal, hardening | Planned |
+| 6 — Voice | Push-to-talk (mic button + Ctrl+Shift+Space), Whisper-compatible or built-in speech recognition, sentence-streamed spoken replies, barge-in interruption, experimental wake word | ✅ Done |
+| 7–10 | Computer control, productivity, multimodal, hardening | Planned |
 
 ## Getting started
 

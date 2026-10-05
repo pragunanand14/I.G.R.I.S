@@ -20,6 +20,11 @@ const KEYS: &[&str] = &[
     "SEARCH_API_KEY",
     "TTS_PROVIDER",
     "STT_PROVIDER",
+    "VOICE_API_KEY",
+    "VOICE_BASE_URL",
+    "STT_MODEL",
+    "TTS_MODEL",
+    "TTS_VOICE",
     "IGRIS_LOG",
 ];
 
@@ -34,6 +39,11 @@ pub struct AppConfig {
     pub search_api_key: Option<String>,
     pub tts_provider: Option<String>,
     pub stt_provider: Option<String>,
+    pub voice_api_key: Option<String>,
+    pub voice_base_url: Option<String>,
+    pub stt_model: Option<String>,
+    pub tts_model: Option<String>,
+    pub tts_voice: Option<String>,
     pub log_filter: Option<String>,
     /// `.env` files that were found and read, in load order.
     pub env_files: Vec<PathBuf>,
@@ -52,6 +62,8 @@ impl std::fmt::Debug for AppConfig {
             .field("search_api_key", &self.search_api_key.as_ref().map(|_| "<redacted>"))
             .field("tts_provider", &self.tts_provider)
             .field("stt_provider", &self.stt_provider)
+            .field("voice_api_key", &self.voice_api_key.as_ref().map(|_| "<redacted>"))
+            .field("voice_base_url", &self.voice_base_url)
             .field("env_files", &self.env_files)
             .finish()
     }
@@ -126,8 +138,13 @@ impl AppConfig {
             database_url: read("DATABASE_URL").map(PathBuf::from),
             search_provider: read("SEARCH_PROVIDER").map(|v| v.to_lowercase()),
             search_api_key: read("SEARCH_API_KEY"),
-            tts_provider: read("TTS_PROVIDER"),
-            stt_provider: read("STT_PROVIDER"),
+            tts_provider: read("TTS_PROVIDER").map(|v| v.to_lowercase()),
+            stt_provider: read("STT_PROVIDER").map(|v| v.to_lowercase()),
+            voice_api_key: read("VOICE_API_KEY"),
+            voice_base_url: read("VOICE_BASE_URL"),
+            stt_model: read("STT_MODEL"),
+            tts_model: read("TTS_MODEL"),
+            tts_voice: read("TTS_VOICE"),
             log_filter: read("IGRIS_LOG"),
             env_files: Vec::new(),
         }
@@ -179,10 +196,12 @@ mod tests {
 
     #[test]
     fn public_config_never_contains_secrets() {
-        let c = cfg(&[("AI_API_KEY", "sk-secret-value"), ("SEARCH_API_KEY", "search-secret"), ("AI_PROVIDER", "Anthropic")]);
+        let c = cfg(&[("AI_API_KEY", "sk-secret-value"), ("SEARCH_API_KEY", "search-secret"), ("VOICE_API_KEY", "voice-secret"), ("AI_PROVIDER", "Anthropic")]);
         let public = serde_json::to_string(&c.public()).unwrap();
         assert!(!public.contains("sk-secret-value"));
         assert!(!public.contains("search-secret"));
+        assert!(!public.contains("voice-secret"));
+        assert!(!format!("{c:?}").contains("voice-secret"));
         assert!(public.contains("\"aiKeyConfigured\":true"));
         assert!(public.contains("\"aiProvider\":\"anthropic\""));
     }

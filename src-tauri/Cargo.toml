@@ -26,7 +26,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 tracing-appender = "0.2"
 dotenvy = "0.15"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "system-proxy", "stream", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "system-proxy", "stream", "json", "multipart"] }
 tokio = { version = "1", features = ["sync", "time", "macros", "rt", "net", "io-util"] }
 tokio-util = "0.7"
 futures-util = "0.3"
@@ -37,6 +37,8 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 regex = "1"
 html2text = "0.14"
+tauri-plugin-global-shortcut = "2"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

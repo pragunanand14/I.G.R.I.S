@@ -17,6 +17,12 @@ export interface Settings {
   confirmLowRisk: boolean;
   /** Use and update persistent memory. */
   memoryEnabled: boolean;
+  /** Speak replies when the request was spoken. */
+  voiceAutoSpeak: boolean;
+  /** Experimental wake word. */
+  wakeWordEnabled: boolean;
+  /** Browser voice name; empty = default. */
+  ttsVoice: string;
 }
 
 export type SettingsPatch = Partial<Settings>;

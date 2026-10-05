@@ -166,6 +166,35 @@ tools off without deleting anything. Duplicates are detected and not stored twic
 * **Sources** — each tool activity carries `sources` (title + URL), rendered as links that open in the system
   browser.
 
+## Voice (Phase 6)
+
+```
+mic button / Ctrl+Shift+Space / wake word
+        │
+  voiceStore.listen() ── stops speech + cancels a reply in progress (interruption)
+        │
+  STT: browser (Web Speech)  or  MediaRecorder → silence detector → transcribe_audio (Rust → /audio/transcriptions)
+        │ text
+  chat send (same path as typing) ── streamed reply ── SentenceChunker → Speaker (browser voices or synthesize_speech)
+                                                         │ while speaking: mic level monitor → barge-in → listen()
+```
+
+* **Backends** (`voice/mod.rs`): `STT_PROVIDER` / `TTS_PROVIDER` = `browser` (default), `openai`, or `local`
+  (OpenAI-compatible speech server at `VOICE_BASE_URL`). Keys stay in the backend; misconfiguration is reported as an
+  actionable message, never a silent failure.
+* **Recording**: `MediaRecorder` with an RMS-based `SilenceDetector` (ends 1.2 s after speech, gives up after 8 s of
+  silence, caps at 30 s). Silence → "I didn't hear anything", nothing is sent.
+* **Spoken replies**: only for requests made by voice (and only with *Speak replies* on). Markdown is converted to
+  speakable text (code blocks are announced, not read; URLs become "the link"); sentences are spoken as soon as they
+  complete in the stream.
+* **Interruption**: Esc, the mic button, the hotkey, or talking over IGRIS (sustained mic level while speaking)
+  stops speech, cancels the in-flight reply and starts listening.
+* **Wake word** (experimental, off by default): continuous Web Speech recognition matched against "IGRIS" and common
+  mishearings. Only offered when the webview provides speech recognition (WebView2 on Windows; not WebKitGTK).
+* **Voice states** drive the core: listening, thinking (transcribing / generating), speaking, idle.
+* **Not verified in CI**: real microphone capture and audio playback require hardware — logic is covered by unit
+  tests and the request paths by mock-server tests.
+
 ## Planned architecture (later phases)
 
 * **Orchestrator** — intent analysis, memory retrieval and planning slot into `core/` ahead of the tool loop.
