@@ -281,6 +281,18 @@ function AiPanel({ disabled, configDir }: { disabled: boolean; configDir: string
           <div className="mt-2 border-t border-line pt-3">
             <InfoRow label="Provider" value={config.aiProvider ?? "Not set"} />
             <InfoRow label="API key" value={config.aiKeyConfigured ? "Configured (hidden)" : "Not set"} />
+            <InfoRow
+              label="Web search"
+              value={
+                config.webSearch === "anthropic"
+                  ? "Anthropic built-in (billed per search)"
+                  : config.webSearch === "brave"
+                    ? "Brave Search"
+                    : config.webSearch === "tavily"
+                      ? "Tavily"
+                      : "Not available — set SEARCH_PROVIDER + SEARCH_API_KEY"
+              }
+            />
             {config.aiBaseUrl && <InfoRow label="Endpoint" value={config.aiBaseUrl} />}
             <InfoRow label="Loaded .env files" value={config.envFiles.length ? config.envFiles.join(", ") : "None"} />
           </div>

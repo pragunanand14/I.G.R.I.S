@@ -18,6 +18,8 @@ export interface PublicConfig {
   aiBaseUrl: string | null;
   aiKeyConfigured: boolean;
   searchConfigured: boolean;
+  /** brave | tavily | anthropic (built-in) | null */
+  webSearch: string | null;
   ttsProvider: string | null;
   sttProvider: string | null;
   envFiles: string[];

@@ -309,7 +309,7 @@ mod tests {
     fn tool_snapshot_roundtrips_and_legacy_rows_have_none() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.conn().unwrap();
-        let defs = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: serde_json::json!({"type":"object"}) }];
+        let defs = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: serde_json::json!({"type":"object"}), server: None }];
         let c = create(&conn, "t", "s", &defs).unwrap();
         assert_eq!(tool_specs(&conn, &c.id).unwrap(), defs);
         conn.execute("UPDATE conversations SET tool_specs = NULL WHERE id = ?1", [&c.id]).unwrap();

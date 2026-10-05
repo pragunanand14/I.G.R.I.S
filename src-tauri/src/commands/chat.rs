@@ -36,6 +36,12 @@ fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
     })
 }
 
+/// Tools for a new conversation (frozen with it).
+fn offered_tools(state: &AppState) -> AppResult<Vec<crate::ai::ToolDef>> {
+    let mode = state.config.read().map_err(|_| AppError::internal("config lock poisoned"))?.web_search_mode();
+    Ok(state.tools.offered(mode))
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnResult {
@@ -70,7 +76,7 @@ pub async fn chat_send(
     let s = settings::load(&*state.db.conn()?)?;
 
     let (conversation, message) =
-        chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &s.user_name, &state.tools.defs(), s.memory_enabled)?;
+        chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &s.user_name, &offered_tools(&state)?, s.memory_enabled)?;
     guard.attach(&conversation.id);
     let _ = on_event.send(ChatEvent::UserMessage { conversation: conversation.clone(), message });
     run_generation(&state, &conversation.id, &guard.token, params, &on_event).await

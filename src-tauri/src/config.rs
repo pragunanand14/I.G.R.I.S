@@ -16,6 +16,7 @@ const KEYS: &[&str] = &[
     "AI_MODEL",
     "AI_BASE_URL",
     "DATABASE_URL",
+    "SEARCH_PROVIDER",
     "SEARCH_API_KEY",
     "TTS_PROVIDER",
     "STT_PROVIDER",
@@ -29,6 +30,7 @@ pub struct AppConfig {
     pub ai_model: Option<String>,
     pub ai_base_url: Option<String>,
     pub database_url: Option<PathBuf>,
+    pub search_provider: Option<String>,
     pub search_api_key: Option<String>,
     pub tts_provider: Option<String>,
     pub stt_provider: Option<String>,
@@ -46,6 +48,7 @@ impl std::fmt::Debug for AppConfig {
             .field("ai_model", &self.ai_model)
             .field("ai_base_url", &self.ai_base_url)
             .field("database_url", &self.database_url)
+            .field("search_provider", &self.search_provider)
             .field("search_api_key", &self.search_api_key.as_ref().map(|_| "<redacted>"))
             .field("tts_provider", &self.tts_provider)
             .field("stt_provider", &self.stt_provider)
@@ -63,6 +66,8 @@ pub struct PublicConfig {
     pub ai_base_url: Option<String>,
     pub ai_key_configured: bool,
     pub search_configured: bool,
+    /// How web search works: `brave`, `tavily`, `anthropic` (built-in) or none.
+    pub web_search: Option<String>,
     pub tts_provider: Option<String>,
     pub stt_provider: Option<String>,
     pub env_files: Vec<String>,
@@ -119,11 +124,24 @@ impl AppConfig {
             ai_model: read("AI_MODEL"),
             ai_base_url: read("AI_BASE_URL"),
             database_url: read("DATABASE_URL").map(PathBuf::from),
+            search_provider: read("SEARCH_PROVIDER").map(|v| v.to_lowercase()),
             search_api_key: read("SEARCH_API_KEY"),
             tts_provider: read("TTS_PROVIDER"),
             stt_provider: read("STT_PROVIDER"),
             log_filter: read("IGRIS_LOG"),
             env_files: Vec::new(),
+        }
+    }
+
+    /// Which web search backend is usable with this configuration.
+    /// A Brave/Tavily key wins; otherwise Anthropic's built-in search when Anthropic is the AI provider.
+    pub fn web_search_mode(&self) -> Option<&'static str> {
+        match (self.search_provider.as_deref(), self.search_api_key.is_some()) {
+            (Some("brave"), true) => Some("brave"),
+            (Some("tavily"), true) => Some("tavily"),
+            (None, true) => Some("brave"),
+            _ if self.ai_provider.as_deref() == Some("anthropic") && self.ai_api_key.is_some() => Some("anthropic"),
+            _ => None,
         }
     }
 
@@ -134,6 +152,7 @@ impl AppConfig {
             ai_base_url: self.ai_base_url.clone(),
             ai_key_configured: self.ai_api_key.is_some(),
             search_configured: self.search_api_key.is_some(),
+            web_search: self.web_search_mode().map(str::to_string),
             tts_provider: self.tts_provider.clone(),
             stt_provider: self.stt_provider.clone(),
             env_files: self.env_files.iter().map(|p| p.display().to_string()).collect(),
@@ -166,6 +185,15 @@ mod tests {
         assert!(!public.contains("search-secret"));
         assert!(public.contains("\"aiKeyConfigured\":true"));
         assert!(public.contains("\"aiProvider\":\"anthropic\""));
+    }
+
+    #[test]
+    fn web_search_mode_selection() {
+        assert_eq!(cfg(&[("SEARCH_PROVIDER", "Tavily"), ("SEARCH_API_KEY", "k")]).web_search_mode(), Some("tavily"));
+        assert_eq!(cfg(&[("SEARCH_API_KEY", "k")]).web_search_mode(), Some("brave"));
+        assert_eq!(cfg(&[("AI_PROVIDER", "anthropic"), ("AI_API_KEY", "k")]).web_search_mode(), Some("anthropic"));
+        assert_eq!(cfg(&[("AI_PROVIDER", "openai"), ("AI_API_KEY", "k")]).web_search_mode(), None);
+        assert_eq!(cfg(&[("SEARCH_PROVIDER", "bing"), ("SEARCH_API_KEY", "k")]).web_search_mode(), None);
     }
 
     #[test]

@@ -66,6 +66,7 @@ pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, stri
         body["tools"] = Value::Array(
             req.tools
                 .iter()
+                .filter(|t| t.server.is_none()) // provider-specific server tools can't run here
                 .map(|t| {
                     let mut f = json!({ "name": t.name, "description": t.description, "parameters": t.input_schema });
                     if strict_tools {
@@ -290,7 +291,10 @@ mod tests {
 
     fn tool_req() -> ChatRequest {
         let mut r = req();
-        r.tools = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: json!({"type":"object"}) }];
+        r.tools = vec![
+            ToolDef { name: "calculator".into(), description: "d".into(), input_schema: json!({"type":"object"}), server: None },
+            ToolDef { name: "web_search".into(), description: String::new(), input_schema: json!({}), server: Some(json!({"type":"web_search_20260209"})) },
+        ];
         r.turns.push(ChatTurn {
             tool_calls: vec![ToolCall { id: "call_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
             ..ChatTurn::assistant("")
@@ -308,6 +312,7 @@ mod tests {
         assert!(assistant["content"].is_null());
         assert_eq!(msgs.last().unwrap()["role"], "tool");
         assert_eq!(b["tools"][0]["function"]["strict"], true);
+        assert_eq!(b["tools"].as_array().unwrap().len(), 1, "server tools are skipped");
         assert!(build_body(&tool_req(), false, true, false)["tools"][0]["function"].get("strict").is_none());
     }
 
@@ -367,8 +372,9 @@ mod tests {
         let mut deltas = Vec::new();
         let c = p
             .stream(&req(), &CancellationToken::new(), &mut |e| {
-                let StreamEvent::TextDelta(t) = e;
-                deltas.push(t)
+                if let StreamEvent::TextDelta(t) = e {
+                    deltas.push(t)
+                }
             })
             .await
             .unwrap();

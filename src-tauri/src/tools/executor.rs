@@ -8,7 +8,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::{audit, schema, PermissionLevel, ToolErrorKind, ToolRegistry};
-use crate::ai::{ToolCall, ToolResult};
+use crate::ai::{Source, ToolCall, ToolResult};
 use crate::db::Database;
 
 pub const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -56,6 +56,9 @@ pub struct ToolActivity {
     /// Characters of response text written before this call (for interleaved display).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_offset: Option<usize>,
+    /// Links the result came from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<Source>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +132,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
         result: None,
         duration_ms: None,
         text_offset: None,
+        sources: Vec::new(),
     };
     let mut approval = "auto";
 
@@ -238,7 +242,10 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
             let msg = format!("{} timed out after {}s.", spec.title, TOOL_TIMEOUT.as_secs());
             finish(&mut activity, ActivityStatus::Failed, msg.clone(), msg, true, approval)
         }
-        Some(Ok(Ok(out))) => finish(&mut activity, ActivityStatus::Completed, clip(out.content), out.summary, false, approval),
+        Some(Ok(Ok(out))) => {
+            activity.sources = out.sources;
+            finish(&mut activity, ActivityStatus::Completed, clip(out.content), out.summary, false, approval)
+        }
         Some(Ok(Err(e))) => {
             let status = if e.kind == ToolErrorKind::InvalidInput { ActivityStatus::Invalid } else { ActivityStatus::Failed };
             finish(&mut activity, status, e.message.clone(), e.message, true, approval)
@@ -275,7 +282,7 @@ mod tests {
         }
         async fn execute(&self, _i: &serde_json::Value) -> ToolResultT {
             *self.1.lock().unwrap() += 1;
-            Ok(ToolOutput { content: "done".into(), summary: "done".into() })
+            Ok(ToolOutput { content: "done".into(), summary: "done".into(), sources: vec![] })
         }
     }
 

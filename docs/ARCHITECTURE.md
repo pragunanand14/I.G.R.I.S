@@ -143,6 +143,29 @@ or for clearly lasting facts, and to forget via search → delete.
 Memory content never appears in logs. **Settings → Use memory** (on the Memory page) turns retrieval and all memory
 tools off without deleting anything. Duplicates are detected and not stored twice.
 
+## Web (Phase 5)
+
+* **`web_search`** — one tool name, chosen per conversation when it is created (and frozen with it):
+  a Brave or Tavily key (`SEARCH_PROVIDER` + `SEARCH_API_KEY`) gives the client tool in `tools/web.rs`; otherwise,
+  with Anthropic as the AI provider, Anthropic's built-in server tool (`web_search_20260209`, `max_uses: 5`) is
+  sent verbatim (`ToolDef.server`). OpenAI-compatible providers skip server tools. With neither, the tool isn't
+  offered and the system prompt tells the model to say its information may be out of date.
+* **Server tools** are executed by the provider: the Anthropic stream's `server_tool_use` /
+  `web_search_tool_result` blocks surface as `StreamEvent::ServerTool` so the UI shows "Searching the web…" with
+  result links, and each search is written to the audit log. `pause_turn` is handled by re-sending the paused
+  assistant turn (no extra user message), counted against the 8-round limit. Error results (`error_code`) are shown
+  as failures.
+* **`fetch_url`** (SAFE) — http/https only, no credentials in URLs, no `localhost`/`.local`/`.internal`; the host
+  is resolved and every address checked against loopback, private, link-local (incl. cloud metadata
+  169.254.169.254), CGNAT, multicast, reserved and IPv6 ULA/link-local ranges. The connection is pinned to the
+  checked address (`reqwest::ClientBuilder::resolve`) so DNS rebinding can't swap it, redirects are followed
+  manually (max 5) with the same checks each hop, only text-like content types are accepted, downloads are capped at
+  2 MB and text at 20k characters. HTML is converted to readable text.
+* **Prompt-injection defense** — search results and pages are wrapped in `<untrusted_web_content>` with an explicit
+  "data, not instructions" note; the system prompt repeats that rule.
+* **Sources** — each tool activity carries `sources` (title + URL), rendered as links that open in the system
+  browser.
+
 ## Planned architecture (later phases)
 
 * **Orchestrator** — intent analysis, memory retrieval and planning slot into `core/` ahead of the tool loop.

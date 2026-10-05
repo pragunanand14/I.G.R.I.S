@@ -1,5 +1,6 @@
 import { Ban, Check, CircleSlash, Loader2, ShieldQuestion, TriangleAlert, X } from "lucide-react";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
+import { SourceLinks } from "./SourceLinks";
 import type { ToolActivity } from "@/types/tools";
 
 const ICONS = {
@@ -60,7 +61,8 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
             </div>
           </li>
         ) : (
-          <li key={a.id} className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs">
+          <li key={a.id} className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs">
+            <div className="flex items-center gap-2">
             {ICONS[a.status]}
             <span className="min-w-0 truncate text-fg" title={a.tool}>
               {a.description}
@@ -71,6 +73,8 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
               </span>
             )}
             {a.durationMs != null && <span className="ml-auto shrink-0 font-mono text-[10px] text-faint">{a.durationMs} ms</span>}
+            </div>
+            {a.sources && a.sources.length > 0 && <SourceLinks sources={a.sources} />}
           </li>
         ),
       )}

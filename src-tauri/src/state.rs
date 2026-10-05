@@ -17,7 +17,7 @@ use crate::tools::ToolRegistry;
 /// Shared application state, managed by Tauri and injected into commands.
 pub struct AppState {
     /// Reloadable via the `reload_config` command.
-    pub config: RwLock<AppConfig>,
+    pub config: Arc<RwLock<AppConfig>>,
     pub ai: RwLock<AiRuntime>,
     pub db: Arc<Database>,
     pub system: Arc<Mutex<SystemMonitor>>,
@@ -199,6 +199,7 @@ mod tests {
             result: None,
             duration_ms: None,
             text_offset: None,
+            sources: Vec::new(),
         }
     }
 

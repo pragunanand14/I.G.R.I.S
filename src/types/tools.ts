@@ -15,6 +15,8 @@ export interface ToolActivity {
   durationMs: number | null;
   /** Characters (code points) of response text written before this call. */
   textOffset?: number;
+  /** Links the result came from (web search / fetch). */
+  sources?: { title: string; url: string }[];
 }
 
 export interface ToolInfo {

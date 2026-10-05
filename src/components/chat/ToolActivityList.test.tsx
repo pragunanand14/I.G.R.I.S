@@ -31,6 +31,28 @@ describe("ToolActivityList", () => {
     expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
   });
 
+  it("shows source links for web results", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          {
+            ...base,
+            tool: "web_search",
+            description: 'Search the web for "rust"',
+            status: "completed",
+            result: "5 results",
+            sources: [1, 2, 3, 4, 5].map((i) => ({ title: `Result ${i}`, url: `https://www.site${i}.example/p` })),
+          },
+        ]}
+      />,
+    );
+    const list = screen.getByRole("list", { name: "Sources" });
+    expect(list).toHaveTextContent("Result 1");
+    expect(list).toHaveTextContent("site1.example");
+    expect(screen.queryByText("Result 5")).toBeNull();
+    expect(screen.getByRole("button", { name: "+1 more" })).toBeInTheDocument();
+  });
+
   it("shows results and honest failure states", () => {
     render(
       <ToolActivityList

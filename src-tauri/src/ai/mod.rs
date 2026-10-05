@@ -52,6 +52,25 @@ pub struct ToolDef {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
+    /// Provider-native server tool definition (e.g. Anthropic's built-in web
+    /// search). Executed by the provider, not by IGRIS; other providers skip it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<serde_json::Value>,
+}
+
+/// A link returned by a search or fetch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Source {
+    pub title: String,
+    pub url: String,
+}
+
+/// Progress of a tool the provider runs itself (server-side tools).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ServerToolEvent {
+    Started { id: String, name: String, input: serde_json::Value },
+    Finished { id: String, ok: bool, summary: String, sources: Vec<Source> },
 }
 
 /// One turn of conversation context sent to a provider.
@@ -113,6 +132,7 @@ pub struct ChatRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamEvent {
     TextDelta(String),
+    ServerTool(ServerToolEvent),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -121,6 +141,8 @@ pub enum StopReason {
     EndTurn,
     MaxTokens,
     ToolUse,
+    /// A server-side tool loop paused; re-send to continue.
+    PauseTurn,
     Refusal { category: Option<String> },
     Other { reason: String },
 }

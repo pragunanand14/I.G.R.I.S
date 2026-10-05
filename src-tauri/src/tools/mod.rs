@@ -12,6 +12,7 @@ pub mod calculator;
 pub mod executor;
 pub mod memory;
 pub mod schema;
+pub mod web;
 pub mod system_info;
 
 use std::collections::BTreeMap;
@@ -20,7 +21,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ai::ToolDef;
+use crate::ai::{Source, ToolDef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -60,7 +61,7 @@ pub struct ToolSpec {
 
 impl ToolSpec {
     pub fn to_def(&self) -> ToolDef {
-        ToolDef { name: self.name.to_string(), description: self.description.to_string(), input_schema: self.input_schema.clone() }
+        ToolDef { name: self.name.to_string(), description: self.description.to_string(), input_schema: self.input_schema.clone(), server: None }
     }
 }
 
@@ -70,6 +71,8 @@ pub struct ToolOutput {
     pub content: String,
     /// One-line result for the UI and audit log.
     pub summary: String,
+    /// Links the result came from (shown to the user).
+    pub sources: Vec<Source>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -141,5 +144,37 @@ impl ToolRegistry {
     /// Definitions offered to the model, in a deterministic order (stable prompt prefix).
     pub fn defs(&self) -> Vec<ToolDef> {
         self.tools.values().map(|t| t.spec().to_def()).collect()
+    }
+
+    /// Tool set for a new conversation under the current configuration:
+    /// `web_search` is the client tool when a Brave/Tavily key is set, the
+    /// provider's built-in search when that's available, otherwise omitted.
+    pub fn offered(&self, web_search_mode: Option<&str>) -> Vec<ToolDef> {
+        self.defs()
+            .into_iter()
+            .filter_map(|d| match (d.name.as_str(), web_search_mode) {
+                ("web_search", Some("brave" | "tavily")) => Some(d),
+                ("web_search", Some("anthropic")) => Some(web::anthropic_server_tool()),
+                ("web_search", _) => None,
+                _ => Some(d),
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::RwLock;
+
+    #[test]
+    fn web_search_offer_follows_configuration() {
+        let mut r = ToolRegistry::default();
+        r.register(Arc::new(calculator::CalculatorTool::default()));
+        r.register(Arc::new(web::WebSearchTool::new(Arc::new(RwLock::new(crate::config::AppConfig::default())))));
+        let names = |mode| r.offered(mode).into_iter().map(|d| (d.name, d.server.is_some())).collect::<Vec<_>>();
+        assert_eq!(names(Some("brave")), vec![("calculator".into(), false), ("web_search".into(), false)]);
+        assert_eq!(names(Some("anthropic")), vec![("calculator".into(), false), ("web_search".into(), true)]);
+        assert_eq!(names(None), vec![("calculator".to_string(), false)]);
     }
 }

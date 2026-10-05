@@ -115,7 +115,7 @@ impl Tool for SystemInfoTool {
         } else {
             "RAM —".into()
         };
-        Ok(ToolOutput { content: render(&snapshot), summary: format!("{cpu}, {mem}") })
+        Ok(ToolOutput { content: render(&snapshot), summary: format!("{cpu}, {mem}"), sources: vec![] })
     }
 }
 

@@ -31,6 +31,7 @@ use crate::tools::apps::{LaunchApplicationTool, ListApplicationsTool};
 use crate::tools::calculator::CalculatorTool;
 use crate::tools::memory::{ForgetMemoryTool, RememberTool, SearchMemoryTool, UpdateMemoryTool};
 use crate::tools::system_info::SystemInfoTool;
+use crate::tools::web::{FetchUrlTool, WebSearchTool};
 use crate::tools::ToolRegistry;
 use crate::system::{ConnectivityMonitor, SystemMonitor};
 
@@ -70,7 +71,10 @@ pub fn run() {
 
             let system = Arc::new(Mutex::new(SystemMonitor::new()));
             let connectivity = ConnectivityMonitor::start(CONNECTIVITY_INTERVAL);
+            let config = Arc::new(RwLock::new(config));
             let mut tools = ToolRegistry::default();
+            tools.register(Arc::new(WebSearchTool::new(config.clone())));
+            tools.register(Arc::new(FetchUrlTool::default()));
             tools.register(Arc::new(CalculatorTool::default()));
             tools.register(Arc::new(SystemInfoTool::new(system.clone(), connectivity.clone())));
             tools.register(Arc::new(ListApplicationsTool::new(db.clone())));
@@ -82,7 +86,7 @@ pub fn run() {
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
 
             app.manage(AppState {
-                config: RwLock::new(config),
+                config,
                 ai: RwLock::new(ai),
                 generations: Generations::default(),
                 db,

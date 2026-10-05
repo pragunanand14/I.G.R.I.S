@@ -15,13 +15,13 @@ use tokio_util::sync::CancellationToken;
 
 use super::context::{build_turns, encode_turns};
 use super::prompt::{self, PromptContext};
-use crate::ai::{AiError, AiErrorKind, AiProvider, ChatRequest, ChatTurn, Effort, Role, StopReason, StreamEvent, ToolDef, Usage};
+use crate::ai::{AiError, AiErrorKind, AiProvider, ChatRequest, ChatTurn, Effort, Role, ServerToolEvent, StopReason, StreamEvent, ToolDef, Usage};
 use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::memory::retrieval::{self, MemoryContext};
-use crate::tools::executor::{self, Actor, Approver, ExecContext, Policy, ToolActivity};
-use crate::tools::ToolRegistry;
+use crate::tools::executor::{self, ActivityStatus, Actor, Approver, ExecContext, Policy, ToolActivity};
+use crate::tools::{audit, PermissionLevel, ToolRegistry};
 
 pub const MAX_INPUT_CHARS: usize = 100_000;
 /// Per-response output cap. Streaming keeps large values safe from HTTP timeouts.
@@ -170,9 +170,54 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         };
 
         let mut round_has_text = false;
+        let mut server_running: Vec<ToolActivity> = Vec::new();
         let result = params
             .provider
             .stream(&request, cancel, &mut |ev| match ev {
+                StreamEvent::ServerTool(ServerToolEvent::Started { id, name, input }) => {
+                    let query = input["query"].as_str().or(input["url"].as_str()).unwrap_or_default();
+                    let a = ToolActivity {
+                        id,
+                        tool: name.clone(),
+                        title: if name == "web_search" { "Web search".into() } else { name.clone() },
+                        permission: Some(PermissionLevel::Safe),
+                        description: if name == "web_search" { format!("Search the web for \"{query}\"") } else { format!("{name} {query}") },
+                        status: ActivityStatus::Running,
+                        result: None,
+                        duration_ms: None,
+                        text_offset: Some(text.chars().count()),
+                        sources: Vec::new(),
+                    };
+                    emit(ChatEvent::Tool { activity: a.clone() });
+                    server_running.push(a);
+                }
+                StreamEvent::ServerTool(ServerToolEvent::Finished { id, ok, summary, sources }) => {
+                    if let Some(pos) = server_running.iter().position(|a| a.id == id) {
+                        let mut a = server_running.remove(pos);
+                        a.status = if ok { ActivityStatus::Completed } else { ActivityStatus::Failed };
+                        a.result = Some(summary);
+                        a.sources = sources;
+                        if let Ok(conn) = db.conn() {
+                            let _ = audit::record(
+                                &conn,
+                                &audit::NewAuditEntry {
+                                    conversation_id: Some(conversation_id),
+                                    tool: &a.tool,
+                                    permission: "safe",
+                                    actor: "assistant",
+                                    description: &a.description,
+                                    input: "",
+                                    status: if ok { "completed" } else { "failed" },
+                                    approval: "auto",
+                                    result: a.result.as_deref(),
+                                    duration_ms: None,
+                                },
+                            );
+                        }
+                        emit(ChatEvent::Tool { activity: a.clone() });
+                        activities.push(a);
+                    }
+                }
                 StreamEvent::TextDelta(t) => {
                     if first_token_ms.is_none() {
                         first_token_ms = Some(started.elapsed().as_millis());
@@ -189,6 +234,12 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
             })
             .await;
 
+        // Server tools that never reported a result in this round.
+        for mut a in server_running.drain(..) {
+            a.status = ActivityStatus::Cancelled;
+            emit(ChatEvent::Tool { activity: a.clone() });
+            activities.push(a);
+        }
         let completion = match result {
             Ok(c) => c,
             Err(e) if e.kind == AiErrorKind::Cancelled => {
@@ -212,6 +263,13 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
             tool_calls: completion.tool_calls.clone(),
             ..ChatTurn::assistant(completion.text.clone())
         });
+        if completion.stop_reason == StopReason::PauseTurn {
+            // A provider-side tool loop paused: re-send as-is and it resumes.
+            if round == MAX_TOOL_ROUNDS {
+                break; // StepLimit
+            }
+            continue;
+        }
         if !wants_tools {
             outcome = Outcome::Finished(completion.stop_reason);
             break;
@@ -262,7 +320,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
     let new_message = match outcome {
         Outcome::Finished(stop) => {
             let (status, error) = match &stop {
-                StopReason::EndTurn | StopReason::ToolUse | StopReason::Other { .. } => (MessageStatus::Complete, None),
+                StopReason::EndTurn | StopReason::ToolUse | StopReason::PauseTurn | StopReason::Other { .. } => (MessageStatus::Complete, None),
                 StopReason::MaxTokens => (MessageStatus::Truncated, Some("The response hit the output length limit.".to_string())),
                 StopReason::Refusal { category } => (
                     MessageStatus::Refused,
@@ -353,7 +411,7 @@ mod tests {
         }
         async fn execute(&self, _i: &serde_json::Value) -> ToolResultT {
             *self.1.lock().unwrap() += 1;
-            Ok(ToolOutput { content: "opened".into(), summary: "opened".into() })
+            Ok(ToolOutput { content: "opened".into(), summary: "opened".into(), sources: vec![] })
         }
     }
 
@@ -561,6 +619,51 @@ mod tests {
         assert_eq!(m.status, MessageStatus::Error);
         assert!(m.error.unwrap().contains("tool steps"));
         assert_eq!(server.requests().await.len(), MAX_TOOL_ROUNDS + 1);
+    }
+
+    #[tokio::test]
+    async fn server_web_search_is_shown_audited_and_pause_turn_resumes() {
+        let db = db();
+        let first = events(&[
+            json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srv_1","name":"web_search","input":{}}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"igris news\"}"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srv_1","content":[{"type":"web_search_result","title":"News","url":"https://news.example/","encrypted_content":"e"}]}}),
+            json!({"type":"content_block_stop","index":1}),
+            json!({"type":"message_delta","delta":{"stop_reason":"pause_turn"},"usage":{"output_tokens":5}}),
+            json!({"type":"message_stop"}),
+        ]);
+        let server = MockServer::start(vec![(200, "text/event-stream", first), (200, "text/event-stream", sse_reply("Here's the news."))]).await;
+        let mut reg = ToolRegistry::default();
+        reg.register(Arc::new(CalculatorTool::default()));
+        let reg = Arc::new(reg);
+        let offered = vec![crate::tools::web::anthropic_server_tool()];
+        let p = params(server.url(), reg, Policy::default(), Approval::Approved);
+        let (conv, _) = save_user_message(&db, None, "Any IGRIS news?", "", &offered, true).unwrap();
+        let mut acts = Vec::new();
+        let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| {
+            if let ChatEvent::Tool { activity } = e {
+                acts.push(activity)
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(m.status, MessageStatus::Complete);
+        assert_eq!(m.content, "Here's the news.");
+        let done = acts.last().unwrap();
+        assert_eq!(done.status, ActivityStatus::Completed);
+        assert_eq!(done.description, "Search the web for \"igris news\"");
+        assert_eq!(done.sources[0].url, "https://news.example/");
+        let reqs = server.requests().await;
+        assert_eq!(reqs[0].json()["tools"][0]["type"], "web_search_20260209");
+        let second = reqs[1].json();
+        let msgs = second["messages"].as_array().unwrap();
+        assert_eq!(msgs.last().unwrap()["role"], "assistant", "paused turn is re-sent without an extra user message");
+        assert_eq!(msgs.last().unwrap()["content"][0]["type"], "server_tool_use");
+        let log = audit::list(&db.conn().unwrap(), 5).unwrap();
+        assert_eq!(log[0].tool, "web_search");
+        assert_eq!(log[0].status, "completed");
     }
 
     #[tokio::test]

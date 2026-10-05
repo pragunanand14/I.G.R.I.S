@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::http::{self, cancelled};
 use super::sse::SseParser;
-use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Role, StopReason, StreamEvent, ToolCall, Usage};
+use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Role, ServerToolEvent, Source, StopReason, StreamEvent, ToolCall, Usage};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -114,7 +114,10 @@ pub fn build_body(req: &ChatRequest, first_party: bool) -> Value {
         body["tools"] = Value::Array(
             req.tools
                 .iter()
-                .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.input_schema, "strict": true }))
+                .map(|t| match &t.server {
+                    Some(server) => server.clone(),
+                    None => json!({ "name": t.name, "description": t.description, "input_schema": t.input_schema, "strict": true }),
+                })
                 .collect(),
         );
     }
@@ -132,6 +135,34 @@ fn error_kind_from_type(t: &str) -> AiErrorKind {
         "timeout_error" => AiErrorKind::Timeout,
         _ => AiErrorKind::Server,
     }
+}
+
+/// Summarise a server tool result block (web search / web fetch) for the UI.
+fn server_result_event(block: &Value) -> Option<ServerToolEvent> {
+    let ty = block["type"].as_str()?;
+    if !ty.ends_with("_tool_result") || ty == "tool_result" {
+        return None;
+    }
+    let id = block["tool_use_id"].as_str().unwrap_or_default().to_string();
+    let content = &block["content"];
+    // Errors arrive as an object with an error_code; successes as a list.
+    if let Some(code) = content["error_code"].as_str() {
+        return Some(ServerToolEvent::Finished { id, ok: false, summary: format!("Search failed ({code})"), sources: vec![] });
+    }
+    let sources: Vec<Source> = content
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            Some(Source { title: r["title"].as_str().unwrap_or_default().to_string(), url: r["url"].as_str()?.to_string() })
+        })
+        .collect();
+    let summary = if ty == "web_search_tool_result" {
+        format!("{} result{}", sources.len(), if sources.len() == 1 { "" } else { "s" })
+    } else {
+        "Done".to_string()
+    };
+    Some(ServerToolEvent::Finished { id, ok: true, summary, sources })
 }
 
 /// Accumulates streamed content blocks so the full assistant turn can be
@@ -263,6 +294,9 @@ impl StreamState {
             "content_block_start" => {
                 let idx = v["index"].as_u64().unwrap_or(0) as usize;
                 self.acc.start(idx, v["content_block"].clone());
+                if let Some(ev) = server_result_event(&v["content_block"]) {
+                    on_event(StreamEvent::ServerTool(ev));
+                }
                 // A block may start with text already present.
                 if v["content_block"]["type"] == "text" {
                     if let Some(t) = v["content_block"]["text"].as_str().filter(|t| !t.is_empty()) {
@@ -278,13 +312,24 @@ impl StreamState {
                     }
                 }
             }
-            "content_block_stop" => self.acc.stop(v["index"].as_u64().unwrap_or(0) as usize),
+            "content_block_stop" => {
+                let idx = v["index"].as_u64().unwrap_or(0) as usize;
+                self.acc.stop(idx);
+                if let Some(b) = self.acc.blocks.get(idx).filter(|b| b["type"] == "server_tool_use") {
+                    on_event(StreamEvent::ServerTool(ServerToolEvent::Started {
+                        id: b["id"].as_str().unwrap_or_default().to_string(),
+                        name: b["name"].as_str().unwrap_or_default().to_string(),
+                        input: b["input"].clone(),
+                    }));
+                }
+            }
             "message_delta" => {
                 if let Some(r) = v["delta"]["stop_reason"].as_str() {
                     self.stop_reason = Some(match r {
                         "end_turn" | "stop_sequence" => StopReason::EndTurn,
                         "max_tokens" => StopReason::MaxTokens,
                         "tool_use" => StopReason::ToolUse,
+                        "pause_turn" => StopReason::PauseTurn,
                         "refusal" => StopReason::Refusal {
                             category: v["delta"]["stop_details"]["category"].as_str().map(str::to_string),
                         },
@@ -470,8 +515,9 @@ mod tests {
         let mut deltas = Vec::new();
         let c = p
             .stream(&req("claude-opus-5-5"), &CancellationToken::new(), &mut |e| {
-                let StreamEvent::TextDelta(t) = e;
-                deltas.push(t)
+                if let StreamEvent::TextDelta(t) = e {
+                    deltas.push(t)
+                }
             })
             .await
             .unwrap();
@@ -492,7 +538,10 @@ mod tests {
     #[test]
     fn tools_are_strict_and_results_become_tool_result_blocks() {
         let mut r = req("claude-opus-5-5");
-        r.tools = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: json!({"type":"object"}) }];
+        r.tools = vec![
+            ToolDef { name: "calculator".into(), description: "d".into(), input_schema: json!({"type":"object"}), server: None },
+            ToolDef { name: "web_search".into(), description: String::new(), input_schema: json!({}), server: Some(json!({"type":"web_search_20260209","name":"web_search","max_uses":5})) },
+        ];
         r.turns.push(ChatTurn {
             tool_calls: vec![ToolCall { id: "toolu_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
             ..ChatTurn::assistant("Let me check.")
@@ -504,6 +553,7 @@ mod tests {
         let b = build_body(&r, true);
         assert_eq!(b["tools"][0]["strict"], true);
         assert!(b["tools"][0].get("eager_input_streaming").is_none());
+        assert_eq!(b["tools"][1], json!({"type":"web_search_20260209","name":"web_search","max_uses":5}), "server tools are sent verbatim");
         assert_eq!(b["messages"][1]["content"][1]["type"], "tool_use");
         assert_eq!(b["messages"][2]["content"][0]["type"], "tool_result");
         assert_eq!(b["messages"][2]["content"][0]["tool_use_id"], "toolu_1");
@@ -549,6 +599,52 @@ mod tests {
         acc.start(2, json!({"type":"tool_use","id":"b","name":"calculator","input":{}}));
         let ids: Vec<String> = acc.tool_calls().into_iter().map(|c| c.id).collect();
         assert_eq!(ids, vec!["b"]);
+    }
+
+    #[tokio::test]
+    async fn surfaces_server_web_search_and_pause_turn() {
+        let body = sse(&[
+            ("message_start", json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":5}}})),
+            ("content_block_start", json!({"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}})),
+            ("content_block_delta", json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"rust 2026\"}"}})),
+            ("content_block_stop", json!({"type":"content_block_stop","index":0})),
+            ("content_block_start", json!({"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[
+                {"type":"web_search_result","title":"Rust Blog","url":"https://blog.rust-lang.org/","encrypted_content":"x"},
+                {"type":"web_search_result","title":"Releases","url":"https://github.com/rust-lang/rust/releases","encrypted_content":"y"}
+            ]}})),
+            ("content_block_stop", json!({"type":"content_block_stop","index":1})),
+            ("content_block_start", json!({"type":"content_block_start","index":2,"content_block":{"type":"server_tool_use","id":"srvtoolu_2","name":"web_search","input":{}}})),
+            ("content_block_delta", json!({"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"x\"}"}})),
+            ("content_block_stop", json!({"type":"content_block_stop","index":2})),
+            ("content_block_start", json!({"type":"content_block_start","index":3,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_2","content":{"type":"web_search_tool_result_error","error_code":"max_uses_exceeded"}}})),
+            ("content_block_stop", json!({"type":"content_block_stop","index":3})),
+            ("message_delta", json!({"type":"message_delta","delta":{"stop_reason":"pause_turn"},"usage":{"output_tokens":9}})),
+            ("message_stop", json!({"type":"message_stop"})),
+        ]);
+        let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
+        let p = AnthropicProvider::new("k".into(), Some(server.url())).unwrap();
+        let mut evs = Vec::new();
+        let c = p
+            .stream(&req("claude-opus-5-5"), &CancellationToken::new(), &mut |e| {
+                if let StreamEvent::ServerTool(s) = e {
+                    evs.push(s)
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(c.stop_reason, StopReason::PauseTurn);
+        assert!(c.tool_calls.is_empty(), "server tools are never executed locally");
+        assert_eq!(evs[0], ServerToolEvent::Started { id: "srvtoolu_1".into(), name: "web_search".into(), input: json!({"query":"rust 2026"}) });
+        match &evs[1] {
+            ServerToolEvent::Finished { ok, summary, sources, .. } => {
+                assert!(ok);
+                assert_eq!(summary, "2 results");
+                assert_eq!(sources[0].url, "https://blog.rust-lang.org/");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(&evs[3], ServerToolEvent::Finished { ok: false, summary, .. } if summary.contains("max_uses_exceeded")));
+        assert!(c.raw.is_some(), "server blocks stay replayable");
     }
 
     #[tokio::test]
