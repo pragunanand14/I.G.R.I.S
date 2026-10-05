@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useNow } from "@/hooks/useNow";
 import type { StreamingState } from "@/stores/chatStore";
 import type { Message } from "@/types/chat";
 import { MessageItem } from "./MessageItem";
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function MessageList({ messages, pendingUser, streaming, onRegenerate, onEdit, onAnswerApproval }: Props) {
+  const now = useNow(1000);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const busy = streaming !== null;
@@ -61,7 +63,7 @@ export function MessageList({ messages, pendingUser, streaming, onRegenerate, on
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-baseline gap-2">
                 <span className="text-xs font-semibold tracking-[0.18em] text-fg">IGRIS</span>
-                <span className="text-[10px] text-faint">{streamingLabel(streaming)}</span>
+                <span className="text-[10px] text-faint">{streamingLabel(streaming, now)}</span>
               </div>
               <AssistantBody text={streaming.text} activities={streaming.activities} onAnswer={onAnswerApproval} streaming />
               {streaming.text || streaming.activities.length > 0 ? null : (
@@ -79,9 +81,14 @@ export function MessageList({ messages, pendingUser, streaming, onRegenerate, on
   );
 }
 
-function streamingLabel(s: StreamingState): string {
+function streamingLabel(s: StreamingState, now: number): string {
   const last = s.activities.at(-1);
   if (last?.status === "awaitingApproval") return "Waiting for approval…";
   if (last?.status === "running") return `${last.title}…`;
-  return s.phase === "waiting" ? "Thinking…" : "Responding…";
+  let label = s.phase === "waiting" ? "Thinking…" : "Responding…";
+  if (s.phase === "waiting" && s.reasoningChars) label = `Reasoning… (~${Math.max(1, Math.round(s.reasoningChars / 5))} words)`;
+  // Slow (e.g. local) models: show that it's still working.
+  const elapsed = s.startedAt ? Math.floor((now - s.startedAt) / 1000) : 0;
+  if (s.phase === "waiting" && elapsed >= 10) label += ` ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+  return label;
 }

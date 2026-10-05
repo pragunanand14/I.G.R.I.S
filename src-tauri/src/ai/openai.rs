@@ -11,6 +11,79 @@ use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion,
 
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+/// Local models on a CPU can be silent for minutes while reading a long prompt.
+const LOCAL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Separates `<think>…</think>` reasoning, which some local models (e.g. Qwen3 on
+/// older Ollama) write inline, from the answer — across chunk boundaries. Only a
+/// block at the very start counts, so a literal "<think>" later in an answer stays.
+#[derive(Default)]
+struct ThinkFilter {
+    inside: bool,
+    seen_answer: bool,
+    pending: String,
+}
+
+impl ThinkFilter {
+    /// Feed a content delta; returns (answer text, reasoning chars).
+    fn push(&mut self, s: &str) -> (String, usize) {
+        if self.seen_answer && !self.inside {
+            return (s.to_string(), 0);
+        }
+        self.pending.push_str(s);
+        let (mut visible, mut hidden) = (String::new(), 0);
+        loop {
+            let tag = if self.inside { "</think>" } else { "<think>" };
+            if !self.inside
+                && !self.pending.trim_start().is_empty()
+                && !tag.starts_with(self.pending.trim_start())
+                && !self.pending.trim_start().starts_with(tag)
+            {
+                // Answer text that isn't a think block: pass everything through from now on.
+                self.seen_answer = true;
+                visible.push_str(&std::mem::take(&mut self.pending));
+                break;
+            }
+            if let Some(i) = self.pending.find(tag) {
+                if self.inside {
+                    hidden += self.pending[..i].chars().count();
+                }
+                self.pending = self.pending[i + tag.len()..].to_string();
+                self.inside = !self.inside;
+                if !self.inside {
+                    // Drop the blank lines models put after </think>.
+                    self.pending = self.pending.trim_start().to_string();
+                }
+                continue;
+            }
+            if self.inside {
+                // Keep a possible partial closing tag; the rest is reasoning.
+                let keep = (1..tag.len())
+                    .rev()
+                    .find(|&n| {
+                        self.pending.len() >= n
+                            && self.pending.is_char_boundary(self.pending.len() - n)
+                            && tag.starts_with(&self.pending[self.pending.len() - n..])
+                    })
+                    .unwrap_or(0);
+                let cut = self.pending.len() - keep;
+                hidden += self.pending[..cut].chars().count();
+                self.pending = self.pending[cut..].to_string();
+            }
+            break;
+        }
+        (visible, hidden)
+    }
+
+    /// Text held back at the end of the stream (never unfinished reasoning).
+    fn finish(&mut self) -> String {
+        if self.inside {
+            String::new()
+        } else {
+            std::mem::take(&mut self.pending)
+        }
+    }
+}
 
 pub struct OpenAiCompatibleProvider {
     id: &'static str,
@@ -30,7 +103,8 @@ impl OpenAiCompatibleProvider {
     }
 
     fn build(id: &'static str, label: &'static str, api_key: Option<String>, base_url: String) -> AiResult<Self> {
-        Ok(Self { id, label, client: http::client()?, api_key, base_url: base_url.trim_end_matches('/').to_string() })
+        let client = if id == "local" { http::client_with_read_timeout(LOCAL_READ_TIMEOUT)? } else { http::client()? };
+        Ok(Self { id, label, client, api_key, base_url: base_url.trim_end_matches('/').to_string() })
     }
 }
 
@@ -192,6 +266,7 @@ impl OpenAiCompatibleProvider {
         let mut parser = SseParser::new();
         let mut bytes = resp.bytes_stream();
 
+        let mut think = ThinkFilter::default();
         let mut handle = |data: &str| -> AiResult<bool> {
             if data.trim() == "[DONE]" {
                 return Ok(true);
@@ -208,14 +283,26 @@ impl OpenAiCompatibleProvider {
                 usage.output_tokens = u["completion_tokens"].as_u64();
             }
             if let Some(choice) = v["choices"].get(0) {
-                for field in ["content", "refusal"] {
+                // Reasoning models (Qwen3, DeepSeek-R1 …) stream their thinking separately.
+                for field in ["reasoning", "reasoning_content"] {
                     if let Some(t) = choice["delta"][field].as_str().filter(|t| !t.is_empty()) {
-                        text.push_str(t);
-                        on_event(StreamEvent::TextDelta(t.to_string()));
-                        if field == "refusal" {
-                            stop = Some(StopReason::Refusal { category: None });
-                        }
+                        on_event(StreamEvent::Reasoning(t.chars().count()));
                     }
+                }
+                if let Some(t) = choice["delta"]["content"].as_str().filter(|t| !t.is_empty()) {
+                    let (visible, hidden) = think.push(t);
+                    if hidden > 0 {
+                        on_event(StreamEvent::Reasoning(hidden));
+                    }
+                    if !visible.is_empty() {
+                        text.push_str(&visible);
+                        on_event(StreamEvent::TextDelta(visible));
+                    }
+                }
+                if let Some(t) = choice["delta"]["refusal"].as_str().filter(|t| !t.is_empty()) {
+                    text.push_str(t);
+                    on_event(StreamEvent::TextDelta(t.to_string()));
+                    stop = Some(StopReason::Refusal { category: None });
                 }
                 if let Some(deltas) = choice["delta"]["tool_calls"].as_array() {
                     for d in deltas {
@@ -265,6 +352,11 @@ impl OpenAiCompatibleProvider {
             if let Some(ev) = parser.finish() {
                 done = handle(&ev.data)?;
             }
+        }
+        let tail = think.finish();
+        if !tail.is_empty() {
+            text.push_str(&tail);
+            on_event(StreamEvent::TextDelta(tail));
         }
         // Some servers close without [DONE] but did send a finish_reason.
         if !done && stop.is_none() {
@@ -424,6 +516,56 @@ mod tests {
         let reqs = server.requests().await;
         assert!(reqs[0].json().get("tools").is_some());
         assert!(reqs[1].json().get("tools").is_none());
+    }
+
+    fn filter_all(chunks: &[&str]) -> (String, usize) {
+        let mut f = ThinkFilter::default();
+        let (mut text, mut hidden) = (String::new(), 0);
+        for c in chunks {
+            let (v, h) = f.push(c);
+            text.push_str(&v);
+            hidden += h;
+        }
+        text.push_str(&f.finish());
+        (text, hidden)
+    }
+
+    #[test]
+    fn think_blocks_are_hidden_even_when_split_across_chunks() {
+        assert_eq!(filter_all(&["<thi", "nk>abc</th", "ink>\n\nHello"]), ("Hello".into(), 3));
+        assert_eq!(filter_all(&["<think>", "x", "</think>", "Hi ", "there"]), ("Hi there".into(), 1));
+        assert_eq!(filter_all(&["Plain answer"]), ("Plain answer".into(), 0));
+        // Only a leading block counts; a literal tag later is part of the answer.
+        assert_eq!(filter_all(&["Use ", "<think>", " tags"]), ("Use <think> tags".into(), 0));
+        // An unfinished block at the end is dropped, not shown.
+        assert_eq!(filter_all(&["<think>still going"]), (String::new(), 11));
+        assert_eq!(filter_all(&["", "Hé", "llo"]), ("Héllo".into(), 0));
+    }
+
+    #[tokio::test]
+    async fn reasoning_fields_report_progress_but_never_reach_the_answer() {
+        let body = [
+            json!({"choices":[{"delta":{"role":"assistant","content":"","reasoning":"Let me think"}}]}),
+            json!({"choices":[{"delta":{"reasoning_content":" more"}}]}),
+            json!({"choices":[{"delta":{"content":"Hi!"},"finish_reason":"stop"}]}),
+        ]
+        .iter()
+        .map(|v| format!("data: {v}\n\n"))
+        .collect::<String>()
+            + "data: [DONE]\n\n";
+        let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
+        let p = OpenAiCompatibleProvider::local(None, Some(server.url())).unwrap();
+        let mut reasoning = 0;
+        let c = p
+            .stream(&req(), &CancellationToken::new(), &mut |e| {
+                if let StreamEvent::Reasoning(n) = e {
+                    reasoning += n
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(c.text, "Hi!");
+        assert_eq!(reasoning, "Let me think more".len());
     }
 
     #[tokio::test]

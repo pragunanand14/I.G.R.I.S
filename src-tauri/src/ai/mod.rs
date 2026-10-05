@@ -177,6 +177,9 @@ pub struct ChatRequest {
 pub enum StreamEvent {
     TextDelta(String),
     ServerTool(ServerToolEvent),
+    /// The model is reasoning before answering (characters of reasoning so far in
+    /// this delta). Reasoning text itself isn't shown or stored.
+    Reasoning(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

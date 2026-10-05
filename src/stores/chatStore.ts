@@ -16,6 +16,10 @@ export interface StreamingState {
   model: string | null;
   /** Tool calls in this turn, in order (upserted by id). */
   activities: ToolActivity[];
+  /** Characters the model has spent reasoning before answering (reasoning models). */
+  reasoningChars?: number;
+  /** When the request started (ms epoch), for the elapsed-time display. */
+  startedAt?: number;
 }
 
 interface ChatStore {
@@ -78,6 +82,9 @@ export const useChatStore = create<ChatStore>((set, get) => {
         set({ streaming: { ...s.streaming, conversationId: ev.conversationId, model: ev.model } });
         setActivity("thinking");
         break;
+      case "reasoning":
+        set({ streaming: { ...s.streaming, reasoningChars: ev.chars } });
+        break;
       case "delta":
         if (useAssistantStore.getState().activity !== "speaking") setActivity("speaking");
         set({ streaming: { ...s.streaming, phase: "streaming", text: s.streaming.text + ev.text } });
@@ -109,7 +116,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
   /** Run a turn; resolves when the turn ends. */
   const runTurn = async (start: Parameters<typeof startTurn>[1], conversationId: string | null, onSaved?: () => void) => {
     const requestId = newRequestId();
-    set({ streaming: { requestId, conversationId, text: "", phase: "waiting", model: null, activities: [] }, error: null, errorKind: null });
+    set({ streaming: { requestId, conversationId, text: "", phase: "waiting", model: null, activities: [], startedAt: Date.now() }, error: null, errorKind: null });
     setActivity("thinking");
     try {
       await startTurn(requestId, start, (ev) => handleEvent(requestId, ev, onSaved));

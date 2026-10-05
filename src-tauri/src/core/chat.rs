@@ -39,6 +39,8 @@ pub enum ChatEvent {
     Generating { conversation_id: String, model: String },
     /// Streamed response text.
     Delta { text: String },
+    /// The model is reasoning before it answers; `chars` is the total so far (text not shown).
+    Reasoning { chars: usize },
     /// A tool call started, needs approval, or finished (upsert by `activity.id`).
     Tool { activity: ToolActivity },
     /// The assistant turn ended; `message.status` says how.
@@ -191,6 +193,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
 
     let started = Instant::now();
     let mut first_token_ms: Option<u128> = None;
+    let mut reasoning_chars = 0usize;
     let mut text = String::new();
     let mut new_turns: Vec<ChatTurn> = Vec::new();
     let mut activities: Vec<ToolActivity> = Vec::new();
@@ -259,6 +262,10 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
                         emit(ChatEvent::Tool { activity: a.clone() });
                         activities.push(a);
                     }
+                }
+                StreamEvent::Reasoning(n) => {
+                    reasoning_chars += n;
+                    emit(ChatEvent::Reasoning { chars: reasoning_chars });
                 }
                 StreamEvent::TextDelta(t) => {
                     if first_token_ms.is_none() {

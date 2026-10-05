@@ -84,7 +84,13 @@ AI_API_KEY=sk-ant-...        # not needed for local
 # AI_BASE_URL=http://localhost:11434/v1   # local servers only
 ```
 
-After editing `.env`, use **Settings → AI → Reload configuration** (no restart needed). Secrets are read only by the
+After editing `.env`, use **Settings → AI → Reload configuration** (no restart needed).
+
+**Ollama:** `AI_PROVIDER=local` and `AI_MODEL=<name from ollama list>` are enough. Also set the environment variable
+`OLLAMA_CONTEXT_LENGTH=16384` and restart Ollama — IGRIS's instructions and tool list (~7k tokens) don't fit Ollama's
+default 4096-token context, and Ollama silently drops what doesn't fit. Use a model with tool support; on a CPU,
+small non-reasoning models answer much faster than reasoning ones (qwen3, deepseek-r1), whose thinking shows as
+"Reasoning…" while they work. Secrets are read only by the
 Rust backend and are never sent to the UI — the UI only learns whether a key is configured.
 
 Then, as you need them:

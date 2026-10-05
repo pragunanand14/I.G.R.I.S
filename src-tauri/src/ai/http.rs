@@ -12,10 +12,16 @@ pub const MAX_ATTEMPTS: u32 = 3;
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(20);
 
 pub fn client() -> AiResult<reqwest::Client> {
+    client_with_read_timeout(Duration::from_secs(180))
+}
+
+/// `read_timeout` is the longest silence allowed between bytes. Local models on
+/// a CPU can take minutes to read a long prompt before the first token.
+pub fn client_with_read_timeout(read_timeout: Duration) -> AiResult<reqwest::Client> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         // Idle timeout between reads; long generations stream continuously.
-        .read_timeout(Duration::from_secs(180))
+        .read_timeout(read_timeout)
         .user_agent(concat!("IGRIS/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| AiError::new(AiErrorKind::Network, format!("Could not initialise HTTP client: {e}")))
