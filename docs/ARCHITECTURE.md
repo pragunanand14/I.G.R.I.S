@@ -116,6 +116,33 @@ model ──tool_use──▶ core/chat loop ──▶ tools/executor
 * **Local models**: if an OpenAI-compatible local server rejects tool definitions, IGRIS retries the turn as
   plain chat.
 
+## Memory (Phase 4)
+
+Three levels, as specified:
+
+* **Conversation memory** — the conversation history itself (`conversations`, `messages`).
+* **Long-term memory** — durable facts about the user (`memories.kind = 'long_term'`).
+* **Knowledge memory** — information stored on purpose for later retrieval (`kind = 'knowledge'`).
+
+Storage is a `memories` table with an FTS5 index (`porter unicode61` tokenizer) kept in sync by triggers. Every
+memory records its source (you or IGRIS), timestamps and how often it was used, and is searchable, editable and
+deletable on the Memory page.
+
+**Retrieval.** When a user message is saved, `memory::retrieval::select` attaches long-term facts not yet sent
+in this conversation (each *version* once) plus up to five knowledge items matching the message (BM25 ranking).
+The rendered `<memory>` block — labelled as data, not instructions — is stored with the message
+(`messages.memory_context`) and replayed byte-for-byte on later turns; editing or deleting a memory never rewrites
+history (an edited fact is attached again as a new version). The chat shows "N memories used" on each message.
+
+**Tools.** `remember` (LOW), `search_memory` (SAFE), `update_memory` (LOW), `forget_memory` (LOW) go through the
+normal executor (validation, permission policy, audit). The system prompt tells the model to save only when asked
+or for clearly lasting facts, and to forget via search → delete.
+
+**Safety.** `memory::sensitive` refuses passwords/PINs, API keys and tokens, private keys, payment card numbers
+(Luhn-checked) and government ID numbers (SSN, Aadhaar, PAN) — from the model and from the Memory page alike.
+Memory content never appears in logs. **Settings → Use memory** (on the Memory page) turns retrieval and all memory
+tools off without deleting anything. Duplicates are detected and not stored twice.
+
 ## Planned architecture (later phases)
 
 * **Orchestrator** — intent analysis, memory retrieval and planning slot into `core/` ahead of the tool loop.

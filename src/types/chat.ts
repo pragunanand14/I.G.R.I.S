@@ -1,4 +1,5 @@
 // Mirrors `src-tauri/src/conversations` and `src-tauri/src/core/chat.rs`. Keep in sync.
+import type { MemoryContext } from "./memory";
 import type { ToolActivity } from "./tools";
 
 export type Role = "user" | "assistant";
@@ -26,6 +27,8 @@ export interface Message {
   outputTokens: number | null;
   createdAt: string;
   toolActivity: ToolActivity[] | null;
+  /** User messages: memories attached when sent. */
+  memoryContext: MemoryContext | null;
 }
 
 export interface ConversationDetail {

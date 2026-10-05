@@ -1,6 +1,7 @@
 import type { AiStatus } from "@/types/ai";
 import type { AppInfo, PublicConfig, ReloadResult } from "@/types/app";
 import type { Conversation, ConversationDetail } from "@/types/chat";
+import type { Memory, MemoryKind } from "@/types/memory";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
@@ -29,4 +30,8 @@ export const api = {
   removeApplication: (id: string) => call<void>("remove_application", { id }),
   detectApplications: () => call<AppCandidate[]>("detect_applications"),
   launchApplication: (id: string) => call<ToolActivity>("launch_application", { id }),
+  listMemories: (kind?: MemoryKind, query?: string) => call<Memory[]>("list_memories", { kind, query }),
+  addMemory: (kind: MemoryKind, content: string) => call<Memory>("add_memory", { kind, content }),
+  updateMemory: (id: number, content: string, kind?: MemoryKind) => call<Memory>("update_memory", { id, content, kind }),
+  deleteMemory: (id: number) => call<void>("delete_memory", { id }),
 };

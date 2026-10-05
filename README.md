@@ -16,7 +16,7 @@ validated commands.
 | 1 — Foundation | App shell, theme, home screen + AI core, navigation, settings, real system telemetry, SQLite + migrations, structured logging | ✅ Done |
 | 2 — AI chat | Provider abstraction (Anthropic, OpenAI, local OpenAI-compatible), streaming chat, conversation history, edit/regenerate/stop | ✅ Done |
 | 3 — Tools | Tool registry + router, SAFE/LOW/SENSITIVE/CRITICAL permission layer with in-chat approvals, audit log, calculator, system info, allowlisted app launcher | ✅ Done |
-| 4 — Memory | Long-term + knowledge memory, management UI | Planned |
+| 4 — Memory | Long-term + knowledge memory (SQLite FTS5), automatic relevant-memory retrieval, remember / search / update / forget tools, sensitive-data guard, Memory page | ✅ Done |
 | 5–10 | Web, voice, computer control, productivity, multimodal, hardening | Planned |
 
 ## Getting started
@@ -75,6 +75,7 @@ src/                  React UI
 src-tauri/src/        Rust backend
   commands/           thin IPC handlers (the entire UI-facing surface)
   ai/                 provider trait, Anthropic + OpenAI-compatible providers (incl. tool calling), SSE parser
+  memory/             memory store (FTS5 search), retrieval, sensitive-data detection
   tools/              tool registry, schema validation, executor (permissions + audit), calculator,
                       system_info, application allowlist + launcher
   core/               orchestration: system prompt, context building, the chat turn pipeline

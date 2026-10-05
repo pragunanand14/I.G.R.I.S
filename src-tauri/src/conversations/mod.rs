@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 
 use crate::ai::{Role, ToolDef};
+use crate::memory::retrieval::MemoryContext;
 use crate::error::{AppError, AppResult};
 
 pub const TITLE_MAX_CHARS: usize = 80;
@@ -70,6 +71,8 @@ pub struct Message {
     pub created_at: String,
     /// Tool calls made while producing this message (JSON array of ToolActivity).
     pub tool_activity: Option<serde_json::Value>,
+    /// User messages: memories attached when the message was sent.
+    pub memory_context: Option<MemoryContext>,
 }
 
 /// Fields for a new message; ids and sequence numbers are assigned here.
@@ -85,6 +88,7 @@ pub struct NewMessage {
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub tool_activity: Option<String>,
+    pub memory_context: Option<MemoryContext>,
 }
 
 impl NewMessage {
@@ -100,6 +104,7 @@ impl NewMessage {
             input_tokens: None,
             output_tokens: None,
             tool_activity: None,
+            memory_context: None,
         }
     }
 }
@@ -143,11 +148,12 @@ fn message_from_row(r: &Row) -> rusqlite::Result<Message> {
         output_tokens: r.get(11)?,
         created_at: r.get(12)?,
         tool_activity: r.get::<_, Option<String>>(13)?.and_then(|s| serde_json::from_str(&s).ok()),
+        memory_context: r.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()),
     })
 }
 
 const MESSAGE_COLS: &str =
-    "id, conversation_id, seq, role, content, status, error, provider, model, raw, input_tokens, output_tokens, created_at, tool_activity";
+    "id, conversation_id, seq, role, content, status, error, provider, model, raw, input_tokens, output_tokens, created_at, tool_activity, memory_context";
 
 pub fn create(conn: &Connection, title: &str, system_prompt: &str, tools: &[ToolDef]) -> AppResult<Conversation> {
     let id = new_id();
@@ -228,7 +234,7 @@ pub fn append(conn: &mut Connection, conversation_id: &str, m: NewMessage) -> Ap
     let tx = conn.transaction()?;
     let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE conversation_id = ?1", [conversation_id], |r| r.get(0))?;
     tx.execute(
-        &format!("INSERT INTO messages ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?13)", MESSAGE_COLS),
+        &format!("INSERT INTO messages ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?13, ?14)", MESSAGE_COLS),
         params![
             id,
             conversation_id,
@@ -243,6 +249,7 @@ pub fn append(conn: &mut Connection, conversation_id: &str, m: NewMessage) -> Ap
             m.input_tokens,
             m.output_tokens,
             m.tool_activity,
+            m.memory_context.as_ref().map(serde_json::to_string).transpose()?,
         ],
     )?;
     touch(&tx, conversation_id)?;
@@ -257,13 +264,16 @@ pub fn truncate_after(conn: &Connection, conversation_id: &str, seq: i64) -> App
 }
 
 /// Replace a user message's text and drop everything after it.
-pub fn edit_user_message(conn: &mut Connection, message_id: &str, content: &str) -> AppResult<Message> {
+pub fn edit_user_message(conn: &mut Connection, message_id: &str, content: &str, memory_context: Option<&MemoryContext>) -> AppResult<Message> {
     let msg = get_message(conn, message_id)?.ok_or_else(|| AppError::validation("That message no longer exists."))?;
     if msg.role != Role::User {
         return Err(AppError::validation("Only your own messages can be edited."));
     }
     let tx = conn.transaction()?;
-    tx.execute("UPDATE messages SET content = ?2 WHERE id = ?1", params![message_id, content])?;
+    tx.execute(
+        "UPDATE messages SET content = ?2, memory_context = ?3 WHERE id = ?1",
+        params![message_id, content, memory_context.map(serde_json::to_string).transpose()?],
+    )?;
     tx.execute("DELETE FROM messages WHERE conversation_id = ?1 AND seq > ?2", params![msg.conversation_id, msg.seq])?;
     touch(&tx, &msg.conversation_id)?;
     tx.commit()?;
@@ -323,7 +333,7 @@ mod tests {
         let u1 = append(&mut conn, &c.id, NewMessage::user("one")).unwrap();
         append(&mut conn, &c.id, assistant("a1")).unwrap();
         append(&mut conn, &c.id, NewMessage::user("two")).unwrap();
-        let edited = edit_user_message(&mut conn, &u1.id, "uno").unwrap();
+        let edited = edit_user_message(&mut conn, &u1.id, "uno", None).unwrap();
         assert_eq!(edited.content, "uno");
         assert_eq!(messages(&conn, &c.id).unwrap().len(), 1);
     }
@@ -334,7 +344,7 @@ mod tests {
         let mut conn = db.conn().unwrap();
         let c = create(&conn, "t", "s", &[]).unwrap();
         let a = append(&mut conn, &c.id, assistant("a")).unwrap();
-        assert!(edit_user_message(&mut conn, &a.id, "x").is_err());
+        assert!(edit_user_message(&mut conn, &a.id, "x", None).is_err());
     }
 
     #[test]

@@ -19,6 +19,7 @@ use crate::ai::{AiError, AiErrorKind, AiProvider, ChatRequest, ChatTurn, Effort,
 use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
+use crate::memory::retrieval::{self, MemoryContext};
 use crate::tools::executor::{self, Actor, Approver, ExecContext, Policy, ToolActivity};
 use crate::tools::ToolRegistry;
 
@@ -69,14 +70,29 @@ pub fn validate_input(content: &str) -> AppResult<String> {
     Ok(trimmed.to_string())
 }
 
+/// Memories to attach to a new user message, given earlier messages.
+fn memory_for(conn: &rusqlite::Connection, content: &str, earlier: &[Message], enabled: bool) -> AppResult<Option<MemoryContext>> {
+    if !enabled {
+        return Ok(None);
+    }
+    let previous: Vec<MemoryContext> = earlier.iter().filter_map(|m| m.memory_context.clone()).collect();
+    let ctx = retrieval::select(conn, content, &previous)?;
+    if let Some(c) = &ctx {
+        tracing::info!(event = "MEMORY_ATTACHED", count = c.items.len());
+    }
+    Ok(ctx)
+}
+
 /// Save a user message, creating the conversation (with its frozen system
-/// prompt and tool set) when `conversation_id` is `None`.
+/// prompt and tool set) when `conversation_id` is `None`. Relevant memories
+/// are attached when `memory_enabled`.
 pub fn save_user_message(
     db: &Database,
     conversation_id: Option<&str>,
     content: &str,
     user_name: &str,
     tools: &[ToolDef],
+    memory_enabled: bool,
 ) -> AppResult<(Conversation, Message)> {
     let mut conn = db.conn()?;
     let conversation = match conversation_id {
@@ -88,9 +104,20 @@ pub fn save_user_message(
             c
         }
     };
-    let message = conversations::append(&mut conn, &conversation.id, NewMessage::user(content))?;
+    let earlier = conversations::messages(&conn, &conversation.id)?;
+    let memory_context = memory_for(&conn, content, &earlier, memory_enabled)?;
+    let message = conversations::append(&mut conn, &conversation.id, NewMessage { memory_context, ..NewMessage::user(content) })?;
     let conversation = conversations::require(&conn, &conversation.id)?;
     Ok((conversation, message))
+}
+
+/// Replace a user message's text, re-select its memories and drop everything after it.
+pub fn edit_user_message(db: &Database, message_id: &str, content: &str, memory_enabled: bool) -> AppResult<Message> {
+    let mut conn = db.conn()?;
+    let msg = conversations::get_message(&conn, message_id)?.ok_or_else(|| AppError::validation("That message no longer exists."))?;
+    let earlier: Vec<Message> = conversations::messages(&conn, &msg.conversation_id)?.into_iter().filter(|m| m.seq < msg.seq).collect();
+    let memory_context = memory_for(&conn, content, &earlier, memory_enabled)?;
+    conversations::edit_user_message(&mut conn, message_id, content, memory_context.as_ref())
 }
 
 enum Outcome {
@@ -395,7 +422,7 @@ mod tests {
         let reg = registry_with(None);
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
 
-        let (conv, _) = save_user_message(&db, None, "Hi IGRIS", "Ada", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "Hi IGRIS", "Ada", &reg.defs(), true).unwrap();
         let mut evs = Vec::new();
         let m1 = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| evs.push(e)).await.unwrap();
         assert_eq!(m1.status, MessageStatus::Complete);
@@ -403,7 +430,7 @@ mod tests {
         assert!(matches!(evs.first(), Some(ChatEvent::Generating { .. })));
         assert!(matches!(evs.last(), Some(ChatEvent::Finished { .. })));
 
-        save_user_message(&db, Some(&conv.id), "Are you there?", "Ada", &reg.defs()).unwrap();
+        save_user_message(&db, Some(&conv.id), "Are you there?", "Ada", &reg.defs(), true).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
 
         let reqs = server.requests().await;
@@ -429,7 +456,7 @@ mod tests {
         .await;
         let reg = registry_with(None);
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Denied);
-        let (conv, _) = save_user_message(&db, None, "What's 6*7?", "", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "What's 6*7?", "", &reg.defs(), true).unwrap();
         let mut tool_events = Vec::new();
         let mut deltas = String::new();
         let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| match e {
@@ -456,7 +483,7 @@ mod tests {
         assert_eq!(msgs[2]["content"][0]["is_error"], false);
 
         // The whole tool exchange is replayed on the next turn.
-        save_user_message(&db, Some(&conv.id), "Thanks", "", &reg.defs()).unwrap();
+        save_user_message(&db, Some(&conv.id), "Thanks", "", &reg.defs(), true).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         let third = server.requests().await[2].json();
         let roles: Vec<&str> = third["messages"].as_array().unwrap().iter().map(|m| m["role"].as_str().unwrap()).collect();
@@ -484,7 +511,7 @@ mod tests {
         ])
         .await;
         let p = params(server.url(), reg.clone(), Policy { confirm_low: true }, Approval::Denied);
-        let (conv, _) = save_user_message(&db, None, "Open it", "", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "Open it", "", &reg.defs(), true).unwrap();
         let mut statuses = Vec::new();
         let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| {
             if let ChatEvent::Tool { activity } = e {
@@ -512,7 +539,7 @@ mod tests {
         ])
         .await;
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
-        let (conv, _) = save_user_message(&db, None, "Delete everything", "", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "Delete everything", "", &reg.defs(), true).unwrap();
         let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         assert_eq!(m.tool_activity.unwrap()[0]["status"], "invalid");
         let result = &server.requests().await[1].json()["messages"][2]["content"][0];
@@ -529,7 +556,7 @@ mod tests {
             .collect();
         let server = MockServer::start(responses).await;
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
-        let (conv, _) = save_user_message(&db, None, "loop", "", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "loop", "", &reg.defs(), true).unwrap();
         let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         assert_eq!(m.status, MessageStatus::Error);
         assert!(m.error.unwrap().contains("tool steps"));
@@ -542,7 +569,7 @@ mod tests {
         let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("Hi."))]).await;
         let reg = registry_with(None);
         let p = params(server.url(), reg, Policy::default(), Approval::Approved);
-        let (conv, _) = save_user_message(&db, None, "Hi", "", &[]).unwrap();
+        let (conv, _) = save_user_message(&db, None, "Hi", "", &[], true).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         assert!(server.requests().await[0].json().get("tools").is_none());
     }
@@ -553,7 +580,7 @@ mod tests {
         let err = json!({"type":"error","error":{"type":"authentication_error","message":"bad key"}}).to_string();
         let server = MockServer::start(vec![(401, "application/json", err)]).await;
         let reg = registry_with(None);
-        let (conv, _) = save_user_message(&db, None, "Hi", "", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "Hi", "", &reg.defs(), true).unwrap();
         let p = params(server.url(), reg, Policy::default(), Approval::Approved);
         let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         assert_eq!(m.status, MessageStatus::Error);
@@ -571,7 +598,7 @@ mod tests {
         .await;
         let reg = registry_with(None);
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
-        let (conv, _) = save_user_message(&db, None, "Q", "", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "Q", "", &reg.defs(), true).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         prepare_regenerate(&db, &conv.id).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
@@ -586,9 +613,46 @@ mod tests {
         let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("A."))]).await;
         let reg = registry_with(None);
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
-        let (conv, _) = save_user_message(&db, None, "Q", "", &reg.defs()).unwrap();
+        let (conv, _) = save_user_message(&db, None, "Q", "", &reg.defs(), true).unwrap();
         generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
         assert!(generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn memories_are_attached_once_and_replayed_unchanged() {
+        use crate::memory::{self as mem, MemoryKind, MemorySource};
+        let db = db();
+        mem::add(&db.conn().unwrap(), MemoryKind::LongTerm, "Main project is SkillTrack", MemorySource::User, None).unwrap();
+        let server = MockServer::start(vec![
+            (200, "text/event-stream", sse_reply("SkillTrack.")),
+            (200, "text/event-stream", sse_reply("Sure.")),
+        ])
+        .await;
+        let reg = registry_with(None);
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        let (conv, m1) = save_user_message(&db, None, "What's my main project?", "", &reg.defs(), true).unwrap();
+        assert_eq!(m1.memory_context.as_ref().unwrap().items.len(), 1);
+        generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        // The memory changes after it was sent; history must not change with it.
+        mem::update(&db.conn().unwrap(), 1, "Main project is Apollo", None).unwrap();
+        let (_, m2) = save_user_message(&db, Some(&conv.id), "ok", "", &reg.defs(), true).unwrap();
+        assert!(m2.memory_context.unwrap().rendered.contains("Apollo"), "the new version is attached once");
+        generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+
+        let reqs = server.requests().await;
+        let first_user = reqs[0].json()["messages"][0]["content"].as_str().unwrap().to_string();
+        assert!(first_user.starts_with("<memory>"));
+        assert!(first_user.ends_with("What's my main project?"));
+        assert_eq!(reqs[1].json()["messages"][0]["content"], first_user, "earlier turn replayed byte-for-byte");
+    }
+
+    #[test]
+    fn memory_switch_attaches_nothing() {
+        use crate::memory::{self as mem, MemoryKind, MemorySource};
+        let db = db();
+        mem::add(&db.conn().unwrap(), MemoryKind::LongTerm, "fact", MemorySource::User, None).unwrap();
+        let (_, m) = save_user_message(&db, None, "hi", "", &[], false).unwrap();
+        assert!(m.memory_context.is_none());
     }
 
     #[test]

@@ -91,6 +91,41 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 4,
+        name: "memory",
+        sql: r#"
+            CREATE TABLE memories (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind            TEXT NOT NULL CHECK (kind IN ('long_term', 'knowledge')),
+                content         TEXT NOT NULL,
+                source          TEXT NOT NULL CHECK (source IN ('user', 'assistant')),
+                conversation_id TEXT,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                last_used_at    TEXT,
+                use_count       INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- Full-text index kept in sync by triggers (external content table).
+            CREATE VIRTUAL TABLE memories_fts USING fts5(
+                content, content='memories', content_rowid='id', tokenize='porter unicode61'
+            );
+            CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+                INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
+            END;
+            CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.id, old.content);
+            END;
+            CREATE TRIGGER memories_au AFTER UPDATE OF content ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.id, old.content);
+                INSERT INTO memories_fts(rowid, content) VALUES (new.id, new.content);
+            END;
+
+            -- Memories attached to a user message (JSON), replayed unchanged on later turns.
+            ALTER TABLE messages ADD COLUMN memory_context TEXT;
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

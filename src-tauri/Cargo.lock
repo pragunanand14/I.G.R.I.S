@@ -1844,6 +1844,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "futures-util",
+ "regex",
  "reqwest",
  "rusqlite",
  "serde",

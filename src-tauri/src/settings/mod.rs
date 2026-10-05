@@ -48,6 +48,8 @@ pub struct Settings {
     pub ai_effort: Effort,
     /// Ask before LOW-risk tool actions (SENSITIVE/CRITICAL always ask).
     pub confirm_low_risk: bool,
+    /// Use and update persistent memory. When off, nothing is attached or saved.
+    pub memory_enabled: bool,
 }
 
 impl Default for Settings {
@@ -61,6 +63,7 @@ impl Default for Settings {
             ai_model: String::new(),
             ai_effort: Effort::Medium,
             confirm_low_risk: false,
+            memory_enabled: true,
         }
     }
 }
@@ -77,6 +80,7 @@ pub struct SettingsPatch {
     pub ai_model: Option<String>,
     pub ai_effort: Option<Effort>,
     pub confirm_low_risk: Option<bool>,
+    pub memory_enabled: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -125,6 +129,7 @@ impl SettingsPatch {
         if self.ai_model.is_some() { f.push("aiModel"); }
         if self.ai_effort.is_some() { f.push("aiEffort"); }
         if self.confirm_low_risk.is_some() { f.push("confirmLowRisk"); }
+        if self.memory_enabled.is_some() { f.push("memoryEnabled"); }
         f
     }
 }
@@ -139,6 +144,7 @@ impl Settings {
         if let Some(v) = patch.ai_model { self.ai_model = v; }
         if let Some(v) = patch.ai_effort { self.ai_effort = v; }
         if let Some(v) = patch.confirm_low_risk { self.confirm_low_risk = v; }
+        if let Some(v) = patch.memory_enabled { self.memory_enabled = v; }
     }
 }
 
@@ -174,7 +180,7 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
 /// Slow path: apply each stored value individually, skipping invalid ones.
 fn load_per_field(conn: &Connection) -> AppResult<Settings> {
     let mut settings = Settings::default();
-    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort", "confirmLowRisk"];
+    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort", "confirmLowRisk", "memoryEnabled"];
     for key in keys {
         let raw: Option<String> = conn
             .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))

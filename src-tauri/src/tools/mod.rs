@@ -10,6 +10,7 @@ pub mod apps;
 pub mod audit;
 pub mod calculator;
 pub mod executor;
+pub mod memory;
 pub mod schema;
 pub mod system_info;
 

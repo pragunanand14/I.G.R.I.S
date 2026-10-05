@@ -67,9 +67,10 @@ pub async fn chat_send(
     // Check AI availability before saving anything.
     let params = generation_params(&state)?;
     let guard = state.generations.begin(&request_id, conversation_id.as_deref())?;
-    let user_name = settings::load(&*state.db.conn()?)?.user_name;
+    let s = settings::load(&*state.db.conn()?)?;
 
-    let (conversation, message) = chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &user_name, &state.tools.defs())?;
+    let (conversation, message) =
+        chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &s.user_name, &state.tools.defs(), s.memory_enabled)?;
     guard.attach(&conversation.id);
     let _ = on_event.send(ChatEvent::UserMessage { conversation: conversation.clone(), message });
     run_generation(&state, &conversation.id, &guard.token, params, &on_event).await
@@ -95,10 +96,8 @@ pub async fn chat_edit(state: State<'_, AppState>, request_id: String, message_i
         .ok_or_else(|| AppError::validation("That message no longer exists."))?
         .conversation_id;
     let guard = state.generations.begin(&request_id, Some(&conversation_id))?;
-    {
-        let mut conn = state.db.conn()?;
-        conversations::edit_user_message(&mut conn, &message_id, &content)?;
-    }
+    let memory_enabled = settings::load(&*state.db.conn()?)?.memory_enabled;
+    chat::edit_user_message(&state.db, &message_id, &content, memory_enabled)?;
     tracing::info!(event = "MESSAGE_EDITED", conversation_id = %conversation_id);
     run_generation(&state, &conversation_id, &guard.token, params, &on_event).await
 }

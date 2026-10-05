@@ -3,6 +3,7 @@ import { NAV_ITEMS } from "@/config/navigation";
 import { AppShell } from "@/layouts/AppShell";
 import { ChatPage } from "@/pages/ChatPage";
 import { HomePage } from "@/pages/HomePage";
+import { MemoryPage } from "@/pages/MemoryPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { PlannedPage } from "@/pages/PlannedPage";
 import { SecurityPage } from "@/pages/SecurityPage";
@@ -12,6 +13,7 @@ import { ToolsPage } from "@/pages/ToolsPage";
 
 const IMPLEMENTED: Record<string, React.ReactNode> = {
   "/chat": <ChatPage />,
+  "/memory": <MemoryPage />,
   "/system": <SystemPage />,
   "/tools": <ToolsPage />,
   "/security": <SecurityPage />,

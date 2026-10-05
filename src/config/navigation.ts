@@ -41,9 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/memory",
     label: "Memory",
     icon: Brain,
-    plannedPhase: 4,
     summary: "What IGRIS remembers — inspectable, editable, deletable.",
-    planned: ["Long-term and knowledge memory", "Search and retrieval", "Full user control over stored items"],
   },
   {
     path: "/projects",

@@ -3,6 +3,7 @@ import { memo, useState, type ReactNode } from "react";
 import type { Message } from "@/types/chat";
 import { formatTime } from "@/utils/format";
 import { AssistantBody } from "./AssistantBody";
+import { MemoryChip } from "./MemoryChip";
 
 
 function ActionButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
@@ -68,6 +69,7 @@ export const MessageItem = memo(function MessageItem({ message, isLastAssistant,
   if (message.role === "user") {
     return (
       <div className="group flex flex-col items-end gap-1">
+        {message.memoryContext && message.memoryContext.items.length > 0 && !editing && <MemoryChip context={message.memoryContext} />}
         {editing ? (
           <form
             className="w-full max-w-[80%]"

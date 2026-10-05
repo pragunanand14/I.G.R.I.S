@@ -34,7 +34,11 @@ pub fn build_turns(messages: &[Message], provider_id: &str) -> Vec<ChatTurn> {
     let mut out = Vec::new();
     for m in messages {
         match m.role {
-            Role::User => out.push(ChatTurn::user(m.content.clone())),
+            // Attached memories are replayed exactly as first sent.
+            Role::User => out.push(ChatTurn::user(match &m.memory_context {
+                Some(mc) => format!("{}\n\n{}", mc.rendered, m.content),
+                None => m.content.clone(),
+            })),
             Role::Assistant => {
                 if !matches!(m.status, MessageStatus::Complete | MessageStatus::Truncated) {
                     continue;
@@ -78,6 +82,7 @@ mod tests {
             output_tokens: None,
             created_at: String::new(),
             tool_activity: None,
+            memory_context: None,
         }
     }
 
@@ -124,6 +129,15 @@ mod tests {
         assert_eq!(other.len(), 2);
         assert_eq!(other[1].text, "It's 2.");
         assert!(other[1].tool_calls.is_empty());
+    }
+
+    #[test]
+    fn user_turns_carry_their_stored_memory_block() {
+        use crate::memory::retrieval::MemoryContext;
+        let mut u = msg(Role::User, "What's my project?", MessageStatus::Complete, None, None);
+        u.memory_context = Some(MemoryContext { items: vec![], rendered: "<memory>\n- fact\n</memory>".into() });
+        let turns = build_turns(&[u], "anthropic");
+        assert_eq!(turns[0].text, "<memory>\n- fact\n</memory>\n\nWhat's my project?");
     }
 
     #[test]

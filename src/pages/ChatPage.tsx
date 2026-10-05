@@ -88,7 +88,7 @@ export function ChatPage() {
                 <AiCore state={coreState} size={140} />
                 <div>
                   <p className="text-base font-light text-fg">How can I help?</p>
-                  <p className="mt-1 text-xs text-faint">I can calculate, check your system and open apps you allow. Memory and web access arrive in later phases.</p>
+                  <p className="mt-1 text-xs text-faint">I can calculate, check your system, open apps you allow and remember what matters. Web access arrives in a later phase.</p>
                 </div>
               </>
             )}

@@ -12,6 +12,7 @@ pub mod core;
 pub mod db;
 pub mod error;
 pub mod logging;
+pub mod memory;
 pub mod settings;
 pub mod state;
 pub mod system;
@@ -28,6 +29,7 @@ use crate::db::Database;
 use crate::state::{AppPaths, AppState, Generations, PendingApprovals};
 use crate::tools::apps::{LaunchApplicationTool, ListApplicationsTool};
 use crate::tools::calculator::CalculatorTool;
+use crate::tools::memory::{ForgetMemoryTool, RememberTool, SearchMemoryTool, UpdateMemoryTool};
 use crate::tools::system_info::SystemInfoTool;
 use crate::tools::ToolRegistry;
 use crate::system::{ConnectivityMonitor, SystemMonitor};
@@ -73,6 +75,10 @@ pub fn run() {
             tools.register(Arc::new(SystemInfoTool::new(system.clone(), connectivity.clone())));
             tools.register(Arc::new(ListApplicationsTool::new(db.clone())));
             tools.register(Arc::new(LaunchApplicationTool::new(db.clone())));
+            tools.register(Arc::new(RememberTool::new(db.clone())));
+            tools.register(Arc::new(SearchMemoryTool::new(db.clone())));
+            tools.register(Arc::new(UpdateMemoryTool::new(db.clone())));
+            tools.register(Arc::new(ForgetMemoryTool::new(db.clone())));
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
 
             app.manage(AppState {
@@ -114,6 +120,10 @@ pub fn run() {
             commands::tools::detect_applications,
             commands::tools::launch_application,
             commands::tools::get_permission_policy,
+            commands::memory::list_memories,
+            commands::memory::add_memory,
+            commands::memory::update_memory,
+            commands::memory::delete_memory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");

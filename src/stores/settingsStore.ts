@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: Settings = {
   aiModel: "",
   aiEffort: "medium",
   confirmLowRisk: false,
+  memoryEnabled: true,
 };
 
 type Status = "idle" | "loading" | "ready" | "error";

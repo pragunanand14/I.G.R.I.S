@@ -6,6 +6,7 @@
 pub mod ai;
 pub mod app;
 pub mod chat;
+pub mod memory;
 pub mod settings;
 pub mod system;
 pub mod tools;

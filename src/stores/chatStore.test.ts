@@ -21,6 +21,7 @@ const msg = (over: Partial<Message>): Message => ({
   outputTokens: null,
   createdAt: "2026-10-04T10:00:00Z",
   toolActivity: null,
+  memoryContext: null,
   ...over,
 });
 

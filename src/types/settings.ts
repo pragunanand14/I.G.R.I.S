@@ -15,6 +15,8 @@ export interface Settings {
   aiEffort: Effort;
   /** Ask before LOW-risk tool actions (sensitive and critical always ask). */
   confirmLowRisk: boolean;
+  /** Use and update persistent memory. */
+  memoryEnabled: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;
