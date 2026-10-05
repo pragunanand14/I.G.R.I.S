@@ -150,6 +150,14 @@ pub fn gemini_compat(body: &mut Value) {
     let mut names = std::collections::HashMap::new();
     if let Some(msgs) = body["messages"].as_array_mut() {
         for m in msgs.iter_mut() {
+            // Gemini 3 requires a thought signature on replayed function calls. Calls
+            // stored before signatures were kept (or made by another provider) get
+            // Google's documented placeholder that skips validation.
+            for c in m["tool_calls"].as_array_mut().into_iter().flatten() {
+                if c.get("extra_content").is_none() {
+                    c["extra_content"] = json!({ "google": { "thought_signature": "skip_thought_signature_validator" } });
+                }
+            }
             for c in m["tool_calls"].as_array().into_iter().flatten() {
                 if let (Some(id), Some(name)) = (c["id"].as_str(), c["function"]["name"].as_str()) {
                     names.insert(id.to_string(), name.to_string());
@@ -202,7 +210,13 @@ pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, stri
                 let calls: Vec<Value> = t
                     .tool_calls
                     .iter()
-                    .map(|c| json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.input.to_string() } }))
+                    .map(|c| {
+                        let mut call = json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.input.to_string() } });
+                        if let Some(extra) = &c.provider_data {
+                            call["extra_content"] = extra.clone();
+                        }
+                        call
+                    })
                     .collect();
                 let content = if t.text.is_empty() { Value::Null } else { Value::String(t.text.clone()) };
                 messages.push(json!({ "role": "assistant", "content": content, "tool_calls": calls }));
@@ -250,6 +264,8 @@ struct PendingCall {
     id: String,
     name: String,
     arguments: String,
+    /// Gemini thought signature etc. — must be echoed back verbatim.
+    extra: Option<Value>,
 }
 
 #[async_trait::async_trait]
@@ -385,6 +401,9 @@ impl OpenAiCompatibleProvider {
                         if let Some(a) = d["function"]["arguments"].as_str() {
                             c.arguments.push_str(a);
                         }
+                        if let Some(e) = d.get("extra_content").filter(|e| e.is_object()) {
+                            c.extra = Some(e.clone());
+                        }
                     }
                 }
                 if let Some(r) = choice["finish_reason"].as_str() {
@@ -437,7 +456,7 @@ impl OpenAiCompatibleProvider {
                     Ok(v) => (v, None),
                     Err(_) => (json!({}), Some(args)),
                 };
-                ToolCall { id: if c.id.is_empty() { format!("call_{i}") } else { c.id }, name: c.name, input, invalid_input }
+                ToolCall { id: if c.id.is_empty() { format!("call_{i}") } else { c.id }, name: c.name, input, invalid_input, provider_data: c.extra }
             })
             .collect();
         let mut stop_reason = stop.unwrap_or(StopReason::EndTurn);
@@ -482,7 +501,13 @@ mod tests {
             ToolDef { name: "web_search".into(), description: String::new(), input_schema: json!({}), server: Some(json!({"type":"web_search_20260209"})) },
         ];
         r.turns.push(ChatTurn {
-            tool_calls: vec![ToolCall { id: "call_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
+            tool_calls: vec![ToolCall {
+                id: "call_1".into(),
+                name: "calculator".into(),
+                input: json!({"expression":"1+1"}),
+                invalid_input: None,
+                provider_data: None,
+            }],
             ..ChatTurn::assistant("")
         });
         r.turns.push(ChatTurn {
@@ -595,6 +620,34 @@ mod tests {
         (text, hidden)
     }
 
+    #[tokio::test]
+    async fn gemini_thought_signatures_are_kept_and_sent_back() {
+        let sig = json!({"google":{"thought_signature":"c2lnbmF0dXJl"}});
+        let body = [
+            json!({"choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_g","type":"function","function":{"name":"system_info","arguments":"{}"},"extra_content":sig}]},"finish_reason":"tool_calls"}]}),
+        ]
+        .iter()
+        .map(|v| format!("data: {v}\n\n"))
+        .collect::<String>()
+            + "data: [DONE]\n\n";
+        let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
+        let p = OpenAiCompatibleProvider::gemini("k".into(), Some(server.url())).unwrap();
+        let c = p.stream(&req(), &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(c.tool_calls[0].provider_data.as_ref(), Some(&sig));
+
+        // Replayed on the next request, and it survives being stored and reloaded.
+        let stored: ToolCall = serde_json::from_value(serde_json::to_value(&c.tool_calls[0]).unwrap()).unwrap();
+        let mut r = req();
+        r.turns.push(ChatTurn { tool_calls: vec![stored], ..ChatTurn::assistant("") });
+        r.turns.push(ChatTurn {
+            tool_results: vec![ToolResult { call_id: "call_g".into(), content: "CPU 7%".into(), is_error: false, media: vec![] }],
+            ..ChatTurn::user("")
+        });
+        let b = build_body(&r, false, true, false);
+        let assistant = b["messages"].as_array().unwrap().iter().find(|m| m["tool_calls"].is_array()).unwrap();
+        assert_eq!(assistant["tool_calls"][0]["extra_content"], sig);
+    }
+
     #[test]
     fn provider_error_text_is_found_in_every_shape() {
         assert_eq!(error_message(&json!({"error":{"message":"bad model"}})).as_deref(), Some("bad model"));
@@ -635,6 +688,8 @@ mod tests {
         assert!(dt["function"].get("parameters").is_none(), "no empty parameter object");
         let tool_msg = b["messages"].as_array().unwrap().iter().find(|m| m["role"] == "tool").unwrap();
         assert_eq!(tool_msg["name"], "calculator");
+        let call = &b["messages"].as_array().unwrap().iter().find(|m| m["tool_calls"].is_array()).unwrap()["tool_calls"][0];
+        assert_eq!(call["extra_content"]["google"]["thought_signature"], "skip_thought_signature_validator", "unsigned stored calls get the placeholder");
         assert!(b["tools"].as_array().unwrap().iter().all(|t| t["function"].get("strict").is_none()));
     }
 

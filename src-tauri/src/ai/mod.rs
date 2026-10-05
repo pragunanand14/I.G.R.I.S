@@ -36,6 +36,10 @@ pub struct ToolCall {
     /// Set when the provider sent arguments that weren't valid JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invalid_input: Option<String>,
+    /// Opaque data the provider requires back with this call on later turns
+    /// (Gemini's `extra_content` thought signature). Persisted with the turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_data: Option<serde_json::Value>,
 }
 
 /// The result of a tool call, sent back to the model.

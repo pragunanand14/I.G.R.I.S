@@ -313,7 +313,7 @@ mod tests {
     }
 
     fn call(name: &str, input: serde_json::Value) -> ToolCall {
-        ToolCall { id: "c1".into(), name: name.into(), input, invalid_input: None }
+        ToolCall { id: "c1".into(), name: name.into(), input, invalid_input: None, provider_data: None }
     }
 
     async fn run(

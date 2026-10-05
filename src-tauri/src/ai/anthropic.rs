@@ -278,6 +278,7 @@ impl BlockAccumulator {
                 name: b["name"].as_str().unwrap_or_default().to_string(),
                 input: b["input"].clone(),
                 invalid_input: self.invalid_inputs.get(i).cloned().flatten(),
+                provider_data: None,
             })
             .collect()
     }
@@ -577,7 +578,13 @@ mod tests {
             },
         ];
         r.turns.push(ChatTurn {
-            tool_calls: vec![ToolCall { id: "toolu_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
+            tool_calls: vec![ToolCall {
+                id: "toolu_1".into(),
+                name: "calculator".into(),
+                input: json!({"expression":"1+1"}),
+                invalid_input: None,
+                provider_data: None,
+            }],
             ..ChatTurn::assistant("Let me check.")
         });
         r.turns.push(ChatTurn {

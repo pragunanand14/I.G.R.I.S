@@ -112,7 +112,13 @@ mod tests {
     fn expands_tool_exchanges_for_the_same_provider_only() {
         let turns = vec![
             ChatTurn {
-                tool_calls: vec![ToolCall { id: "t1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
+                tool_calls: vec![ToolCall {
+                    id: "t1".into(),
+                    name: "calculator".into(),
+                    input: json!({"expression":"1+1"}),
+                    invalid_input: None,
+                    provider_data: None,
+                }],
                 raw: Some(json!([{"type":"tool_use","id":"t1","name":"calculator","input":{"expression":"1+1"}}])),
                 ..ChatTurn::assistant("")
             },
