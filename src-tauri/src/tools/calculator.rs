@@ -52,7 +52,7 @@ impl Tool for CalculatorTool {
         let expr = input["expression"].as_str().unwrap_or_default().trim();
         let value = evaluate(expr).map_err(ToolError::invalid)?;
         let formatted = format_number(value);
-        Ok(ToolOutput { content: format!("{expr} = {formatted}"), summary: format!("= {formatted}"), sources: vec![] })
+        Ok(ToolOutput { content: format!("{expr} = {formatted}"), summary: format!("= {formatted}"), sources: vec![], media: Vec::new() })
     }
 }
 

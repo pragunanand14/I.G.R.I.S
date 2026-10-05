@@ -1,3 +1,4 @@
+import type { Attachment } from "./attachments";
 // Mirrors `src-tauri/src/conversations` and `src-tauri/src/core/chat.rs`. Keep in sync.
 import type { MemoryContext } from "./memory";
 import type { ToolActivity } from "./tools";
@@ -29,6 +30,8 @@ export interface Message {
   toolActivity: ToolActivity[] | null;
   /** User messages: memories attached when sent. */
   memoryContext: MemoryContext | null;
+  /** User messages: attached images and PDFs. */
+  attachments?: Attachment[];
 }
 
 export interface ConversationDetail {

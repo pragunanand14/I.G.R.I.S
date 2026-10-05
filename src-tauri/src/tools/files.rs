@@ -104,7 +104,7 @@ impl Tool for ListDirectoryTool {
                 return Err(ToolError::invalid("No folders are shared with IGRIS yet. The user can add folders on the Tools page."));
             }
             let lines: Vec<String> = rs.iter().map(|r| format!("{} ({})", r.path, if r.writable { "read & write" } else { "read-only" })).collect();
-            return Ok(ToolOutput { content: format!("Shared folders:\n{}", lines.join("\n")), summary: format!("{} shared folders", rs.len()), sources: vec![] });
+            return Ok(ToolOutput { content: format!("Shared folders:\n{}", lines.join("\n")), summary: format!("{} shared folders", rs.len()), sources: vec![], media: Vec::new() });
         }
         let g = guarded(&self.db, requested, Access::Read)?;
         let mut entries: Vec<(bool, String, u64, Option<SystemTime>)> = std::fs::read_dir(&g.path)
@@ -123,7 +123,7 @@ impl Tool for ListDirectoryTool {
             .map(|(dir, name, size, m)| if *dir { format!("[dir]  {name}/") } else { format!("[file] {name}  ({}, {})", human_size(*size), age(*m)) })
             .collect();
         let more = if total > MAX_LIST { format!("\n… and {} more", total - MAX_LIST) } else { String::new() };
-        Ok(ToolOutput { content: format!("{}:\n{}{more}", g.path.display(), lines.join("\n")), summary: format!("{total} items"), sources: vec![] })
+        Ok(ToolOutput { content: format!("{}:\n{}{more}", g.path.display(), lines.join("\n")), summary: format!("{total} items"), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -216,10 +216,10 @@ impl Tool for SearchFilesTool {
         .await
         .map_err(|e| ToolError::failed(e.to_string()))?;
         if hits.is_empty() {
-            return Ok(ToolOutput { content: format!("No files matching \"{query}\" (searched {visited} items)."), summary: "No matches".into(), sources: vec![] });
+            return Ok(ToolOutput { content: format!("No files matching \"{query}\" (searched {visited} items)."), summary: "No matches".into(), sources: vec![], media: Vec::new() });
         }
         let capped = if hits.len() >= MAX_SEARCH_RESULTS { " (first 50 shown)" } else { "" };
-        Ok(ToolOutput { content: format!("Matches{capped}:\n{}", hits.join("\n")), summary: format!("{} match{}", hits.len(), if hits.len() == 1 { "" } else { "es" }), sources: vec![] })
+        Ok(ToolOutput { content: format!("Matches{capped}:\n{}", hits.join("\n")), summary: format!("{} match{}", hits.len(), if hits.len() == 1 { "" } else { "es" }), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -270,6 +270,7 @@ impl Tool for ReadFileTool {
             ),
             summary: format!("Read {}", human_size(md.len())),
             sources: vec![],
+            media: Vec::new(),
         })
     }
 }
@@ -320,7 +321,7 @@ impl Tool for CreateFileTool {
         }
         let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&g.path).map_err(|e| ToolError::failed(format!("Couldn't create the file: {e}")))?;
         std::io::Write::write_all(&mut f, content.as_bytes()).map_err(|e| ToolError::failed(format!("Couldn't write the file: {e}")))?;
-        Ok(ToolOutput { content: format!("Created {} ({}).", g.path.display(), human_size(content.len() as u64)), summary: "Created".into(), sources: vec![] })
+        Ok(ToolOutput { content: format!("Created {} ({}).", g.path.display(), human_size(content.len() as u64)), summary: "Created".into(), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -346,10 +347,10 @@ impl Tool for CreateFolderTool {
     async fn execute(&self, input: &Value) -> ToolResultT {
         let g = guarded(&self.db, input["path"].as_str().unwrap_or_default(), Access::Write)?;
         if g.path.exists() {
-            return Ok(ToolOutput { content: format!("{} already exists.", g.path.display()), summary: "Already exists".into(), sources: vec![] });
+            return Ok(ToolOutput { content: format!("{} already exists.", g.path.display()), summary: "Already exists".into(), sources: vec![], media: Vec::new() });
         }
         std::fs::create_dir_all(&g.path).map_err(|e| ToolError::failed(format!("Couldn't create the folder: {e}")))?;
-        Ok(ToolOutput { content: format!("Created folder {}.", g.path.display()), summary: "Created".into(), sources: vec![] })
+        Ok(ToolOutput { content: format!("Created folder {}.", g.path.display()), summary: "Created".into(), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -394,7 +395,7 @@ impl Tool for WriteFileTool {
             let _ = std::fs::remove_file(&tmp);
             ToolError::failed(format!("Couldn't replace the file: {e}"))
         })?;
-        Ok(ToolOutput { content: format!("Replaced the contents of {}.", g.path.display()), summary: "Saved".into(), sources: vec![] })
+        Ok(ToolOutput { content: format!("Replaced the contents of {}.", g.path.display()), summary: "Saved".into(), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -444,7 +445,7 @@ impl Tool for MovePathTool {
             std::fs::create_dir_all(parent).map_err(|e| ToolError::failed(format!("Couldn't create the destination folder: {e}")))?;
         }
         std::fs::rename(&from.path, &to.path).map_err(|e| ToolError::failed(format!("Couldn't move it: {e}")))?;
-        Ok(ToolOutput { content: format!("Moved {} to {}.", from.path.display(), to.path.display()), summary: "Moved".into(), sources: vec![] })
+        Ok(ToolOutput { content: format!("Moved {} to {}.", from.path.display(), to.path.display()), summary: "Moved".into(), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -488,7 +489,7 @@ impl Tool for TrashPathTool {
             .await
             .map_err(|e| ToolError::failed(e.to_string()))?
             .map_err(|e| ToolError::failed(format!("Couldn't move it to the Recycle Bin: {e}")))?;
-        Ok(ToolOutput { content: format!("Moved {} to the Recycle Bin. It can be restored from there.", g.path.display()), summary: "In Recycle Bin".into(), sources: vec![] })
+        Ok(ToolOutput { content: format!("Moved {} to the Recycle Bin. It can be restored from there.", g.path.display()), summary: "In Recycle Bin".into(), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -547,7 +548,7 @@ impl Tool for OpenPathTool {
             }
         }
         (self.opener)(&g.path).map_err(|e| ToolError::failed(format!("Couldn't open it: {e}")))?;
-        Ok(ToolOutput { content: format!("Opened {} with its default application.", g.path.display()), summary: "Opened".into(), sources: vec![] })
+        Ok(ToolOutput { content: format!("Opened {} with its default application.", g.path.display()), summary: "Opened".into(), sources: vec![], media: Vec::new() })
     }
 }
 

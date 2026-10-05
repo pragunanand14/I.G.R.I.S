@@ -5,6 +5,7 @@
 //! commands registered in [`run`].
 
 pub mod ai;
+pub mod attachments;
 pub mod commands;
 pub mod config;
 pub mod conversations;
@@ -76,6 +77,12 @@ pub fn run() {
             })?);
             tracing::info!(event = "DB_READY", path = %db_path.display());
 
+            let attachments = Arc::new(attachments::AttachmentStore::new(data_dir.join("attachments"))?);
+            match attachments.gc(&*db.conn()?) {
+                Ok(n) => tracing::info!(event = "ATTACHMENT_GC", removed = n),
+                Err(e) => tracing::warn!(event = "ATTACHMENT_GC_FAILED", error = %e),
+            }
+
             let ai = AiRuntime::from_config(&config);
             match &ai.status.problem {
                 None => tracing::info!(event = "AI_PROVIDER_READY", provider = ?ai.status.provider, model = ?ai.status.configured_model),
@@ -125,6 +132,7 @@ pub fn run() {
             tools.register(Arc::new(AddEventTool::new(db.clone())));
             tools.register(Arc::new(ListEventsTool::new(db.clone())));
             tools.register(Arc::new(DeleteEventTool::new(db.clone())));
+            tools.register(Arc::new(crate::tools::screen::ScreenshotTool::new(db.clone(), attachments.clone())));
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
 
             productivity::spawn_scheduler(db.clone(), reminder_notifier(app.handle().clone()));
@@ -139,6 +147,7 @@ pub fn run() {
                 tools: Arc::new(tools),
                 approvals: Arc::new(PendingApprovals::default()),
                 paths: AppPaths { data_dir, config_dir, log_dir, db_path },
+                attachments,
             });
             register_voice_hotkey(app.handle());
             tracing::info!(event = "APP_STARTED");
@@ -153,6 +162,9 @@ pub fn run() {
             commands::ai::get_ai_status,
             commands::ai::reload_config,
             commands::chat::chat_send,
+            commands::attachments::attach_file,
+            commands::attachments::discard_attachment,
+            commands::attachments::read_attachment,
             commands::chat::chat_regenerate,
             commands::chat::chat_edit,
             commands::chat::chat_cancel,

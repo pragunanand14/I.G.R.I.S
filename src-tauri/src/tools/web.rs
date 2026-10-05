@@ -162,7 +162,7 @@ impl Tool for WebSearchTool {
             }
         };
         if hits.is_empty() {
-            return Ok(ToolOutput { content: format!("No web results for \"{query}\"."), summary: "No results".into(), sources: vec![] });
+            return Ok(ToolOutput { content: format!("No web results for \"{query}\"."), summary: "No results".into(), sources: vec![], media: Vec::new() });
         }
         let body: Vec<String> = hits.iter().enumerate().map(|(i, h)| format!("{}. {}\n   {}\n   {}", i + 1, h.title, h.url, strip_tags(&h.snippet))).collect();
         let sources = hits.iter().map(|h| Source { title: h.title.clone(), url: h.url.clone() }).collect::<Vec<_>>();
@@ -170,6 +170,7 @@ impl Tool for WebSearchTool {
             content: untrusted(&format!("web search: {query}"), &body.join("\n")),
             summary: format!("{} result{}", hits.len(), if hits.len() == 1 { "" } else { "s" }),
             sources,
+            media: Vec::new(),
         })
     }
 }
@@ -369,6 +370,7 @@ impl Tool for FetchUrlTool {
                 content: untrusted(url.as_str(), &text),
                 summary: format!("Read {} chars{}", text.chars().count(), if truncated { " (truncated)" } else { "" }),
                 sources: vec![Source { title: shown, url: url.to_string() }],
+                media: Vec::new(),
             });
         }
         Err(ToolError::failed("Too many redirects."))

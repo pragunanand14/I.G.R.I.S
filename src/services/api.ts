@@ -1,4 +1,5 @@
 import type { AiStatus } from "@/types/ai";
+import type { Attachment, AttachmentData } from "@/types/attachments";
 import type { AppInfo, PublicConfig, ReloadResult } from "@/types/app";
 import type { Conversation, ConversationDetail } from "@/types/chat";
 import type { Memory, MemoryKind } from "@/types/memory";
@@ -8,7 +9,7 @@ import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, Project
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
-import { call } from "./backend";
+import { call, callRaw } from "./backend";
 
 /** All IPC commands in one place — mirrors `generate_handler!` in `src-tauri/src/lib.rs`. */
 export const api = {
@@ -24,6 +25,10 @@ export const api = {
   renameConversation: (id: string, title: string) => call<Conversation>("rename_conversation", { id, title }),
   deleteConversation: (id: string) => call<void>("delete_conversation", { id }),
   cancelChat: (requestId: string) => call<boolean>("chat_cancel", { requestId }),
+  attachFile: async (file: File) =>
+    callRaw<Attachment>("attach_file", new Uint8Array(await file.arrayBuffer()), { "x-file-name": encodeURIComponent(file.name) }),
+  discardAttachment: (id: string) => call<void>("discard_attachment", { id }),
+  readAttachment: (id: string) => call<AttachmentData>("read_attachment", { id }),
   respondToolApproval: (callId: string, approved: boolean) => call<boolean>("respond_tool_approval", { callId, approved }),
   listTools: () => call<ToolInfo[]>("list_tools"),
   listToolAudit: (limit?: number) => call<AuditEntry[]>("list_tool_audit", { limit }),

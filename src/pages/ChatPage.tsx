@@ -88,7 +88,7 @@ export function ChatPage() {
                 <AiCore state={coreState} size={140} />
                 <div>
                   <p className="text-base font-light text-fg">How can I help?</p>
-                  <p className="mt-1 text-xs text-faint">I can search the web, work with files in folders you share, open and close apps you allow, load your projects and remember what matters.</p>
+                  <p className="mt-1 text-xs text-faint">I can search the web, look at images, PDFs and your screen, work with files in folders you share, manage tasks and reminders, open apps you allow and remember what matters.</p>
                 </div>
               </>
             )}
@@ -114,8 +114,9 @@ export function ChatPage() {
             disabledReason={disabledReason}
             autoFocus
             voice={backend === "ready"}
+            attachments={backend === "ready"}
           />
-          <p className="mt-1.5 text-center text-[10px] text-faint">Enter to send · Shift+Enter for a new line · AI can make mistakes.</p>
+          <p className="mt-1.5 text-center text-[10px] text-faint">Enter to send · Shift+Enter for a new line · Paste or drop images and PDFs · AI can make mistakes.</p>
         </div>
       </section>
     </div>

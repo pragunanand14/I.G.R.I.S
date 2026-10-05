@@ -73,6 +73,9 @@ pub struct Message {
     pub tool_activity: Option<serde_json::Value>,
     /// User messages: memories attached when the message was sent.
     pub memory_context: Option<MemoryContext>,
+    /// User messages: attached images and PDFs.
+    #[serde(default)]
+    pub attachments: Vec<crate::attachments::Attachment>,
 }
 
 /// Fields for a new message; ids and sequence numbers are assigned here.
@@ -149,6 +152,7 @@ fn message_from_row(r: &Row) -> rusqlite::Result<Message> {
         created_at: r.get(12)?,
         tool_activity: r.get::<_, Option<String>>(13)?.and_then(|s| serde_json::from_str(&s).ok()),
         memory_context: r.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()),
+        attachments: Vec::new(),
     })
 }
 
@@ -222,11 +226,23 @@ fn touch(conn: &Connection, id: &str) -> AppResult<()> {
 pub fn messages(conn: &Connection, conversation_id: &str) -> AppResult<Vec<Message>> {
     let mut stmt = conn.prepare(&format!("SELECT {MESSAGE_COLS} FROM messages WHERE conversation_id = ?1 ORDER BY seq"))?;
     let rows = stmt.query_map([conversation_id], message_from_row)?;
-    Ok(rows.collect::<Result<_, _>>()?)
+    let mut list: Vec<Message> = rows.collect::<Result<_, _>>()?;
+    let mut files = crate::attachments::by_message(conn, conversation_id)?;
+    for m in &mut list {
+        m.attachments = files.remove(&m.id).unwrap_or_default();
+    }
+    Ok(list)
 }
 
 pub fn get_message(conn: &Connection, id: &str) -> AppResult<Option<Message>> {
-    Ok(conn.query_row(&format!("SELECT {MESSAGE_COLS} FROM messages WHERE id = ?1"), [id], message_from_row).optional()?)
+    let m = conn.query_row(&format!("SELECT {MESSAGE_COLS} FROM messages WHERE id = ?1"), [id], message_from_row).optional()?;
+    Ok(match m {
+        Some(mut m) => {
+            m.attachments = crate::attachments::by_message(conn, &m.conversation_id)?.remove(&m.id).unwrap_or_default();
+            Some(m)
+        }
+        None => None,
+    })
 }
 
 pub fn append(conn: &mut Connection, conversation_id: &str, m: NewMessage) -> AppResult<Message> {

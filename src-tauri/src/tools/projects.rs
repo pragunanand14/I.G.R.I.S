@@ -41,10 +41,10 @@ impl Tool for ListProjectsTool {
     async fn execute(&self, _i: &Value) -> ToolResultT {
         let ps = all(&self.db)?;
         if ps.is_empty() {
-            return Ok(ToolOutput { content: "No projects are registered. The user can add them on the Projects page.".into(), summary: "None".into(), sources: vec![] });
+            return Ok(ToolOutput { content: "No projects are registered. The user can add them on the Projects page.".into(), summary: "None".into(), sources: vec![], media: Vec::new() });
         }
         let lines: Vec<String> = ps.iter().map(|p| format!("{} — {} [{}{}]", p.name, p.path, p.language, if p.framework.is_empty() { String::new() } else { format!("; {}", p.framework) })).collect();
-        Ok(ToolOutput { content: lines.join("\n"), summary: format!("{} projects", ps.len()), sources: vec![] })
+        Ok(ToolOutput { content: lines.join("\n"), summary: format!("{} projects", ps.len()), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -90,6 +90,6 @@ impl Tool for ProjectContextTool {
         })
         .await
         .map_err(|e| ToolError::failed(e.to_string()))?;
-        Ok(ToolOutput { content: ctx, summary: format!("Loaded {}", p.name), sources: vec![] })
+        Ok(ToolOutput { content: ctx, summary: format!("Loaded {}", p.name), sources: vec![], media: Vec::new() })
     }
 }

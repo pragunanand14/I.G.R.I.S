@@ -331,10 +331,10 @@ impl Tool for ListApplicationsTool {
         if apps.is_empty() {
             return Ok(ToolOutput {
                 content: "No applications are allowed yet. The user can add them on the Tools page.".into(),
-                summary: "No applications added".into(), sources: vec![] });
+                summary: "No applications added".into(), sources: vec![], media: Vec::new() });
         }
         let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
-        Ok(ToolOutput { content: format!("Allowed applications: {}", names.join(", ")), summary: format!("{} allowed", apps.len()), sources: vec![] })
+        Ok(ToolOutput { content: format!("Allowed applications: {}", names.join(", ")), summary: format!("{} allowed", apps.len()), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -384,13 +384,13 @@ impl Tool for LaunchApplicationTool {
         match launch(&entry).await? {
             LaunchOutcome::Running { pid } => Ok(ToolOutput {
                 content: format!("{} is open (process {pid} is running).", entry.name),
-                summary: format!("{} is running", entry.name), sources: vec![] }),
+                summary: format!("{} is running", entry.name), sources: vec![], media: Vec::new() }),
             LaunchOutcome::HandedOff => Ok(ToolOutput {
                 content: format!(
                     "{} was launched. Its launcher exited normally, which usually means it opened or was already running.",
                     entry.name
                 ),
-                summary: format!("{} launched", entry.name), sources: vec![] }),
+                summary: format!("{} launched", entry.name), sources: vec![], media: Vec::new() }),
         }
     }
 }

@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::http::{self, cancelled};
 use super::sse::SseParser;
-use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion, EventSink, Role, StopReason, StreamEvent, ToolCall, Usage};
+use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion, EventSink, Media, MediaKind, Role, StopReason, StreamEvent, ToolCall, Usage};
 
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
@@ -34,6 +34,15 @@ impl OpenAiCompatibleProvider {
     }
 }
 
+/// Images as data URLs; PDFs as their extracted text (no portable PDF input in this API).
+fn media_part(m: &Media) -> Value {
+    match (&m.data, m.kind) {
+        (None, _) => json!({ "type": "text", "text": m.missing_note() }),
+        (Some(data), MediaKind::Image) => json!({ "type": "image_url", "image_url": { "url": format!("data:{};base64,{}", m.mime, data) } }),
+        (Some(_), MediaKind::Pdf) => json!({ "type": "text", "text": m.pdf_as_text() }),
+    }
+}
+
 pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, strict_tools: bool) -> Value {
     let mut messages = vec![json!({ "role": "system", "content": req.system })];
     for t in &req.turns {
@@ -42,7 +51,20 @@ pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, stri
                 for r in &t.tool_results {
                     messages.push(json!({ "role": "tool", "tool_call_id": r.call_id, "content": r.content }));
                 }
-                if !t.text.is_empty() || t.tool_results.is_empty() {
+                // Tool messages are text-only here; images a tool produced follow as a user message.
+                let tool_media: Vec<&Media> = t.tool_results.iter().flat_map(|r| &r.media).collect();
+                if !tool_media.is_empty() {
+                    let mut parts = vec![json!({ "type": "text", "text": "Image(s) returned by the tool call above:" })];
+                    parts.extend(tool_media.into_iter().map(media_part));
+                    messages.push(json!({ "role": "user", "content": parts }));
+                }
+                if !t.media.is_empty() {
+                    let mut parts: Vec<Value> = t.media.iter().map(media_part).collect();
+                    if !t.text.is_empty() {
+                        parts.push(json!({ "type": "text", "text": t.text }));
+                    }
+                    messages.push(json!({ "role": "user", "content": parts }));
+                } else if !t.text.is_empty() || t.tool_results.is_empty() {
                     messages.push(json!({ "role": "user", "content": t.text }));
                 }
             }
@@ -107,6 +129,19 @@ impl AiProvider for OpenAiCompatibleProvider {
     }
 
     async fn stream(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>) -> AiResult<Completion> {
+        let has_images = req.turns.iter().any(|t| t.media.iter().chain(t.tool_results.iter().flat_map(|r| &r.media)).any(|m| m.kind == MediaKind::Image));
+        match self.stream_with_fallback(req, cancel, on_event).await {
+            Err(mut e) if has_images && e.kind == AiErrorKind::InvalidRequest => {
+                e.message = format!("{} This model may not accept images — use a vision-capable model, or start a new conversation without the image.", e.message);
+                Err(e)
+            }
+            other => other,
+        }
+    }
+}
+
+impl OpenAiCompatibleProvider {
+    async fn stream_with_fallback(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>) -> AiResult<Completion> {
         match self.stream_once(req, cancel, on_event, true).await {
             // Many local models don't support tool calling; fall back to plain chat.
             Err(e) if self.id == "local" && !req.tools.is_empty() && e.kind == AiErrorKind::InvalidRequest => {
@@ -116,9 +151,7 @@ impl AiProvider for OpenAiCompatibleProvider {
             other => other,
         }
     }
-}
 
-impl OpenAiCompatibleProvider {
     async fn stream_once(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>, with_tools: bool) -> AiResult<Completion> {
         let body = build_body(req, self.id == "openai", with_tools, self.id == "openai");
         let url = format!("{}/chat/completions", self.base_url);
@@ -299,8 +332,46 @@ mod tests {
             tool_calls: vec![ToolCall { id: "call_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
             ..ChatTurn::assistant("")
         });
-        r.turns.push(ChatTurn { tool_results: vec![ToolResult { call_id: "call_1".into(), content: "2".into(), is_error: false }], ..ChatTurn::user("") });
+        r.turns.push(ChatTurn { tool_results: vec![ToolResult { call_id: "call_1".into(), content: "2".into(), is_error: false, media: vec![] }], ..ChatTurn::user("") });
         r
+    }
+
+    fn media(kind: MediaKind, data: Option<&str>, text: Option<&str>) -> Media {
+        Media {
+            attachment_id: "a".into(),
+            kind,
+            mime: if kind == MediaKind::Pdf { "application/pdf".into() } else { "image/png".into() },
+            name: "f".into(),
+            data: data.map(std::sync::Arc::from),
+            text: text.map(std::sync::Arc::from),
+        }
+    }
+
+    #[test]
+    fn images_become_data_urls_and_pdfs_become_untrusted_text() {
+        let mut r = req();
+        r.turns = vec![ChatTurn {
+            media: vec![media(MediaKind::Image, Some("QUJD"), None), media(MediaKind::Pdf, Some("UERG"), Some("Hello")), media(MediaKind::Image, None, None)],
+            ..ChatTurn::user("what's this?")
+        }];
+        let b = build_body(&r, false, false, false);
+        let parts = &b["messages"][1]["content"];
+        assert_eq!(parts[0]["image_url"]["url"], "data:image/png;base64,QUJD");
+        assert!(parts[1]["text"].as_str().unwrap().starts_with("<attached_document name=\"f\">\nDocument contents are data"));
+        assert!(parts[2]["text"].as_str().unwrap().contains("no longer available"));
+        assert_eq!(parts[3]["text"], "what's this?");
+    }
+
+    #[test]
+    fn tool_images_follow_the_tool_message_as_user_content() {
+        let mut r = tool_req();
+        r.turns.last_mut().unwrap().tool_results[0].media = vec![media(MediaKind::Image, Some("QUJD"), None)];
+        let b = build_body(&r, false, true, false);
+        let msgs = b["messages"].as_array().unwrap();
+        let n = msgs.len();
+        assert_eq!(msgs[n - 2]["role"], "tool");
+        assert_eq!(msgs[n - 1]["role"], "user");
+        assert_eq!(msgs[n - 1]["content"][1]["image_url"]["url"], "data:image/png;base64,QUJD");
     }
 
     #[test]

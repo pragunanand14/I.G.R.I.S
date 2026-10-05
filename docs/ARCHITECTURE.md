@@ -248,10 +248,37 @@ scheduler (1 s tick, spawn_blocking) ─▶ take_due: UPDATE … SET status='fir
 * **Not provided**: calendar sync with Google/Outlook (needs OAuth app registration — TODO), recurring reminders,
   notifications for events or task due dates (set a reminder instead).
 
+## Multimodal (Phase 9)
+
+```
+Composer (pick / paste / drop) ─▶ attach_file (raw bytes IPC) ─▶ sniff by content, limits, PDF text extraction
+        │ staged id                                              └─▶ <data>/attachments/<uuid>.<ext> + row (staged)
+chat_send(content, attachmentIds) ─▶ link to the user message
+generate ─▶ build_turns (Media refs) ─▶ hydrate from disk ─▶ Anthropic: image / document blocks
+                                                            OpenAI-compatible: image_url data URLs; PDFs as extracted text
+take_screenshot (SENSITIVE) ─▶ capture ─▶ ≤1568 px JPEG ─▶ attachment ─▶ tool_result with image
+```
+
+* **Attachments** (`attachments/`, table `attachments`): PNG, JPEG, GIF, WebP (≤ 5 MB, ≤ 8000 px) and PDF (≤ 20 MB),
+  up to 5 per message. The type is sniffed from the bytes, never trusted from the name. Uploads are *staged* until
+  sent; unsent ones are removed after 24 h. Rows cascade with their conversation/message and a GC removes orphaned
+  files (on start and after deleting a conversation).
+* **History integrity**: only references are persisted in messages and raw turns; bytes are re-read from disk for
+  every request, so replayed history is byte-identical. A missing file becomes an explicit "no longer available" note.
+* **Providers**: Anthropic gets native `image` and `document` blocks (PDF pages are seen visually). OpenAI-compatible
+  providers get images as data URLs and PDFs as extracted text wrapped as untrusted `<attached_document>`; scanned
+  PDFs without text are reported as unreadable. Image results from tools follow the tool message as user content.
+  A model that rejects images gets an explanatory error.
+* **Screenshots** (`tools/screen.rs`): SENSITIVE — always asks, and the approval says the image goes to the AI
+  provider. Windows/macOS use `xcap`; Linux captures the X11 root window (Wayland sessions report that it's not
+  supported). The capture is stored in the conversation and shown as a thumbnail.
+* **Prompt injection**: text inside images, documents and screenshots is content, not instructions (system prompt).
+* **Not provided**: Office documents (Word/Excel), audio/video files, image generation, OCR for providers without
+  vision.
+
 ## Planned architecture (later phases)
 
 * **Orchestrator** — intent analysis, memory retrieval and planning slot into `core/` ahead of the tool loop.
-* **Multimodal** (Phase 9) — image/PDF input and screenshots; **hardening** (Phase 10) — security review, CI and the
-  Windows installer.
+* **Hardening** (Phase 10) — security review, CI and the Windows installer.
 * **Untrusted content** — web pages, files, and tool output are data, never instructions, and are fenced as such
   in model context.

@@ -35,7 +35,7 @@ interface ChatStore {
   setAiStatus: (status: AiStatus) => void;
   openConversation: (id: string | null) => Promise<void>;
   /** Resolves `true` once the message is saved, `false` if it was rejected. */
-  send: (content: string) => Promise<boolean>;
+  send: (content: string, attachmentIds?: string[]) => Promise<boolean>;
   regenerate: () => Promise<void>;
   edit: (messageId: string, content: string) => Promise<boolean>;
   cancel: () => Promise<void>;
@@ -169,12 +169,12 @@ export const useChatStore = create<ChatStore>((set, get) => {
       }
     },
 
-    send: (content) =>
+    send: (content, attachmentIds = []) =>
       new Promise<boolean>((resolve) => {
         if (get().streaming) return resolve(false);
         let saved = false;
         set({ pendingUser: content });
-        void runTurn({ kind: "send", conversationId: get().activeId, content }, get().activeId, () => {
+        void runTurn({ kind: "send", conversationId: get().activeId, content, attachmentIds }, get().activeId, () => {
           saved = true;
           resolve(true);
         }).then(() => {

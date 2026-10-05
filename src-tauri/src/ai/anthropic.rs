@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::http::{self, cancelled};
 use super::sse::SseParser;
-use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Role, ServerToolEvent, Source, StopReason, StreamEvent, ToolCall, Usage};
+use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Media, MediaKind, Role, ServerToolEvent, Source, StopReason, StreamEvent, ToolCall, Usage};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -59,11 +59,30 @@ pub fn sanitize_replay_blocks(blocks: &[Value]) -> Vec<Value> {
     }
 }
 
+fn media_block(m: &Media) -> Value {
+    match (&m.data, m.kind) {
+        (None, _) => json!({ "type": "text", "text": m.missing_note() }),
+        (Some(data), MediaKind::Image) => json!({ "type": "image", "source": { "type": "base64", "media_type": m.mime, "data": &**data } }),
+        (Some(data), MediaKind::Pdf) => {
+            json!({ "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": &**data }, "title": m.name })
+        }
+    }
+}
+
 fn tool_result_blocks(turn: &ChatTurn) -> Vec<Value> {
     let mut blocks: Vec<Value> = turn
         .tool_results
         .iter()
-        .map(|r| json!({ "type": "tool_result", "tool_use_id": r.call_id, "content": r.content, "is_error": r.is_error }))
+        .map(|r| {
+            let content = if r.media.is_empty() {
+                Value::String(r.content.clone())
+            } else {
+                let mut parts = vec![json!({ "type": "text", "text": r.content })];
+                parts.extend(r.media.iter().map(media_block));
+                Value::Array(parts)
+            };
+            json!({ "type": "tool_result", "tool_use_id": r.call_id, "content": content, "is_error": r.is_error })
+        })
         .collect();
     if !turn.text.is_empty() {
         blocks.push(json!({ "type": "text", "text": turn.text }));
@@ -74,6 +93,13 @@ fn tool_result_blocks(turn: &ChatTurn) -> Vec<Value> {
 fn message_for(turn: &ChatTurn) -> Value {
     match turn.role {
         Role::User if !turn.tool_results.is_empty() => json!({ "role": "user", "content": tool_result_blocks(turn) }),
+        Role::User if !turn.media.is_empty() => {
+            let mut blocks: Vec<Value> = turn.media.iter().map(media_block).collect();
+            if !turn.text.is_empty() {
+                blocks.push(json!({ "type": "text", "text": turn.text }));
+            }
+            json!({ "role": "user", "content": blocks })
+        }
         Role::User => json!({ "role": "user", "content": turn.text }),
         Role::Assistant => match &turn.raw {
             Some(Value::Array(blocks)) if !blocks.is_empty() => json!({ "role": "assistant", "content": sanitize_replay_blocks(blocks) }),
@@ -536,6 +562,25 @@ mod tests {
     }
 
     #[test]
+    fn media_become_image_and_document_blocks() {
+        let m = |kind, data: Option<&str>| Media {
+            attachment_id: "a".into(),
+            kind,
+            mime: if kind == MediaKind::Pdf { "application/pdf".into() } else { "image/jpeg".into() },
+            name: "doc.pdf".into(),
+            data: data.map(std::sync::Arc::from),
+            text: None,
+        };
+        let mut r = req("claude-opus-5-5");
+        r.turns = vec![ChatTurn { media: vec![m(MediaKind::Image, Some("QUJD")), m(MediaKind::Pdf, Some("UERG")), m(MediaKind::Pdf, None)], ..ChatTurn::user("summarise") }];
+        let c = &build_body(&r, true)["messages"][0]["content"];
+        assert_eq!(c[0], json!({"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"QUJD"}}));
+        assert_eq!(c[1], json!({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"UERG"},"title":"doc.pdf"}));
+        assert!(c[2]["text"].as_str().unwrap().contains("no longer available"));
+        assert_eq!(c[3], json!({"type":"text","text":"summarise"}));
+    }
+
+    #[test]
     fn tools_are_strict_and_results_become_tool_result_blocks() {
         let mut r = req("claude-opus-5-5");
         r.tools = vec![
@@ -547,7 +592,7 @@ mod tests {
             ..ChatTurn::assistant("Let me check.")
         });
         r.turns.push(ChatTurn {
-            tool_results: vec![ToolResult { call_id: "toolu_1".into(), content: "2".into(), is_error: false }],
+            tool_results: vec![ToolResult { call_id: "toolu_1".into(), content: "2".into(), is_error: false, media: vec![] }],
             ..ChatTurn::user("")
         });
         let b = build_body(&r, true);

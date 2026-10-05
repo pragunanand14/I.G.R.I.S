@@ -16,6 +16,7 @@ pub mod processes;
 pub mod productivity;
 pub mod projects;
 pub mod schema;
+pub mod screen;
 pub mod web;
 pub mod system_info;
 
@@ -77,6 +78,8 @@ pub struct ToolOutput {
     pub summary: String,
     /// Links the result came from (shown to the user).
     pub sources: Vec<Source>,
+    /// Images for the model (and the user) — e.g. a screenshot. Stored as attachments.
+    pub media: Vec<crate::ai::Media>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

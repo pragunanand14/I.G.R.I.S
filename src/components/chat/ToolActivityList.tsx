@@ -1,5 +1,6 @@
 import { Ban, Check, CircleSlash, Loader2, ShieldQuestion, TriangleAlert, X } from "lucide-react";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
+import { StoredImage } from "@/components/attachments/AttachmentView";
 import { SourceLinks } from "./SourceLinks";
 import type { ToolActivity } from "@/types/tools";
 
@@ -75,6 +76,13 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
             {a.durationMs != null && <span className="ml-auto shrink-0 font-mono text-[10px] text-faint">{a.durationMs} ms</span>}
             </div>
             {a.sources && a.sources.length > 0 && <SourceLinks sources={a.sources} />}
+            {a.attachments && a.attachments.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {a.attachments.map((id) => (
+                  <StoredImage key={id} id={id} name="Screenshot" className="h-20" />
+                ))}
+              </div>
+            )}
           </li>
         ),
       )}

@@ -21,7 +21,8 @@ validated commands.
 | 6 — Voice | Push-to-talk (mic button + Ctrl+Shift+Space), Whisper-compatible or built-in speech recognition, sentence-streamed spoken replies, barge-in interruption, experimental wake word | ✅ Done |
 | 7 — Computer control | Shared folders (read-only or writable) with path-escape and credential-file protection, file tools (list, search, read, create, overwrite/move/trash with approval), process list, close allowlisted apps, open URLs/documents, project registry with stack detection | ✅ Done |
 | 8 — Productivity | Tasks with due dates and priorities, reminders and timers from natural language ("tomorrow at 5pm"), desktop notifications with snooze, local calendar; all manageable from chat. Calendar sync with Google/Outlook is not implemented | ✅ Done |
-| 9–10 | Multimodal, hardening | Planned |
+| 9 — Multimodal | Attach images and PDFs (picker, paste, drag-and-drop), vision through Anthropic and OpenAI-compatible providers, PDF reading (native or extracted text), screenshot tool that always asks first | ✅ Done |
+| 10 | Hardening — security review, CI, Windows installer | Planned |
 
 ## Getting started
 

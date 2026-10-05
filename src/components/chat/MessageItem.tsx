@@ -3,6 +3,7 @@ import { memo, useState, type ReactNode } from "react";
 import type { Message } from "@/types/chat";
 import { formatTime } from "@/utils/format";
 import { AssistantBody } from "./AssistantBody";
+import { AttachmentList } from "@/components/attachments/AttachmentView";
 import { MemoryChip } from "./MemoryChip";
 
 
@@ -67,6 +68,7 @@ export const MessageItem = memo(function MessageItem({ message, isLastAssistant,
   };
 
   if (message.role === "user") {
+    const files = message.attachments ?? [];
     return (
       <div className="group flex flex-col items-end gap-1">
         {message.memoryContext && message.memoryContext.items.length > 0 && !editing && <MemoryChip context={message.memoryContext} />}
@@ -75,7 +77,7 @@ export const MessageItem = memo(function MessageItem({ message, isLastAssistant,
             className="w-full max-w-[80%]"
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!draft.trim()) return;
+              if (!draft.trim() && files.length === 0) return;
               setEditing(false);
               await onEdit(message.id, draft.trim());
             }}
@@ -92,15 +94,22 @@ export const MessageItem = memo(function MessageItem({ message, isLastAssistant,
               <button type="button" onClick={() => (setEditing(false), setDraft(message.content))} className="rounded-md px-2.5 py-1 text-muted hover:bg-surface-hover">
                 Cancel
               </button>
-              <button type="submit" disabled={busy || !draft.trim()} className="rounded-md bg-accent px-2.5 py-1 font-medium text-bg disabled:opacity-40">
+              <button type="submit" disabled={busy || (!draft.trim() && files.length === 0)} className="rounded-md bg-accent px-2.5 py-1 font-medium text-bg disabled:opacity-40">
                 Save &amp; resend
               </button>
             </div>
             <p className="mt-1 text-right text-[11px] text-faint">Messages after this one will be replaced.</p>
           </form>
         ) : (
-          <div className="max-w-[80%] rounded-2xl rounded-br-md bg-surface-strong px-4 py-2.5 text-sm whitespace-pre-wrap text-fg" data-selectable>
-            {message.content}
+          message.content && (
+            <div className="max-w-[80%] rounded-2xl rounded-br-md bg-surface-strong px-4 py-2.5 text-sm whitespace-pre-wrap text-fg" data-selectable>
+              {message.content}
+            </div>
+          )
+        )}
+        {files.length > 0 && (
+          <div className="max-w-[80%]">
+            <AttachmentList items={files} />
           </div>
         )}
         {!editing && (

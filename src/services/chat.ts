@@ -4,7 +4,7 @@ import { call } from "./backend";
 
 /** Streaming chat commands. Events arrive on a Tauri channel while the promise is pending. */
 type Start =
-  | { kind: "send"; conversationId: string | null; content: string }
+  | { kind: "send"; conversationId: string | null; content: string; attachmentIds?: string[] }
   | { kind: "regenerate"; conversationId: string }
   | { kind: "edit"; messageId: string; content: string };
 
@@ -17,6 +17,7 @@ export function startTurn(requestId: string, start: Start, onEvent: (ev: ChatEve
         requestId,
         conversationId: start.conversationId,
         content: start.content,
+        attachmentIds: start.attachmentIds ?? [],
         onEvent: channel,
       });
     case "regenerate":

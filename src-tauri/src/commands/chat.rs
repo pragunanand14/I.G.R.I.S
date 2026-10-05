@@ -25,6 +25,7 @@ fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
         .or(status.configured_model)
         .ok_or_else(|| AppError::AiUnavailable("No model configured. Set AI_MODEL or choose a model in Settings.".into()))?;
     Ok(GenerationParams {
+        attachments: Some(state.attachments.clone()),
         provider,
         model,
         effort: Some(settings.ai_effort),
@@ -66,17 +67,19 @@ pub async fn chat_send(
     request_id: String,
     conversation_id: Option<String>,
     content: String,
+    attachment_ids: Option<Vec<String>>,
     on_event: Channel<ChatEvent>,
 ) -> AppResult<TurnResult> {
     validate_request_id(&request_id)?;
-    let content = chat::validate_input(&content)?;
+    let attachment_ids = attachment_ids.unwrap_or_default();
+    let content = chat::validate_input_with(&content, !attachment_ids.is_empty())?;
     // Check AI availability before saving anything.
     let params = generation_params(&state)?;
     let guard = state.generations.begin(&request_id, conversation_id.as_deref())?;
     let s = settings::load(&*state.db.conn()?)?;
 
     let (conversation, message) =
-        chat::save_user_message(&state.db, conversation_id.as_deref(), &content, &s.user_name, &offered_tools(&state)?, s.memory_enabled)?;
+        chat::save_user_message_with(&state.db, conversation_id.as_deref(), &content, &attachment_ids, &s.user_name, &offered_tools(&state)?, s.memory_enabled)?;
     guard.attach(&conversation.id);
     let _ = on_event.send(ChatEvent::UserMessage { conversation: conversation.clone(), message });
     run_generation(&state, &conversation.id, &guard.token, params, &on_event).await
@@ -96,11 +99,10 @@ pub async fn chat_regenerate(state: State<'_, AppState>, request_id: String, con
 #[tauri::command]
 pub async fn chat_edit(state: State<'_, AppState>, request_id: String, message_id: String, content: String, on_event: Channel<ChatEvent>) -> AppResult<TurnResult> {
     validate_request_id(&request_id)?;
-    let content = chat::validate_input(&content)?;
+    let original = conversations::get_message(&*state.db.conn()?, &message_id)?.ok_or_else(|| AppError::validation("That message no longer exists."))?;
+    let content = chat::validate_input_with(&content, !original.attachments.is_empty())?;
     let params = generation_params(&state)?;
-    let conversation_id = conversations::get_message(&*state.db.conn()?, &message_id)?
-        .ok_or_else(|| AppError::validation("That message no longer exists."))?
-        .conversation_id;
+    let conversation_id = original.conversation_id;
     let guard = state.generations.begin(&request_id, Some(&conversation_id))?;
     let memory_enabled = settings::load(&*state.db.conn()?)?.memory_enabled;
     chat::edit_user_message(&state.db, &message_id, &content, memory_enabled)?;
@@ -159,8 +161,13 @@ pub fn delete_conversation(state: State<'_, AppState>, id: String) -> AppResult<
     if state.generations.is_busy(&id) {
         return Err(AppError::validation("Stop the response before deleting this conversation."));
     }
-    if !conversations::delete(&*state.db.conn()?, &id)? {
+    let conn = state.db.conn()?;
+    if !conversations::delete(&conn, &id)? {
         return Err(AppError::validation("That conversation no longer exists."));
+    }
+    // Attachment rows cascade; remove their files now.
+    if let Err(e) = state.attachments.gc(&conn) {
+        tracing::warn!(event = "ATTACHMENT_GC_FAILED", error = %e);
     }
     tracing::info!(event = "CONVERSATION_DELETED", conversation_id = %id);
     Ok(())

@@ -76,7 +76,7 @@ impl Tool for ListProcessesTool {
             .iter()
             .map(|(n, pid, cpu, mem)| format!("{n} (PID {pid}) — CPU {cpu:.1}%, memory {:.0} MB", *mem as f64 / 1_048_576.0))
             .collect();
-        Ok(ToolOutput { content: format!("{} processes running. Top {} by {}:\n{}", rows.0, lines.len(), if by_mem { "memory" } else { "CPU" }, lines.join("\n")), summary: format!("{} processes", rows.0), sources: vec![] })
+        Ok(ToolOutput { content: format!("{} processes running. Top {} by {}:\n{}", rows.0, lines.len(), if by_mem { "memory" } else { "CPU" }, lines.join("\n")), summary: format!("{} processes", rows.0), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -155,7 +155,7 @@ impl Tool for CloseApplicationTool {
         };
         let pids = tokio::task::spawn_blocking(find.clone()).await.map_err(|e| ToolError::failed(e.to_string()))?;
         if pids.is_empty() {
-            return Ok(ToolOutput { content: format!("{} isn't running.", entry.name), summary: "Not running".into(), sources: vec![] });
+            return Ok(ToolOutput { content: format!("{} isn't running.", entry.name), summary: "Not running".into(), sources: vec![], media: Vec::new() });
         }
         let mut errors = Vec::new();
         for pid in &pids {
@@ -166,7 +166,7 @@ impl Tool for CloseApplicationTool {
         tokio::time::sleep(Duration::from_secs(2)).await;
         let remaining = tokio::task::spawn_blocking(find).await.map_err(|e| ToolError::failed(e.to_string()))?;
         if remaining.is_empty() {
-            Ok(ToolOutput { content: format!("Closed {}.", entry.name), summary: "Closed".into(), sources: vec![] })
+            Ok(ToolOutput { content: format!("Closed {}.", entry.name), summary: "Closed".into(), sources: vec![], media: Vec::new() })
         } else if errors.len() == pids.len() {
             Err(ToolError::failed(format!("Couldn't ask {} to close ({}).", entry.name, errors.join("; "))))
         } else {
@@ -174,6 +174,7 @@ impl Tool for CloseApplicationTool {
                 content: format!("Asked {} to close, but it's still running — it may be waiting for the user to save or confirm.", entry.name),
                 summary: "Still running".into(),
                 sources: vec![],
+                media: Vec::new(),
             })
         }
     }
@@ -226,7 +227,7 @@ impl Tool for OpenUrlTool {
     async fn execute(&self, input: &Value) -> ToolResultT {
         let url = input["url"].as_str().unwrap_or_default().trim();
         (self.opener)(url).map_err(|e| ToolError::failed(format!("Couldn't open the browser: {e}")))?;
-        Ok(ToolOutput { content: format!("Opened {url} in the default browser."), summary: "Opened".into(), sources: vec![] })
+        Ok(ToolOutput { content: format!("Opened {url} in the default browser."), summary: "Opened".into(), sources: vec![], media: Vec::new() })
     }
 }
 

@@ -35,10 +35,13 @@ pub fn build_turns(messages: &[Message], provider_id: &str) -> Vec<ChatTurn> {
     for m in messages {
         match m.role {
             // Attached memories are replayed exactly as first sent.
-            Role::User => out.push(ChatTurn::user(match &m.memory_context {
-                Some(mc) => format!("{}\n\n{}", mc.rendered, m.content),
-                None => m.content.clone(),
-            })),
+            Role::User => out.push(ChatTurn {
+                media: m.attachments.iter().map(|a| a.media()).collect(),
+                ..ChatTurn::user(match &m.memory_context {
+                    Some(mc) => format!("{}\n\n{}", mc.rendered, m.content),
+                    None => m.content.clone(),
+                })
+            }),
             Role::Assistant => {
                 if !matches!(m.status, MessageStatus::Complete | MessageStatus::Truncated) {
                     continue;
@@ -83,6 +86,7 @@ mod tests {
             created_at: String::new(),
             tool_activity: None,
             memory_context: None,
+            attachments: vec![],
         }
     }
 
@@ -112,7 +116,7 @@ mod tests {
                 raw: Some(json!([{"type":"tool_use","id":"t1","name":"calculator","input":{"expression":"1+1"}}])),
                 ..ChatTurn::assistant("")
             },
-            ChatTurn { tool_results: vec![ToolResult { call_id: "t1".into(), content: "1+1 = 2".into(), is_error: false }], ..ChatTurn::user("") },
+            ChatTurn { tool_results: vec![ToolResult { call_id: "t1".into(), content: "1+1 = 2".into(), is_error: false, media: vec![] }], ..ChatTurn::user("") },
             ChatTurn::assistant("It's 2."),
         ];
         let raw = encode_turns(&turns).to_string();

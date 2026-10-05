@@ -59,6 +59,9 @@ pub struct ToolActivity {
     /// Links the result came from.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<Source>,
+    /// Attachment ids of images the tool produced (e.g. a screenshot).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +136,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
         duration_ms: None,
         text_offset: None,
         sources: Vec::new(),
+        attachments: Vec::new(),
     };
     let mut approval = "auto";
 
@@ -162,7 +166,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
             }
         }
         tracing::info!(event = "TOOL_FINISHED", tool = %call.name, status = status.as_str(), approval, duration_ms = activity.duration_ms);
-        (ToolResult { call_id: call.id.clone(), content: model_text, is_error }, activity.clone())
+        (ToolResult { call_id: call.id.clone(), content: model_text, is_error, media: Vec::new() }, activity.clone())
     };
 
     // 1. Malformed arguments from the provider.
@@ -244,7 +248,16 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
         }
         Some(Ok(Ok(out))) => {
             activity.sources = out.sources;
-            finish(&mut activity, ActivityStatus::Completed, clip(out.content), out.summary, false, approval)
+            activity.attachments = out.media.iter().map(|m| m.attachment_id.clone()).collect();
+            if let (Some(cid), false) = (ctx.conversation_id, activity.attachments.is_empty()) {
+                // Captures belong to the conversation they were taken in (deleted with it).
+                if let Err(e) = ctx.db.conn().and_then(|c| crate::attachments::adopt(&c, &activity.attachments, cid)) {
+                    tracing::warn!(event = "ATTACHMENT_ADOPT_FAILED", error = %e);
+                }
+            }
+            let (mut result, activity) = finish(&mut activity, ActivityStatus::Completed, clip(out.content), out.summary, false, approval);
+            result.media = out.media;
+            (result, activity)
         }
         Some(Ok(Err(e))) => {
             let status = if e.kind == ToolErrorKind::InvalidInput { ActivityStatus::Invalid } else { ActivityStatus::Failed };
@@ -282,7 +295,7 @@ mod tests {
         }
         async fn execute(&self, _i: &serde_json::Value) -> ToolResultT {
             *self.1.lock().unwrap() += 1;
-            Ok(ToolOutput { content: "done".into(), summary: "done".into(), sources: vec![] })
+            Ok(ToolOutput { content: "done".into(), summary: "done".into(), sources: vec![], media: Vec::new() })
         }
     }
 

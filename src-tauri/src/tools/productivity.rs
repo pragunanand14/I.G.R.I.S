@@ -28,7 +28,7 @@ fn with_conn<T>(db: &Database, f: impl FnOnce(&rusqlite::Connection) -> Result<T
 }
 
 fn out(content: String, summary: impl Into<String>) -> ToolResultT {
-    Ok(ToolOutput { content, summary: summary.into(), sources: vec![] })
+    Ok(ToolOutput { content, summary: summary.into(), sources: vec![], media: Vec::new() })
 }
 
 fn s<'a>(input: &'a Value, key: &str) -> &'a str {

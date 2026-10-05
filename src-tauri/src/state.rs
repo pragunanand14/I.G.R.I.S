@@ -26,6 +26,7 @@ pub struct AppState {
     pub tools: Arc<ToolRegistry>,
     pub approvals: Arc<PendingApprovals>,
     pub paths: AppPaths,
+    pub attachments: Arc<crate::attachments::AttachmentStore>,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +201,7 @@ mod tests {
             duration_ms: None,
             text_offset: None,
             sources: Vec::new(),
+            attachments: Vec::new(),
         }
     }
 

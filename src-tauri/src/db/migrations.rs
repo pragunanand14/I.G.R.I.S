@@ -198,6 +198,28 @@ pub const MIGRATIONS: &[Migration] = &[
             CREATE INDEX events_starts ON events (starts_at);
         "#,
     },
+    Migration {
+        version: 7,
+        name: "attachments",
+        sql: r#"
+            -- Images/PDFs on disk under <data>/attachments; uploads are staged (no
+            -- conversation) until sent. Rows cascade with their conversation/message.
+            CREATE TABLE attachments (
+                id              TEXT PRIMARY KEY,
+                kind            TEXT NOT NULL CHECK (kind IN ('image', 'pdf')),
+                mime            TEXT NOT NULL,
+                name            TEXT NOT NULL,
+                size            INTEGER NOT NULL,
+                width           INTEGER,
+                height          INTEGER,
+                source          TEXT NOT NULL CHECK (source IN ('upload', 'screenshot')),
+                conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+                message_id      TEXT REFERENCES messages(id) ON DELETE CASCADE,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            CREATE INDEX attachments_conversation ON attachments (conversation_id, message_id);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

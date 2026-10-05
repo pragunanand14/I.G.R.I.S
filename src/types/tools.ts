@@ -17,6 +17,8 @@ export interface ToolActivity {
   textOffset?: number;
   /** Links the result came from (web search / fetch). */
   sources?: { title: string; url: string }[];
+  /** Attachment ids of images the tool produced (screenshots). */
+  attachments?: string[];
 }
 
 export interface ToolInfo {

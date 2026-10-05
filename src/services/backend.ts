@@ -56,3 +56,15 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
     throw BackendError.from(err);
   }
 }
+
+/** Invoke a command whose body is raw bytes (file uploads) instead of JSON. */
+export async function callRaw<T>(command: string, body: Uint8Array, headers: Record<string, string>): Promise<T> {
+  if (!hasBackend()) {
+    throw new BackendError("unavailable", "The IGRIS desktop backend is not available.");
+  }
+  try {
+    return await invoke<T>(command, body, { headers });
+  } catch (err) {
+    throw BackendError.from(err);
+  }
+}

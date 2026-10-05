@@ -17,6 +17,7 @@ use super::context::{build_turns, encode_turns};
 use super::prompt::{self, PromptContext};
 use crate::ai::{AiError, AiErrorKind, AiProvider, ChatRequest, ChatTurn, Effort, Role, ServerToolEvent, StopReason, StreamEvent, ToolDef, Usage};
 use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
+use crate::attachments::AttachmentStore;
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::memory::retrieval::{self, MemoryContext};
@@ -57,11 +58,18 @@ pub struct GenerationParams {
     pub model: String,
     pub effort: Option<Effort>,
     pub tooling: Tooling,
+    /// Where attachment bytes are loaded from (None in tests without files).
+    pub attachments: Option<Arc<AttachmentStore>>,
 }
 
 pub fn validate_input(content: &str) -> AppResult<String> {
+    validate_input_with(content, false)
+}
+
+/// Like [`validate_input`], but an empty message is fine when files are attached.
+pub fn validate_input_with(content: &str, has_attachments: bool) -> AppResult<String> {
     let trimmed = content.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty() && !has_attachments {
         return Err(AppError::validation("Message is empty."));
     }
     if trimmed.chars().count() > MAX_INPUT_CHARS {
@@ -94,12 +102,30 @@ pub fn save_user_message(
     tools: &[ToolDef],
     memory_enabled: bool,
 ) -> AppResult<(Conversation, Message)> {
+    save_user_message_with(db, conversation_id, content, &[], user_name, tools, memory_enabled)
+}
+
+/// [`save_user_message`] with staged attachments, linked to the new message.
+pub fn save_user_message_with(
+    db: &Database,
+    conversation_id: Option<&str>,
+    content: &str,
+    attachment_ids: &[String],
+    user_name: &str,
+    tools: &[ToolDef],
+    memory_enabled: bool,
+) -> AppResult<(Conversation, Message)> {
     let mut conn = db.conn()?;
+    crate::attachments::check_staged(&conn, attachment_ids)?;
     let conversation = match conversation_id {
         Some(id) => conversations::require(&conn, id)?,
         None => {
             let system = prompt::system_prompt(&PromptContext { user_name, date: &prompt::today(), os: prompt::os_label() });
-            let c = conversations::create(&conn, &conversations::title_from(content), &system, tools)?;
+            let title_source = match (content.trim().is_empty(), attachment_ids.first()) {
+                (true, Some(id)) => crate::attachments::get(&conn, id)?.map(|a| a.name).unwrap_or_default(),
+                _ => content.to_string(),
+            };
+            let c = conversations::create(&conn, &conversations::title_from(&title_source), &system, tools)?;
             tracing::info!(event = "CONVERSATION_CREATED", conversation_id = %c.id, tools = tools.len());
             c
         }
@@ -107,6 +133,13 @@ pub fn save_user_message(
     let earlier = conversations::messages(&conn, &conversation.id)?;
     let memory_context = memory_for(&conn, content, &earlier, memory_enabled)?;
     let message = conversations::append(&mut conn, &conversation.id, NewMessage { memory_context, ..NewMessage::user(content) })?;
+    let message = if attachment_ids.is_empty() {
+        message
+    } else {
+        let attachments = crate::attachments::link_to_message(&conn, attachment_ids, &conversation.id, &message.id)?;
+        tracing::info!(event = "ATTACHMENTS_SENT", count = attachments.len());
+        Message { attachments, ..message }
+    };
     let conversation = conversations::require(&conn, &conversation.id)?;
     Ok((conversation, message))
 }
@@ -142,7 +175,15 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
     }
 
     let provider_id = params.provider.id();
-    let base_turns = build_turns(&history, provider_id);
+    let mut base_turns = build_turns(&history, provider_id);
+    if let Some(store) = &params.attachments {
+        let conn = db.conn()?;
+        for t in &mut base_turns {
+            for m in t.media.iter_mut().chain(t.tool_results.iter_mut().flat_map(|r| r.media.iter_mut())) {
+                store.hydrate(&conn, m);
+            }
+        }
+    }
     let allowed: Vec<String> = offered.iter().map(|t| t.name.clone()).collect();
 
     emit(ChatEvent::Generating { conversation_id: conversation_id.to_string(), model: params.model.clone() });
@@ -187,6 +228,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
                         duration_ms: None,
                         text_offset: Some(text.chars().count()),
                         sources: Vec::new(),
+                        attachments: Vec::new(),
                     };
                     emit(ChatEvent::Tool { activity: a.clone() });
                     server_running.push(a);
@@ -411,7 +453,7 @@ mod tests {
         }
         async fn execute(&self, _i: &serde_json::Value) -> ToolResultT {
             *self.1.lock().unwrap() += 1;
-            Ok(ToolOutput { content: "opened".into(), summary: "opened".into(), sources: vec![] })
+            Ok(ToolOutput { content: "opened".into(), summary: "opened".into(), sources: vec![], media: Vec::new() })
         }
     }
 
@@ -458,6 +500,7 @@ mod tests {
 
     fn params(url: String, registry: Arc<ToolRegistry>, policy: Policy, approval: Approval) -> GenerationParams {
         GenerationParams {
+            attachments: None,
             provider: Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()),
             model: "claude-opus-5-5".into(),
             effort: Some(Effort::Medium),
@@ -501,6 +544,62 @@ mod tests {
         assert_eq!(replay[0]["signature"], "sig");
         assert_eq!(replay[1]["text"], "Hello.");
         assert_eq!(second["messages"][2]["content"], "Are you there?");
+    }
+
+    #[tokio::test]
+    async fn attachments_and_screenshots_reach_the_model_and_replay_from_disk() {
+        use crate::attachments::{testdata, AttachmentStore};
+        use crate::tools::screen::ScreenshotTool;
+        use base64::Engine;
+
+        let db = db();
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(AttachmentStore::new(dir.path().join("attachments")).unwrap());
+        let shot: Arc<dyn Tool> = Arc::new(ScreenshotTool::with_capturer(
+            db.clone(),
+            store.clone(),
+            Arc::new(|| Ok(image::RgbaImage::from_pixel(40, 20, image::Rgba([0, 128, 255, 255])))),
+        ));
+        let server = MockServer::start(vec![
+            (200, "text/event-stream", sse_tool_use("toolu_s", "take_screenshot", json!({}))),
+            (200, "text/event-stream", sse_reply("I see a blue screen.")),
+            (200, "text/event-stream", sse_reply("Still blue.")),
+        ])
+        .await;
+        let reg = registry_with(Some(shot));
+        let mut p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        p.attachments = Some(store.clone());
+
+        let png = testdata::png();
+        let staged = store.save_upload(&db.conn().unwrap(), "chart.png", &png).unwrap();
+        let (conv, m) = save_user_message_with(&db, None, "", std::slice::from_ref(&staged.id), "", &reg.defs(), false).unwrap();
+        assert_eq!(conv.title, "chart.png", "attachment-only messages are titled by the file");
+        assert_eq!(m.attachments.len(), 1);
+        let done = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(done.content, "Let me check.\n\nI see a blue screen.");
+        let shot_id = done.tool_activity.as_ref().unwrap()[0]["attachments"][0].as_str().unwrap().to_string();
+        let adopted = crate::attachments::get(&db.conn().unwrap(), &shot_id).unwrap().unwrap();
+        assert_eq!(adopted.conversation_id.as_deref(), Some(conv.id.as_str()), "captures belong to the conversation");
+
+        save_user_message(&db, Some(&conv.id), "And now?", "", &reg.defs(), false).unwrap();
+        generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+
+        let reqs = server.requests().await;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        let first = reqs[0].json();
+        assert_eq!(first["messages"][0]["content"][0]["type"], "image");
+        assert_eq!(first["messages"][0]["content"][0]["source"]["data"], b64.as_str());
+        assert_eq!(first["messages"][0]["content"].as_array().unwrap().len(), 1, "no empty text block");
+        let tool_result = &reqs[1].json()["messages"][2]["content"][0];
+        assert_eq!(tool_result["type"], "tool_result");
+        assert_eq!(tool_result["content"][1]["type"], "image");
+        // The later request replays both images from disk, byte for byte.
+        let third = reqs[2].json();
+        assert_eq!(third["messages"][0], first["messages"][0]);
+        assert_eq!(third["messages"][2]["content"][0]["content"], tool_result["content"]);
+
+        crate::conversations::delete(&db.conn().unwrap(), &conv.id).unwrap();
+        assert_eq!(store.gc(&db.conn().unwrap()).unwrap(), 2, "files go with the conversation");
     }
 
     #[tokio::test]
