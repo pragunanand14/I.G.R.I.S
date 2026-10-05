@@ -446,7 +446,9 @@ mod tests {
     fn allowlist_crud_and_duplicate_names() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.conn().unwrap();
-        let sh = "/bin/sh";
+        // Any real executable works; the test binary exists on every platform.
+        let exe = std::env::current_exe().unwrap().display().to_string();
+        let sh = exe.as_str();
         let a = add(&conn, " Shell ", sh).unwrap();
         assert_eq!(a.name, "Shell");
         assert!(add(&conn, "shell", sh).is_err(), "names are unique, case-insensitive");

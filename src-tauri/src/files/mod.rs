@@ -256,7 +256,9 @@ mod tests {
         assert!(add(&conn, &dir.path().display().to_string(), true).is_err(), "duplicates rejected");
         assert!(add(&conn, "relative/path", false).is_err());
         assert!(add(&conn, "/definitely/missing", false).is_err());
-        assert!(add(&conn, "/", false).unwrap_err().to_string().contains("too broad"));
+        // The drive/file-system root ("/" on Unix, e.g. "C:\\" on Windows).
+        let root = dir.path().ancestors().last().unwrap().display().to_string();
+        assert!(add(&conn, &root, false).unwrap_err().to_string().contains("too broad"), "{root}");
         assert!(add(&conn, "/etc", false).is_err());
         if let Some(home) = dirs::home_dir() {
             assert!(add(&conn, &home.display().to_string(), false).is_err());
