@@ -101,9 +101,7 @@ impl SettingsPatch {
         if let Some(name) = self.user_name.take() {
             let name = name.trim().to_string();
             if name.chars().count() > USER_NAME_MAX_CHARS {
-                return Err(AppError::validation(format!(
-                    "Name must be at most {USER_NAME_MAX_CHARS} characters."
-                )));
+                return Err(AppError::validation(format!("Name must be at most {USER_NAME_MAX_CHARS} characters.")));
             }
             if name.chars().any(char::is_control) {
                 return Err(AppError::validation("Name cannot contain control characters."));
@@ -140,36 +138,84 @@ impl SettingsPatch {
     /// Field names present in this patch (for audit logging without values).
     pub fn changed_fields(&self) -> Vec<&'static str> {
         let mut f = Vec::new();
-        if self.user_name.is_some() { f.push("userName"); }
-        if self.theme.is_some() { f.push("theme"); }
-        if self.accent.is_some() { f.push("accent"); }
-        if self.reduced_motion.is_some() { f.push("reducedMotion"); }
-        if self.telemetry_interval_ms.is_some() { f.push("telemetryIntervalMs"); }
-        if self.ai_model.is_some() { f.push("aiModel"); }
-        if self.ai_effort.is_some() { f.push("aiEffort"); }
-        if self.confirm_low_risk.is_some() { f.push("confirmLowRisk"); }
-        if self.memory_enabled.is_some() { f.push("memoryEnabled"); }
-        if self.voice_auto_speak.is_some() { f.push("voiceAutoSpeak"); }
-        if self.wake_word_enabled.is_some() { f.push("wakeWordEnabled"); }
-        if self.tts_voice.is_some() { f.push("ttsVoice"); }
+        if self.user_name.is_some() {
+            f.push("userName");
+        }
+        if self.theme.is_some() {
+            f.push("theme");
+        }
+        if self.accent.is_some() {
+            f.push("accent");
+        }
+        if self.reduced_motion.is_some() {
+            f.push("reducedMotion");
+        }
+        if self.telemetry_interval_ms.is_some() {
+            f.push("telemetryIntervalMs");
+        }
+        if self.ai_model.is_some() {
+            f.push("aiModel");
+        }
+        if self.ai_effort.is_some() {
+            f.push("aiEffort");
+        }
+        if self.confirm_low_risk.is_some() {
+            f.push("confirmLowRisk");
+        }
+        if self.memory_enabled.is_some() {
+            f.push("memoryEnabled");
+        }
+        if self.voice_auto_speak.is_some() {
+            f.push("voiceAutoSpeak");
+        }
+        if self.wake_word_enabled.is_some() {
+            f.push("wakeWordEnabled");
+        }
+        if self.tts_voice.is_some() {
+            f.push("ttsVoice");
+        }
         f
     }
 }
 
 impl Settings {
     pub fn apply(&mut self, patch: SettingsPatch) {
-        if let Some(v) = patch.user_name { self.user_name = v; }
-        if let Some(v) = patch.theme { self.theme = v; }
-        if let Some(v) = patch.accent { self.accent = v; }
-        if let Some(v) = patch.reduced_motion { self.reduced_motion = v; }
-        if let Some(v) = patch.telemetry_interval_ms { self.telemetry_interval_ms = v; }
-        if let Some(v) = patch.ai_model { self.ai_model = v; }
-        if let Some(v) = patch.ai_effort { self.ai_effort = v; }
-        if let Some(v) = patch.confirm_low_risk { self.confirm_low_risk = v; }
-        if let Some(v) = patch.memory_enabled { self.memory_enabled = v; }
-        if let Some(v) = patch.voice_auto_speak { self.voice_auto_speak = v; }
-        if let Some(v) = patch.wake_word_enabled { self.wake_word_enabled = v; }
-        if let Some(v) = patch.tts_voice { self.tts_voice = v; }
+        if let Some(v) = patch.user_name {
+            self.user_name = v;
+        }
+        if let Some(v) = patch.theme {
+            self.theme = v;
+        }
+        if let Some(v) = patch.accent {
+            self.accent = v;
+        }
+        if let Some(v) = patch.reduced_motion {
+            self.reduced_motion = v;
+        }
+        if let Some(v) = patch.telemetry_interval_ms {
+            self.telemetry_interval_ms = v;
+        }
+        if let Some(v) = patch.ai_model {
+            self.ai_model = v;
+        }
+        if let Some(v) = patch.ai_effort {
+            self.ai_effort = v;
+        }
+        if let Some(v) = patch.confirm_low_risk {
+            self.confirm_low_risk = v;
+        }
+        if let Some(v) = patch.memory_enabled {
+            self.memory_enabled = v;
+        }
+        if let Some(v) = patch.voice_auto_speak {
+            self.voice_auto_speak = v;
+        }
+        if let Some(v) = patch.wake_word_enabled {
+            self.wake_word_enabled = v;
+        }
+        if let Some(v) = patch.tts_voice {
+            self.tts_voice = v;
+        }
     }
 }
 
@@ -186,7 +232,9 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
             continue; // obsolete key — ignore
         }
         match serde_json::from_str::<serde_json::Value>(&raw) {
-            Ok(v) => { merged.insert(key, v); }
+            Ok(v) => {
+                merged.insert(key, v);
+            }
             Err(_) => tracing::warn!(event = "SETTINGS_VALUE_CORRUPT", key = %key),
         }
     }
@@ -205,11 +253,22 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
 /// Slow path: apply each stored value individually, skipping invalid ones.
 fn load_per_field(conn: &Connection) -> AppResult<Settings> {
     let mut settings = Settings::default();
-    let keys = ["userName", "theme", "accent", "reducedMotion", "telemetryIntervalMs", "aiModel", "aiEffort", "confirmLowRisk", "memoryEnabled", "voiceAutoSpeak", "wakeWordEnabled", "ttsVoice"];
+    let keys = [
+        "userName",
+        "theme",
+        "accent",
+        "reducedMotion",
+        "telemetryIntervalMs",
+        "aiModel",
+        "aiEffort",
+        "confirmLowRisk",
+        "memoryEnabled",
+        "voiceAutoSpeak",
+        "wakeWordEnabled",
+        "ttsVoice",
+    ];
     for key in keys {
-        let raw: Option<String> = conn
-            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))
-            .optional()?;
+        let raw: Option<String> = conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0)).optional()?;
         let Some(raw) = raw else { continue };
         let patch_json = format!("{{\"{key}\":{raw}}}");
         match serde_json::from_str::<SettingsPatch>(&patch_json).map_err(AppError::from).and_then(|p| p.validate()) {

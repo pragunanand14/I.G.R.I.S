@@ -55,7 +55,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-uti
 codegen-units = 1
 lto = true
 opt-level = "s"
-panic = "abort"
+# Unwind (not abort): untrusted-input parsers (PDF) and background tasks rely on
+# catching panics; with `abort` one malformed file would crash the app.
+panic = "unwind"
 strip = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

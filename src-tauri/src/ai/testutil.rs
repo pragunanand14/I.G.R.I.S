@@ -42,10 +42,7 @@ impl MockServer {
                 let Ok((mut sock, _)) = listener.accept().await else { return };
                 let req = read_request(&mut sock).await;
                 cap.lock().await.push(req);
-                let resp = format!(
-                    "HTTP/1.1 {status} X\r\ncontent-type: {ctype}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                    body.len()
-                );
+                let resp = format!("HTTP/1.1 {status} X\r\ncontent-type: {ctype}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
                 let _ = sock.write_all(resp.as_bytes()).await;
                 let _ = sock.shutdown().await;
             }

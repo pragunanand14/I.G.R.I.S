@@ -9,7 +9,7 @@ use crate::settings;
 use crate::state::{AppState, UserInitiated};
 use crate::tools::apps::{self, AppCandidate, AppEntry};
 use crate::tools::audit::{self, AuditEntry};
-use crate::tools::executor::{self, Actor, ActivityStatus, ExecContext, Policy, ToolActivity};
+use crate::tools::executor::{self, ActivityStatus, Actor, ExecContext, Policy, ToolActivity};
 use crate::tools::{PermissionLevel, ToolSpec};
 
 #[derive(Debug, Serialize)]
@@ -52,10 +52,7 @@ pub fn remove_application(state: State<'_, AppState>, id: String) -> AppResult<(
 pub async fn detect_applications(state: State<'_, AppState>) -> AppResult<Vec<AppCandidate>> {
     let existing = apps::list(&*state.db.conn()?)?;
     let found = tauri::async_runtime::spawn_blocking(apps::detect).await.map_err(|e| AppError::internal(e.to_string()))?;
-    Ok(found
-        .into_iter()
-        .filter(|c| !existing.iter().any(|e| e.name.eq_ignore_ascii_case(&c.name) || e.path == c.path))
-        .collect())
+    Ok(found.into_iter().filter(|c| !existing.iter().any(|e| e.name.eq_ignore_ascii_case(&c.name) || e.path == c.path)).collect())
 }
 
 /// Launch an allowlisted app from the UI. Goes through the same executor
@@ -63,7 +60,8 @@ pub async fn detect_applications(state: State<'_, AppState>) -> AppResult<Vec<Ap
 #[tauri::command]
 pub async fn launch_application(state: State<'_, AppState>, id: String) -> AppResult<ToolActivity> {
     let entry = apps::get(&*state.db.conn()?, &id)?.ok_or_else(|| AppError::validation("That application is no longer in the list."))?;
-    let call = ToolCall { id: format!("user-{}", uuid::Uuid::new_v4()), name: "launch_application".into(), input: json!({ "name": entry.name }), invalid_input: None };
+    let call =
+        ToolCall { id: format!("user-{}", uuid::Uuid::new_v4()), name: "launch_application".into(), input: json!({ "name": entry.name }), invalid_input: None };
     let cancel = CancellationToken::new();
     let ctx = ExecContext {
         registry: &state.tools,

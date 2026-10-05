@@ -65,7 +65,9 @@ pub fn add(conn: &Connection, path: &str, writable: bool) -> AppResult<AllowedFo
         return Err(AppError::validation("That path isn't a folder."));
     }
     if too_broad(&canon) {
-        return Err(AppError::validation("That folder is too broad to grant (a drive root, system folder or your whole home folder). Choose a more specific folder."));
+        return Err(AppError::validation(
+            "That folder is too broad to grant (a drive root, system folder or your whole home folder). Choose a more specific folder.",
+        ));
     }
     let s = canon.display().to_string();
     match conn.execute("INSERT INTO allowed_folders (path, writable) VALUES (?1, ?2)", params![s, writable as i64]) {
@@ -97,7 +99,9 @@ pub fn remove(conn: &Connection, id: i64) -> AppResult<()> {
 pub fn is_secret_file(path: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    let in_secret_dir = path.components().any(|c| matches!(c, Component::Normal(n) if [".ssh", ".gnupg", ".aws", ".azure", ".kube"].contains(&n.to_string_lossy().to_ascii_lowercase().as_str())));
+    let in_secret_dir = path.components().any(
+        |c| matches!(c, Component::Normal(n) if [".ssh", ".gnupg", ".aws", ".azure", ".kube"].contains(&n.to_string_lossy().to_ascii_lowercase().as_str())),
+    );
     in_secret_dir
         || name == ".env"
         || name.starts_with(".env.")

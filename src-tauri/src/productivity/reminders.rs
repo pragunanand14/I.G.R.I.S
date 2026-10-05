@@ -55,10 +55,7 @@ fn insert(conn: &Connection, title: &str, kind: &str, due: chrono::DateTime<Utc>
     if active >= MAX_ACTIVE {
         return Err(AppError::validation("Too many active reminders and timers — clear some first."));
     }
-    conn.execute(
-        "INSERT INTO reminders (title, kind, due_at, duration_secs) VALUES (?1, ?2, ?3, ?4)",
-        params![title, kind, time::to_db(due), duration],
-    )?;
+    conn.execute("INSERT INTO reminders (title, kind, due_at, duration_secs) VALUES (?1, ?2, ?3, ?4)", params![title, kind, time::to_db(due), duration])?;
     must_get(conn, conn.last_insert_rowid())
 }
 
@@ -96,9 +93,7 @@ pub fn history(conn: &Connection, limit: u32) -> AppResult<Vec<Reminder>> {
 /// Atomically mark every pending item due at or before `now` as fired and return them.
 pub fn take_due(conn: &Connection, now: chrono::DateTime<Utc>) -> AppResult<Vec<Reminder>> {
     let now = time::to_db(now);
-    let mut stmt = conn.prepare(&format!(
-        "UPDATE reminders SET status = 'fired', fired_at = ?1 WHERE status = 'pending' AND due_at <= ?1 RETURNING {COLS}"
-    ))?;
+    let mut stmt = conn.prepare(&format!("UPDATE reminders SET status = 'fired', fired_at = ?1 WHERE status = 'pending' AND due_at <= ?1 RETURNING {COLS}"))?;
     let rows = stmt.query_map([&now], row)?;
     let mut v: Vec<Reminder> = rows.collect::<Result<_, _>>()?;
     v.sort_by(|a, b| a.due_at.cmp(&b.due_at));

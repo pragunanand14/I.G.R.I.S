@@ -6,7 +6,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::http::{self, cancelled};
 use super::sse::SseParser;
-use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Media, MediaKind, Role, ServerToolEvent, Source, StopReason, StreamEvent, ToolCall, Usage};
+use super::{
+    AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Media, MediaKind, Role, ServerToolEvent, Source, StopReason,
+    StreamEvent, ToolCall, Usage,
+};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -21,11 +24,7 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     pub fn new(api_key: String, base_url: Option<String>) -> AiResult<Self> {
-        Ok(Self {
-            client: http::client()?,
-            api_key,
-            base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()).trim_end_matches('/').to_string(),
-        })
+        Ok(Self { client: http::client()?, api_key, base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()).trim_end_matches('/').to_string() })
     }
 
     fn is_first_party(&self) -> bool {
@@ -50,12 +49,7 @@ pub fn sanitize_replay_blocks(blocks: &[Value]) -> Vec<Value> {
     let last_fallback = blocks.iter().rposition(|b| b["type"] == "fallback");
     match last_fallback {
         None => blocks.to_vec(),
-        Some(idx) => blocks
-            .iter()
-            .enumerate()
-            .filter(|(i, b)| *i > idx || (*i < idx && b["type"] == "text"))
-            .map(|(_, b)| b.clone())
-            .collect(),
+        Some(idx) => blocks.iter().enumerate().filter(|(i, b)| *i > idx || (*i < idx && b["type"] == "text")).map(|(_, b)| b.clone()).collect(),
     }
 }
 
@@ -179,15 +173,10 @@ fn server_result_event(block: &Value) -> Option<ServerToolEvent> {
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|r| {
-            Some(Source { title: r["title"].as_str().unwrap_or_default().to_string(), url: r["url"].as_str()?.to_string() })
-        })
+        .filter_map(|r| Some(Source { title: r["title"].as_str().unwrap_or_default().to_string(), url: r["url"].as_str()?.to_string() }))
         .collect();
-    let summary = if ty == "web_search_tool_result" {
-        format!("{} result{}", sources.len(), if sources.len() == 1 { "" } else { "s" })
-    } else {
-        "Done".to_string()
-    };
+    let summary =
+        if ty == "web_search_tool_result" { format!("{} result{}", sources.len(), if sources.len() == 1 { "" } else { "s" }) } else { "Done".to_string() };
     Some(ServerToolEvent::Finished { id, ok: true, summary, sources })
 }
 
@@ -308,8 +297,7 @@ struct StreamState {
 
 impl StreamState {
     fn handle(&mut self, data: &str, on_event: &mut (dyn FnMut(StreamEvent) + Send)) -> AiResult<bool> {
-        let v: Value = serde_json::from_str(data)
-            .map_err(|e| AiError::new(AiErrorKind::Protocol, format!("Malformed stream event from Anthropic: {e}")))?;
+        let v: Value = serde_json::from_str(data).map_err(|e| AiError::new(AiErrorKind::Protocol, format!("Malformed stream event from Anthropic: {e}")))?;
         match v["type"].as_str().unwrap_or_default() {
             "message_start" => {
                 if let Some(m) = v["message"]["model"].as_str() {
@@ -356,9 +344,7 @@ impl StreamState {
                         "max_tokens" => StopReason::MaxTokens,
                         "tool_use" => StopReason::ToolUse,
                         "pause_turn" => StopReason::PauseTurn,
-                        "refusal" => StopReason::Refusal {
-                            category: v["delta"]["stop_details"]["category"].as_str().map(str::to_string),
-                        },
+                        "refusal" => StopReason::Refusal { category: v["delta"]["stop_details"]["category"].as_str().map(str::to_string) },
                         other => StopReason::Other { reason: other.to_string() },
                     });
                 }
@@ -393,12 +379,7 @@ impl AiProvider for AnthropicProvider {
         let resp = http::send_with_retry(
             cancel,
             || {
-                let mut rb = self
-                    .client
-                    .post(&url)
-                    .header("x-api-key", &self.api_key)
-                    .header("anthropic-version", API_VERSION)
-                    .json(&body);
+                let mut rb = self.client.post(&url).header("x-api-key", &self.api_key).header("anthropic-version", API_VERSION).json(&body);
                 if send_fallback_beta {
                     rb = rb.header("anthropic-beta", FALLBACK_BETA);
                 }
@@ -572,7 +553,10 @@ mod tests {
             text: None,
         };
         let mut r = req("claude-opus-5-5");
-        r.turns = vec![ChatTurn { media: vec![m(MediaKind::Image, Some("QUJD")), m(MediaKind::Pdf, Some("UERG")), m(MediaKind::Pdf, None)], ..ChatTurn::user("summarise") }];
+        r.turns = vec![ChatTurn {
+            media: vec![m(MediaKind::Image, Some("QUJD")), m(MediaKind::Pdf, Some("UERG")), m(MediaKind::Pdf, None)],
+            ..ChatTurn::user("summarise")
+        }];
         let c = &build_body(&r, true)["messages"][0]["content"];
         assert_eq!(c[0], json!({"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"QUJD"}}));
         assert_eq!(c[1], json!({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"UERG"},"title":"doc.pdf"}));
@@ -585,7 +569,12 @@ mod tests {
         let mut r = req("claude-opus-5-5");
         r.tools = vec![
             ToolDef { name: "calculator".into(), description: "d".into(), input_schema: json!({"type":"object"}), server: None },
-            ToolDef { name: "web_search".into(), description: String::new(), input_schema: json!({}), server: Some(json!({"type":"web_search_20260209","name":"web_search","max_uses":5})) },
+            ToolDef {
+                name: "web_search".into(),
+                description: String::new(),
+                input_schema: json!({}),
+                server: Some(json!({"type":"web_search_20260209","name":"web_search","max_uses":5})),
+            },
         ];
         r.turns.push(ChatTurn {
             tool_calls: vec![ToolCall { id: "toolu_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
@@ -613,12 +602,21 @@ mod tests {
             ("content_block_start", json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})),
             ("content_block_delta", json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Checking."}})),
             ("content_block_stop", json!({"type":"content_block_stop","index":0})),
-            ("content_block_start", json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_9","name":"calculator","input":{}}})),
+            (
+                "content_block_start",
+                json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_9","name":"calculator","input":{}}}),
+            ),
             ("content_block_delta", json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"expression\": "}})),
             ("content_block_delta", json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"2*21\"}"}})),
             ("content_block_stop", json!({"type":"content_block_stop","index":1})),
-            ("content_block_start", json!({"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_10","name":"calculator","input":{}}})),
-            ("content_block_delta", json!({"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"expression\": \"oops"}})),
+            (
+                "content_block_start",
+                json!({"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_10","name":"calculator","input":{}}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"expression\": \"oops"}}),
+            ),
             ("content_block_stop", json!({"type":"content_block_stop","index":2})),
             ("message_delta", json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}})),
             ("message_stop", json!({"type":"message_stop"})),
@@ -650,18 +648,33 @@ mod tests {
     async fn surfaces_server_web_search_and_pause_turn() {
         let body = sse(&[
             ("message_start", json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":5}}})),
-            ("content_block_start", json!({"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}})),
-            ("content_block_delta", json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"rust 2026\"}"}})),
+            (
+                "content_block_start",
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"rust 2026\"}"}}),
+            ),
             ("content_block_stop", json!({"type":"content_block_stop","index":0})),
-            ("content_block_start", json!({"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[
-                {"type":"web_search_result","title":"Rust Blog","url":"https://blog.rust-lang.org/","encrypted_content":"x"},
-                {"type":"web_search_result","title":"Releases","url":"https://github.com/rust-lang/rust/releases","encrypted_content":"y"}
-            ]}})),
+            (
+                "content_block_start",
+                json!({"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[
+                    {"type":"web_search_result","title":"Rust Blog","url":"https://blog.rust-lang.org/","encrypted_content":"x"},
+                    {"type":"web_search_result","title":"Releases","url":"https://github.com/rust-lang/rust/releases","encrypted_content":"y"}
+                ]}}),
+            ),
             ("content_block_stop", json!({"type":"content_block_stop","index":1})),
-            ("content_block_start", json!({"type":"content_block_start","index":2,"content_block":{"type":"server_tool_use","id":"srvtoolu_2","name":"web_search","input":{}}})),
+            (
+                "content_block_start",
+                json!({"type":"content_block_start","index":2,"content_block":{"type":"server_tool_use","id":"srvtoolu_2","name":"web_search","input":{}}}),
+            ),
             ("content_block_delta", json!({"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"x\"}"}})),
             ("content_block_stop", json!({"type":"content_block_stop","index":2})),
-            ("content_block_start", json!({"type":"content_block_start","index":3,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_2","content":{"type":"web_search_tool_result_error","error_code":"max_uses_exceeded"}}})),
+            (
+                "content_block_start",
+                json!({"type":"content_block_start","index":3,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_2","content":{"type":"web_search_tool_result_error","error_code":"max_uses_exceeded"}}}),
+            ),
             ("content_block_stop", json!({"type":"content_block_stop","index":3})),
             ("message_delta", json!({"type":"message_delta","delta":{"stop_reason":"pause_turn"},"usage":{"output_tokens":9}})),
             ("message_stop", json!({"type":"message_stop"})),
@@ -696,7 +709,10 @@ mod tests {
     async fn reports_refusal_with_category() {
         let body = sse(&[
             ("message_start", json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":3}}})),
-            ("message_delta", json!({"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"}},"usage":{"output_tokens":0}})),
+            (
+                "message_delta",
+                json!({"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"}},"usage":{"output_tokens":0}}),
+            ),
             ("message_stop", json!({"type":"message_stop"})),
         ]);
         let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;

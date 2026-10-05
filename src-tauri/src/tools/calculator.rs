@@ -389,7 +389,11 @@ pub fn format_number(v: f64) -> String {
     let magnitude = v.abs().log10().floor() as i32 + 1; // digits before the point (≤ 0 for |v| < 1)
     let decimals = (12 - magnitude).max(0) as usize;
     let s = format!("{v:.decimals$}");
-    if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s }
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    }
 }
 
 #[cfg(test)]
@@ -429,8 +433,22 @@ mod tests {
     #[test]
     fn rejects_bad_input() {
         for bad in [
-            "", "1 +", "(1 + 2", "1 / 0", "5 % 0", "sqrt(-1)", "foo(2)", "x + 1", "2 2", "1; drop table",
-            "import os", "__import__('os')", "(-1)!", "171!", "10^400", "0/0",
+            "",
+            "1 +",
+            "(1 + 2",
+            "1 / 0",
+            "5 % 0",
+            "sqrt(-1)",
+            "foo(2)",
+            "x + 1",
+            "2 2",
+            "1; drop table",
+            "import os",
+            "__import__('os')",
+            "(-1)!",
+            "171!",
+            "10^400",
+            "0/0",
         ] {
             assert!(evaluate(bad).is_err(), "should reject {bad:?}");
         }

@@ -32,20 +32,22 @@ use crate::ai::AiRuntime;
 use crate::config::AppConfig;
 use crate::db::Database;
 use crate::state::{AppPaths, AppState, Generations, PendingApprovals};
+use crate::system::{ConnectivityMonitor, SystemMonitor};
 use crate::tools::apps::{LaunchApplicationTool, ListApplicationsTool};
 use crate::tools::calculator::CalculatorTool;
+use crate::tools::files::{
+    CreateFileTool, CreateFolderTool, ListDirectoryTool, MovePathTool, OpenPathTool, ReadFileTool, SearchFilesTool, TrashPathTool, WriteFileTool,
+};
 use crate::tools::memory::{ForgetMemoryTool, RememberTool, SearchMemoryTool, UpdateMemoryTool};
-use crate::tools::system_info::SystemInfoTool;
-use crate::tools::files::{CreateFileTool, CreateFolderTool, ListDirectoryTool, MovePathTool, OpenPathTool, ReadFileTool, SearchFilesTool, TrashPathTool, WriteFileTool};
 use crate::tools::processes::{CloseApplicationTool, ListProcessesTool, OpenUrlTool};
 use crate::tools::productivity::{
     AddEventTool, AddTaskTool, CancelReminderTool, DateTimeTool, DeleteEventTool, DeleteTaskTool, ListEventsTool, ListRemindersTool, ListTasksTool,
     SetReminderTool, StartTimerTool, UpdateTaskTool,
 };
 use crate::tools::projects::{ListProjectsTool, ProjectContextTool};
+use crate::tools::system_info::SystemInfoTool;
 use crate::tools::web::{FetchUrlTool, WebSearchTool};
 use crate::tools::ToolRegistry;
-use crate::system::{ConnectivityMonitor, SystemMonitor};
 
 const CONNECTIVITY_INTERVAL: Duration = Duration::from_secs(15);
 

@@ -16,8 +16,8 @@ use tokio_util::sync::CancellationToken;
 use super::context::{build_turns, encode_turns};
 use super::prompt::{self, PromptContext};
 use crate::ai::{AiError, AiErrorKind, AiProvider, ChatRequest, ChatTurn, Effort, Role, ServerToolEvent, StopReason, StreamEvent, ToolDef, Usage};
-use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
 use crate::attachments::AttachmentStore;
+use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::memory::retrieval::{self, MemoryContext};
@@ -300,11 +300,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         // Only act on tool calls when the model actually stopped to use them —
         // a refusal or max_tokens stop can leave a call cut off mid-input.
         let wants_tools = completion.stop_reason == StopReason::ToolUse && !completion.tool_calls.is_empty();
-        new_turns.push(ChatTurn {
-            raw: completion.raw.clone(),
-            tool_calls: completion.tool_calls.clone(),
-            ..ChatTurn::assistant(completion.text.clone())
-        });
+        new_turns.push(ChatTurn { raw: completion.raw.clone(), tool_calls: completion.tool_calls.clone(), ..ChatTurn::assistant(completion.text.clone()) });
         if completion.stop_reason == StopReason::PauseTurn {
             // A provider-side tool loop paused: re-send as-is and it resumes.
             if round == MAX_TOOL_ROUNDS {
@@ -395,11 +391,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         }
         Outcome::StepLimit => {
             tracing::warn!(event = "CHAT_TOOL_STEP_LIMIT", rounds = MAX_TOOL_ROUNDS);
-            NewMessage {
-                status: MessageStatus::Error,
-                error: Some(format!("Stopped after {MAX_TOOL_ROUNDS} tool steps without a final answer.")),
-                ..base
-            }
+            NewMessage { status: MessageStatus::Error, error: Some(format!("Stopped after {MAX_TOOL_ROUNDS} tool steps without a final answer.")), ..base }
         }
     };
 
@@ -515,11 +507,7 @@ mod tests {
     #[tokio::test]
     async fn full_turn_persists_and_replays_history_unchanged() {
         let db = db();
-        let server = MockServer::start(vec![
-            (200, "text/event-stream", sse_reply("Hello.")),
-            (200, "text/event-stream", sse_reply("Still here.")),
-        ])
-        .await;
+        let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("Hello.")), (200, "text/event-stream", sse_reply("Still here."))]).await;
         let reg = registry_with(None);
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
 
@@ -793,11 +781,7 @@ mod tests {
     #[tokio::test]
     async fn regenerate_replaces_last_answer() {
         let db = db();
-        let server = MockServer::start(vec![
-            (200, "text/event-stream", sse_reply("First.")),
-            (200, "text/event-stream", sse_reply("Second.")),
-        ])
-        .await;
+        let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("First.")), (200, "text/event-stream", sse_reply("Second."))]).await;
         let reg = registry_with(None);
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
         let (conv, _) = save_user_message(&db, None, "Q", "", &reg.defs(), true).unwrap();
@@ -825,11 +809,7 @@ mod tests {
         use crate::memory::{self as mem, MemoryKind, MemorySource};
         let db = db();
         mem::add(&db.conn().unwrap(), MemoryKind::LongTerm, "Main project is SkillTrack", MemorySource::User, None).unwrap();
-        let server = MockServer::start(vec![
-            (200, "text/event-stream", sse_reply("SkillTrack.")),
-            (200, "text/event-stream", sse_reply("Sure.")),
-        ])
-        .await;
+        let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("SkillTrack.")), (200, "text/event-stream", sse_reply("Sure."))]).await;
         let reg = registry_with(None);
         let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
         let (conv, m1) = save_user_message(&db, None, "What's my main project?", "", &reg.defs(), true).unwrap();

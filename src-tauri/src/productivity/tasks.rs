@@ -128,10 +128,7 @@ pub fn update(conn: &Connection, id: i64, input: &TaskInput) -> AppResult<Task> 
 
 pub fn set_done(conn: &Connection, id: i64, done: bool) -> AppResult<Task> {
     let now = time::now_db();
-    let n = conn.execute(
-        "UPDATE tasks SET done = ?1, completed_at = CASE WHEN ?1 THEN ?2 END, updated_at = ?2 WHERE id = ?3",
-        params![done, now, id],
-    )?;
+    let n = conn.execute("UPDATE tasks SET done = ?1, completed_at = CASE WHEN ?1 THEN ?2 END, updated_at = ?2 WHERE id = ?3", params![done, now, id])?;
     if n == 0 {
         return Err(AppError::validation(format!("There's no task #{id}.")));
     }

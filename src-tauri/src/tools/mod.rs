@@ -17,8 +17,8 @@ pub mod productivity;
 pub mod projects;
 pub mod schema;
 pub mod screen;
-pub mod web;
 pub mod system_info;
+pub mod web;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

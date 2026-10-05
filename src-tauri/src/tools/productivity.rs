@@ -701,7 +701,9 @@ mod tests {
     async fn event_flow() {
         let d = db();
         let add = AddEventTool::new(d.clone());
-        let r = run(&add, json!({"title": "Review", "start": "tomorrow at 3pm", "end": "for 1 hour", "all_day": false, "location": "Room 4", "notes": ""})).await.unwrap();
+        let r = run(&add, json!({"title": "Review", "start": "tomorrow at 3pm", "end": "for 1 hour", "all_day": false, "location": "Room 4", "notes": ""}))
+            .await
+            .unwrap();
         assert!(r.content.contains("15:00–16:00 @ Room 4"), "{}", r.content);
         let r = run(&add, json!({"title": "Holiday", "start": "tomorrow", "end": "", "all_day": true, "location": "", "notes": ""})).await.unwrap();
         assert!(r.content.contains("(all day)"), "{}", r.content);

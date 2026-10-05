@@ -71,12 +71,14 @@ impl Tool for ListProcessesTool {
         })
         .await
         .map_err(|e| ToolError::failed(e.to_string()))?;
-        let lines: Vec<String> = rows
-            .1
-            .iter()
-            .map(|(n, pid, cpu, mem)| format!("{n} (PID {pid}) — CPU {cpu:.1}%, memory {:.0} MB", *mem as f64 / 1_048_576.0))
-            .collect();
-        Ok(ToolOutput { content: format!("{} processes running. Top {} by {}:\n{}", rows.0, lines.len(), if by_mem { "memory" } else { "CPU" }, lines.join("\n")), summary: format!("{} processes", rows.0), sources: vec![], media: Vec::new() })
+        let lines: Vec<String> =
+            rows.1.iter().map(|(n, pid, cpu, mem)| format!("{n} (PID {pid}) — CPU {cpu:.1}%, memory {:.0} MB", *mem as f64 / 1_048_576.0)).collect();
+        Ok(ToolOutput {
+            content: format!("{} processes running. Top {} by {}:\n{}", rows.0, lines.len(), if by_mem { "memory" } else { "CPU" }, lines.join("\n")),
+            summary: format!("{} processes", rows.0),
+            sources: vec![],
+            media: Vec::new(),
+        })
     }
 }
 
@@ -116,12 +118,13 @@ fn request_close(pid: u32) -> Result<(), String> {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let status = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string()])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status()
-            .map_err(|e| e.to_string())?;
-        if status.success() { Ok(()) } else { Err(format!("taskkill exited with {status}")) }
+        let status =
+            std::process::Command::new("taskkill").args(["/PID", &pid.to_string()]).creation_flags(CREATE_NO_WINDOW).status().map_err(|e| e.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("taskkill exited with {status}"))
+        }
     }
     #[cfg(not(windows))]
     {
@@ -151,7 +154,11 @@ impl Tool for CloseApplicationTool {
         let find = move || -> Vec<u32> {
             let mut sys = System::new();
             sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_exe(sysinfo::UpdateKind::Always));
-            sys.processes().values().filter(|p| p.thread_kind().is_none() && p.exe().map(canonical).as_deref() == Some(target.as_path())).map(|p| p.pid().as_u32()).collect()
+            sys.processes()
+                .values()
+                .filter(|p| p.thread_kind().is_none() && p.exe().map(canonical).as_deref() == Some(target.as_path()))
+                .map(|p| p.pid().as_u32())
+                .collect()
         };
         let pids = tokio::task::spawn_blocking(find.clone()).await.map_err(|e| ToolError::failed(e.to_string()))?;
         if pids.is_empty() {

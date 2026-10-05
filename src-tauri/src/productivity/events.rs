@@ -156,7 +156,11 @@ pub fn parse_range(spec: &str) -> Result<(DateTime<Utc>, DateTime<Utc>), String>
         "tomorrow" => (today + Duration::days(1), 1),
         "week" | "this week" | "next 7 days" => (today, 7),
         "month" | "next 30 days" => (today, 30),
-        s => (NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| format!("Use today, tomorrow, this week, next 30 days or a date like 2026-10-06 (got \"{s}\")."))?, 1),
+        s => (
+            NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| format!("Use today, tomorrow, this week, next 30 days or a date like 2026-10-06 (got \"{s}\")."))?,
+            1,
+        ),
     };
     Ok((day(from), day(from + Duration::days(days))))
 }

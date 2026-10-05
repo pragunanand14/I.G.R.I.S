@@ -155,7 +155,15 @@ impl AttachmentStore {
         self.dir.join(format!("{id}.txt"))
     }
 
-    fn insert(&self, conn: &Connection, bytes: &[u8], (kind, mime): (MediaKind, &str), name: &str, dims: Option<(u32, u32)>, source: &str) -> AppResult<Attachment> {
+    fn insert(
+        &self,
+        conn: &Connection,
+        bytes: &[u8],
+        (kind, mime): (MediaKind, &str),
+        name: &str,
+        dims: Option<(u32, u32)>,
+        source: &str,
+    ) -> AppResult<Attachment> {
         let id = uuid::Uuid::new_v4().to_string();
         let a = Attachment {
             id: id.clone(),

@@ -276,9 +276,21 @@ take_screenshot (SENSITIVE) ─▶ capture ─▶ ≤1568 px JPEG ─▶ attachm
 * **Not provided**: Office documents (Word/Excel), audio/video files, image generation, OCR for providers without
   vision.
 
-## Planned architecture (later phases)
+## Hardening (Phase 10)
 
-* **Orchestrator** — intent analysis, memory retrieval and planning slot into `core/` ahead of the tool loop.
-* **Hardening** (Phase 10) — security review, CI and the Windows installer.
-* **Untrusted content** — web pages, files, and tool output are data, never instructions, and are fenced as such
-  in model context.
+* **Security review** — see [SECURITY.md](SECURITY.md) for the threat model, controls and findings. Fixes: secrets
+  are redacted from the tool audit log; release builds unwind on panic so panic-contained parsers (PDF) can't crash
+  the app.
+* **Performance** — pages are lazy-loaded (main bundle 816 KB → 379 KB, 120 KB gzipped); the chat page with
+  Markdown/highlighting loads on first visit. Release profile: LTO, one codegen unit, `opt-level = "s"`, stripped.
+* **Consistency** — `rustfmt.toml` (wide lines, matching the codebase) enforced in CI; clippy with `-D warnings`.
+* **CI** (`.github/workflows/ci.yml`) — frontend typecheck/lint/test/build and `npm audit`; Rust fmt, clippy and tests
+  on Ubuntu and Windows; `cargo audit`.
+* **Release** (`.github/workflows/release.yml`) — Windows NSIS + MSI installers as artifacts, or a draft GitHub
+  release when a `v*` tag is pushed. Installers are not code-signed yet.
+
+## Possible next steps
+
+* Code signing for Windows installers; auto-update.
+* Calendar sync (Google / Microsoft Graph) via OAuth; recurring reminders.
+* Encryption of local data at rest; Wayland screenshots via the desktop portal.

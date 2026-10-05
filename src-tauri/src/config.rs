@@ -117,10 +117,7 @@ impl AppConfig {
             }
         }
 
-        let process: HashMap<String, String> = KEYS
-            .iter()
-            .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
-            .collect();
+        let process: HashMap<String, String> = KEYS.iter().filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v))).collect();
 
         let mut cfg = Self::from_map(|key| process.get(key).or_else(|| merged.get(key)).cloned());
         cfg.env_files = env_files;
@@ -182,8 +179,7 @@ mod tests {
     use super::*;
 
     fn cfg(pairs: &[(&str, &str)]) -> AppConfig {
-        let map: HashMap<String, String> =
-            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let map: HashMap<String, String> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         AppConfig::from_map(|k| map.get(k).cloned())
     }
 

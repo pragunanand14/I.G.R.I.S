@@ -158,12 +158,16 @@ fn normalize(input: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-static DAY_WORDS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b(?:on\s+)?(?:(this|next)\s+)?(the day after tomorrow|day after tomorrow|today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b").unwrap());
+static DAY_WORDS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(?:on\s+)?(?:(this|next)\s+)?(the day after tomorrow|day after tomorrow|today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b").unwrap()
+});
 static ISO_DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(?:on\s+)?(\d{4})-(\d{2})-(\d{2})(?:t(\d{2}):(\d{2})(?::(\d{2}))?)?\b").unwrap());
 static MONTH_DATE: LazyLock<Regex> = LazyLock::new(|| {
     let m = "(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)";
-    Regex::new(&format!(r"\b(?:on\s+)?(?:the\s+)?(?:(\d{{1,2}})(?:st|nd|rd|th)?(?:\s+of)?\s+{m}|{m}\s+(?:the\s+)?(\d{{1,2}})(?:st|nd|rd|th)?)(?:\s+(\d{{4}}))?\b")).unwrap()
+    Regex::new(&format!(
+        r"\b(?:on\s+)?(?:the\s+)?(?:(\d{{1,2}})(?:st|nd|rd|th)?(?:\s+of)?\s+{m}|{m}\s+(?:the\s+)?(\d{{1,2}})(?:st|nd|rd|th)?)(?:\s+(\d{{4}}))?\b"
+    ))
+    .unwrap()
 });
 static CLOCK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(?:at\s+|@\s*|by\s+)?(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|h)?\b").unwrap());
 static PERIOD: LazyLock<Regex> =

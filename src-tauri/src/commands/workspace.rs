@@ -39,7 +39,8 @@ pub struct FolderSuggestion {
 #[tauri::command]
 pub fn suggest_folders(state: State<'_, AppState>) -> AppResult<Vec<FolderSuggestion>> {
     let shared = files::list(&*state.db.conn()?)?;
-    let candidates = [("Documents", dirs::document_dir()), ("Desktop", dirs::desktop_dir()), ("Downloads", dirs::download_dir()), ("Pictures", dirs::picture_dir())];
+    let candidates =
+        [("Documents", dirs::document_dir()), ("Desktop", dirs::desktop_dir()), ("Downloads", dirs::download_dir()), ("Pictures", dirs::picture_dir())];
     Ok(candidates
         .into_iter()
         .filter_map(|(label, p)| {

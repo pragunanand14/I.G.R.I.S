@@ -316,7 +316,14 @@ mod tests {
         ToolCall { id: "c1".into(), name: name.into(), input, invalid_input: None }
     }
 
-    async fn run(registry: &ToolRegistry, db: &Arc<Database>, c: &ToolCall, approver: &dyn Approver, policy: Policy, allowed: Option<&[String]>) -> (ToolResult, ToolActivity) {
+    async fn run(
+        registry: &ToolRegistry,
+        db: &Arc<Database>,
+        c: &ToolCall,
+        approver: &dyn Approver,
+        policy: Policy,
+        allowed: Option<&[String]>,
+    ) -> (ToolResult, ToolActivity) {
         let cancel = CancellationToken::new();
         let ctx = ExecContext { registry, db, conversation_id: Some("conv"), actor: Actor::Assistant, policy, allowed, approver, cancel: &cancel };
         execute(c, &ctx, &mut |_| {}).await

@@ -4,8 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 
 use crate::ai::{Role, ToolDef};
-use crate::memory::retrieval::MemoryContext;
 use crate::error::{AppError, AppResult};
+use crate::memory::retrieval::MemoryContext;
 
 pub const TITLE_MAX_CHARS: usize = 80;
 
@@ -130,8 +130,7 @@ fn conversation_from_row(r: &Row) -> rusqlite::Result<Conversation> {
     Ok(Conversation { id: r.get(0)?, title: r.get(1)?, created_at: r.get(2)?, updated_at: r.get(3)?, message_count: r.get(4)? })
 }
 
-const CONVERSATION_COLS: &str =
-    "c.id, c.title, c.created_at, c.updated_at, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id)";
+const CONVERSATION_COLS: &str = "c.id, c.title, c.created_at, c.updated_at, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id)";
 
 fn message_from_row(r: &Row) -> rusqlite::Result<Message> {
     let role: String = r.get(3)?;
@@ -162,17 +161,12 @@ const MESSAGE_COLS: &str =
 pub fn create(conn: &Connection, title: &str, system_prompt: &str, tools: &[ToolDef]) -> AppResult<Conversation> {
     let id = new_id();
     let tool_specs = serde_json::to_string(tools)?;
-    conn.execute(
-        "INSERT INTO conversations (id, title, system_prompt, tool_specs) VALUES (?1, ?2, ?3, ?4)",
-        params![id, title, system_prompt, tool_specs],
-    )?;
+    conn.execute("INSERT INTO conversations (id, title, system_prompt, tool_specs) VALUES (?1, ?2, ?3, ?4)", params![id, title, system_prompt, tool_specs])?;
     get(conn, &id)?.ok_or_else(|| AppError::internal("conversation vanished after insert"))
 }
 
 pub fn get(conn: &Connection, id: &str) -> AppResult<Option<Conversation>> {
-    Ok(conn
-        .query_row(&format!("SELECT {CONVERSATION_COLS} FROM conversations c WHERE c.id = ?1"), [id], conversation_from_row)
-        .optional()?)
+    Ok(conn.query_row(&format!("SELECT {CONVERSATION_COLS} FROM conversations c WHERE c.id = ?1"), [id], conversation_from_row).optional()?)
 }
 
 pub fn require(conn: &Connection, id: &str) -> AppResult<Conversation> {
@@ -250,7 +244,10 @@ pub fn append(conn: &mut Connection, conversation_id: &str, m: NewMessage) -> Ap
     let tx = conn.transaction()?;
     let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE conversation_id = ?1", [conversation_id], |r| r.get(0))?;
     tx.execute(
-        &format!("INSERT INTO messages ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?13, ?14)", MESSAGE_COLS),
+        &format!(
+            "INSERT INTO messages ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?13, ?14)",
+            MESSAGE_COLS
+        ),
         params![
             id,
             conversation_id,

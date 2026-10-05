@@ -136,7 +136,13 @@ impl Tool for WebSearchTool {
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .filter_map(|r| Some(Hit { title: r["title"].as_str().unwrap_or_default().into(), url: r["url"].as_str()?.into(), snippet: r["content"].as_str().unwrap_or_default().into() }))
+                    .filter_map(|r| {
+                        Some(Hit {
+                            title: r["title"].as_str().unwrap_or_default().into(),
+                            url: r["url"].as_str()?.into(),
+                            snippet: r["content"].as_str().unwrap_or_default().into(),
+                        })
+                    })
                     .collect()
             }
             _ => {
@@ -157,7 +163,13 @@ impl Tool for WebSearchTool {
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .filter_map(|r| Some(Hit { title: r["title"].as_str().unwrap_or_default().into(), url: r["url"].as_str()?.into(), snippet: r["description"].as_str().unwrap_or_default().into() }))
+                    .filter_map(|r| {
+                        Some(Hit {
+                            title: r["title"].as_str().unwrap_or_default().into(),
+                            url: r["url"].as_str()?.into(),
+                            snippet: r["description"].as_str().unwrap_or_default().into(),
+                        })
+                    })
                     .collect()
             }
         };
@@ -237,10 +249,8 @@ pub async fn resolve_public(url: &Url) -> Result<SocketAddr, ToolError> {
     if lower == "localhost" || lower.ends_with(".localhost") || lower.ends_with(".local") || lower.ends_with(".internal") {
         return Err(ToolError::invalid("Local and internal hosts can't be fetched."));
     }
-    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.trim_matches(['[', ']']), port))
-        .await
-        .map_err(|_| ToolError::failed(format!("Couldn't resolve {host}.")))?
-        .collect();
+    let addrs: Vec<SocketAddr> =
+        tokio::net::lookup_host((host.trim_matches(['[', ']']), port)).await.map_err(|_| ToolError::failed(format!("Couldn't resolve {host}.")))?.collect();
     if addrs.is_empty() {
         return Err(ToolError::failed(format!("Couldn't resolve {host}.")));
     }
@@ -390,7 +400,20 @@ mod tests {
 
     #[test]
     fn blocks_private_and_local_addresses() {
-        for ip in ["127.0.0.1", "10.0.0.5", "172.16.3.4", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fc00::1", "fe80::1", "::ffff:192.168.0.1", "224.0.0.1"] {
+        for ip in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "172.16.3.4",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fc00::1",
+            "fe80::1",
+            "::ffff:192.168.0.1",
+            "224.0.0.1",
+        ] {
             assert!(is_forbidden_ip(ip.parse().unwrap()), "{ip}");
         }
         for ip in ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"] {
@@ -400,7 +423,16 @@ mod tests {
 
     #[tokio::test]
     async fn refuses_unsafe_urls() {
-        for u in ["file:///etc/passwd", "ftp://example.com/x", "http://localhost:8080/", "http://user:pw@example.com/", "http://127.0.0.1/", "http://[::1]/", "http://metadata.internal/", "http://169.254.169.254/latest/meta-data"] {
+        for u in [
+            "file:///etc/passwd",
+            "ftp://example.com/x",
+            "http://localhost:8080/",
+            "http://user:pw@example.com/",
+            "http://127.0.0.1/",
+            "http://[::1]/",
+            "http://metadata.internal/",
+            "http://169.254.169.254/latest/meta-data",
+        ] {
             let url = Url::parse(u).unwrap();
             assert!(resolve_public(&url).await.is_err(), "{u}");
         }
@@ -440,7 +472,8 @@ mod tests {
 
     #[tokio::test]
     async fn brave_and_tavily_results_become_sources() {
-        let brave = json!({"web":{"results":[{"title":"Rust 1.97","url":"https://blog.rust-lang.org/","description":"<strong>Rust</strong> released"}]}}).to_string();
+        let brave =
+            json!({"web":{"results":[{"title":"Rust 1.97","url":"https://blog.rust-lang.org/","description":"<strong>Rust</strong> released"}]}}).to_string();
         let server = MockServer::start(vec![(200, "application/json", brave)]).await;
         let tool = WebSearchTool::new(cfg(&[("SEARCH_PROVIDER", "brave"), ("SEARCH_API_KEY", "bk")])).with_endpoint(server.url());
         let out = tool.execute(&json!({"query":"rust release"})).await.unwrap();

@@ -50,7 +50,13 @@ pub struct TurnResult {
     pub assistant_message: Message,
 }
 
-async fn run_generation(state: &AppState, conversation_id: &str, guard_token: &tokio_util::sync::CancellationToken, params: GenerationParams, on_event: &Channel<ChatEvent>) -> AppResult<TurnResult> {
+async fn run_generation(
+    state: &AppState,
+    conversation_id: &str,
+    guard_token: &tokio_util::sync::CancellationToken,
+    params: GenerationParams,
+    on_event: &Channel<ChatEvent>,
+) -> AppResult<TurnResult> {
     let mut emit = |ev: ChatEvent| {
         if let Err(e) = on_event.send(ev) {
             tracing::warn!(event = "CHAT_EVENT_DELIVERY_FAILED", error = %e);
@@ -78,8 +84,15 @@ pub async fn chat_send(
     let guard = state.generations.begin(&request_id, conversation_id.as_deref())?;
     let s = settings::load(&*state.db.conn()?)?;
 
-    let (conversation, message) =
-        chat::save_user_message_with(&state.db, conversation_id.as_deref(), &content, &attachment_ids, &s.user_name, &offered_tools(&state)?, s.memory_enabled)?;
+    let (conversation, message) = chat::save_user_message_with(
+        &state.db,
+        conversation_id.as_deref(),
+        &content,
+        &attachment_ids,
+        &s.user_name,
+        &offered_tools(&state)?,
+        s.memory_enabled,
+    )?;
     guard.attach(&conversation.id);
     let _ = on_event.send(ChatEvent::UserMessage { conversation: conversation.clone(), message });
     run_generation(&state, &conversation.id, &guard.token, params, &on_event).await
@@ -97,7 +110,13 @@ pub async fn chat_regenerate(state: State<'_, AppState>, request_id: String, con
 
 /// Edit one of the user's messages, drop everything after it, and respond again.
 #[tauri::command]
-pub async fn chat_edit(state: State<'_, AppState>, request_id: String, message_id: String, content: String, on_event: Channel<ChatEvent>) -> AppResult<TurnResult> {
+pub async fn chat_edit(
+    state: State<'_, AppState>,
+    request_id: String,
+    message_id: String,
+    content: String,
+    on_event: Channel<ChatEvent>,
+) -> AppResult<TurnResult> {
     validate_request_id(&request_id)?;
     let original = conversations::get_message(&*state.db.conn()?, &message_id)?.ok_or_else(|| AppError::validation("That message no longer exists."))?;
     let content = chat::validate_input_with(&content, !original.attachments.is_empty())?;

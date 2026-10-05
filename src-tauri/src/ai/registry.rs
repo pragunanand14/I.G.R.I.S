@@ -67,10 +67,9 @@ impl AiRuntime {
                 let _ = provider;
                 fail(format!("AI_MODEL must be set for the {id} provider."))
             }
-            Ok(provider) => AiRuntime {
-                provider: Some(provider),
-                status: AiStatus { provider: provider_id.clone(), configured_model, ready: true, problem: None },
-            },
+            Ok(provider) => {
+                AiRuntime { provider: Some(provider), status: AiStatus { provider: provider_id.clone(), configured_model, ready: true, problem: None } }
+            }
         }
     }
 }

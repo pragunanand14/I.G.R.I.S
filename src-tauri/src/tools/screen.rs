@@ -123,17 +123,18 @@ impl Tool for ScreenshotTool {
         .map_err(|e| ToolError::failed(e.to_string()))?
         .map_err(ToolError::failed)?;
         let name = format!("Screenshot {}.jpg", chrono::Local::now().format("%Y-%m-%d %H.%M.%S"));
-        let a = self
-            .db
-            .conn()
-            .and_then(|c| self.store.save_capture(&c, &name, "image/jpeg", &bytes, (w, h)))
-            .map_err(|e| ToolError::failed(e.to_string()))?;
+        let a = self.db.conn().and_then(|c| self.store.save_capture(&c, &name, "image/jpeg", &bytes, (w, h))).map_err(|e| ToolError::failed(e.to_string()))?;
         tracing::info!(event = "SCREENSHOT_TAKEN", width = orig.0, height = orig.1);
         let mut media = a.media();
         media.data = Some(Arc::from(base64::engine::general_purpose::STANDARD.encode(&bytes)));
         let scaled = if (w, h) != orig { format!(", scaled to {w}×{h}") } else { String::new() };
         Ok(ToolOutput {
-            content: format!("Screenshot of the screen ({}×{}{scaled}), taken {}. The image is attached.", orig.0, orig.1, chrono::Local::now().format("%H:%M:%S")),
+            content: format!(
+                "Screenshot of the screen ({}×{}{scaled}), taken {}. The image is attached.",
+                orig.0,
+                orig.1,
+                chrono::Local::now().format("%H:%M:%S")
+            ),
             summary: format!("Captured {}×{}", orig.0, orig.1),
             sources: vec![],
             media: vec![media],
@@ -167,7 +168,8 @@ mod tests {
         let a = crate::attachments::get(&db.conn().unwrap(), &out.media[0].attachment_id).unwrap().unwrap();
         assert_eq!((a.source.as_str(), a.mime.as_str()), ("screenshot", "image/jpeg"));
 
-        let failing = ScreenshotTool::with_capturer(db, Arc::new(AttachmentStore::new(dir.path().join("b")).unwrap()), Arc::new(|| Err("No display found.".into())));
+        let failing =
+            ScreenshotTool::with_capturer(db, Arc::new(AttachmentStore::new(dir.path().join("b")).unwrap()), Arc::new(|| Err("No display found.".into())));
         assert_eq!(failing.execute(&json!({})).await.unwrap_err().message, "No display found.");
     }
 }

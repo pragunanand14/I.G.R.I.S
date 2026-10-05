@@ -132,7 +132,8 @@ impl AiProvider for OpenAiCompatibleProvider {
         let has_images = req.turns.iter().any(|t| t.media.iter().chain(t.tool_results.iter().flat_map(|r| &r.media)).any(|m| m.kind == MediaKind::Image));
         match self.stream_with_fallback(req, cancel, on_event).await {
             Err(mut e) if has_images && e.kind == AiErrorKind::InvalidRequest => {
-                e.message = format!("{} This model may not accept images — use a vision-capable model, or start a new conversation without the image.", e.message);
+                e.message =
+                    format!("{} This model may not accept images — use a vision-capable model, or start a new conversation without the image.", e.message);
                 Err(e)
             }
             other => other,
@@ -195,8 +196,7 @@ impl OpenAiCompatibleProvider {
             if data.trim() == "[DONE]" {
                 return Ok(true);
             }
-            let v: Value = serde_json::from_str(data)
-                .map_err(|e| AiError::new(AiErrorKind::Protocol, format!("Malformed stream event from {label}: {e}")))?;
+            let v: Value = serde_json::from_str(data).map_err(|e| AiError::new(AiErrorKind::Protocol, format!("Malformed stream event from {label}: {e}")))?;
             if let Some(msg) = v["error"]["message"].as_str() {
                 return Err(AiError::new(AiErrorKind::Server, format!("{label}: {msg}")));
             }
@@ -302,11 +302,7 @@ mod tests {
         ChatRequest {
             model: "test-model".into(),
             system: "sys".into(),
-            turns: vec![
-                ChatTurn::user("hi"),
-                ChatTurn { raw: Some(json!([{"type":"text"}])), ..ChatTurn::assistant("hello") },
-                ChatTurn::user("again"),
-            ],
+            turns: vec![ChatTurn::user("hi"), ChatTurn { raw: Some(json!([{"type":"text"}])), ..ChatTurn::assistant("hello") }, ChatTurn::user("again")],
             max_tokens: 1000,
             effort: None,
             tools: vec![],
@@ -332,7 +328,10 @@ mod tests {
             tool_calls: vec![ToolCall { id: "call_1".into(), name: "calculator".into(), input: json!({"expression":"1+1"}), invalid_input: None }],
             ..ChatTurn::assistant("")
         });
-        r.turns.push(ChatTurn { tool_results: vec![ToolResult { call_id: "call_1".into(), content: "2".into(), is_error: false, media: vec![] }], ..ChatTurn::user("") });
+        r.turns.push(ChatTurn {
+            tool_results: vec![ToolResult { call_id: "call_1".into(), content: "2".into(), is_error: false, media: vec![] }],
+            ..ChatTurn::user("")
+        });
         r
     }
 

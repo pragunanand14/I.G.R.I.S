@@ -165,9 +165,8 @@ pub async fn synthesize(h: &HttpVoice, text: &str) -> Result<Vec<u8>, AiError> {
         return Err(AiError::new(AiErrorKind::InvalidRequest, "Nothing to say."));
     }
     let text: String = text.chars().take(MAX_TTS_CHARS).collect();
-    let mut rb = client()?
-        .post(format!("{}/audio/speech", h.base_url))
-        .json(&json!({ "model": h.model, "input": text, "voice": h.voice, "response_format": "mp3" }));
+    let mut rb =
+        client()?.post(format!("{}/audio/speech", h.base_url)).json(&json!({ "model": h.model, "input": text, "voice": h.voice, "response_format": "mp3" }));
     if let Some(k) = &h.api_key {
         rb = rb.bearer_auth(k);
     }

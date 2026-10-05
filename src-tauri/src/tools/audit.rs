@@ -38,6 +38,15 @@ pub struct NewAuditEntry<'a> {
 
 const MAX_FIELD: usize = 2000;
 
+/// The audit log never stores secrets: fields that look like passwords, keys,
+/// card or ID numbers are replaced wholesale.
+fn redact(s: &str) -> String {
+    match crate::memory::sensitive::detect(s) {
+        Some(kind) => format!("[redacted — looked like {}]", kind.describe()),
+        None => clip(s),
+    }
+}
+
 fn clip(s: &str) -> String {
     if s.chars().count() <= MAX_FIELD {
         s.to_string()
@@ -55,11 +64,11 @@ pub fn record(conn: &Connection, e: &NewAuditEntry) -> AppResult<()> {
             e.tool,
             e.permission,
             e.actor,
-            clip(e.description),
-            clip(e.input),
+            redact(e.description),
+            redact(e.input),
             e.status,
             e.approval,
-            e.result.map(clip),
+            e.result.map(redact),
             e.duration_ms
         ],
     )?;
@@ -87,4 +96,35 @@ pub fn list(conn: &Connection, limit: u32) -> AppResult<Vec<AuditEntry>> {
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+
+    #[test]
+    fn secrets_never_reach_the_audit_log() {
+        let db = Database::open_in_memory().unwrap();
+        let c = db.conn().unwrap();
+        let entry = |input: &'static str| NewAuditEntry {
+            conversation_id: None,
+            tool: "write_file",
+            permission: "sensitive",
+            actor: "assistant",
+            description: "Overwrite notes.txt",
+            input,
+            status: "completed",
+            approval: "approved",
+            result: Some("Saved"),
+            duration_ms: Some(1),
+        };
+        record(&c, &entry(r#"{"path":"notes.txt","content":"api_key = sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"}"#)).unwrap();
+        record(&c, &entry(r#"{"path":"notes.txt","content":"buy milk"}"#)).unwrap();
+        let inputs: Vec<String> =
+            c.prepare("SELECT input FROM tool_audit ORDER BY id").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert!(inputs[0].starts_with("[redacted"), "{}", inputs[0]);
+        assert!(!inputs[0].contains("sk-ant"));
+        assert!(inputs[1].contains("buy milk"));
+    }
 }

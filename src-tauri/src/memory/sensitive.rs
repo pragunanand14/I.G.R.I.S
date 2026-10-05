@@ -67,7 +67,18 @@ fn contains_card_number(text: &str) -> bool {
             .iter()
             .rev()
             .enumerate()
-            .map(|(i, &d)| if i % 2 == 1 { let x = d * 2; if x > 9 { x - 9 } else { x } } else { d })
+            .map(|(i, &d)| {
+                if i % 2 == 1 {
+                    let x = d * 2;
+                    if x > 9 {
+                        x - 9
+                    } else {
+                        x
+                    }
+                } else {
+                    d
+                }
+            })
             .sum();
         sum % 10 == 0
     })

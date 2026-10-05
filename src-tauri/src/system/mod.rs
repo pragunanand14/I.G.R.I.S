@@ -137,10 +137,7 @@ impl SystemMonitor {
         let now = Instant::now();
 
         // CPU usage is computed between refreshes; sysinfo needs a minimum gap.
-        let cpu_ready = self
-            .last_cpu_refresh
-            .map(|t| now.duration_since(t) >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL)
-            .unwrap_or(false);
+        let cpu_ready = self.last_cpu_refresh.map(|t| now.duration_since(t) >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).unwrap_or(false);
         if cpu_ready {
             self.sys.refresh_cpu_all();
             self.cpu_usage = Some(self.sys.global_cpu_usage().clamp(0.0, 100.0));
@@ -196,12 +193,7 @@ impl SystemMonitor {
                     available_bytes: d.available_space(),
                 })
                 .collect(),
-            network: NetworkInfo {
-                connectivity,
-                rx_bytes_per_sec: rate(rx),
-                tx_bytes_per_sec: rate(tx),
-                interface_count: count,
-            },
+            network: NetworkInfo { connectivity, rx_bytes_per_sec: rate(rx), tx_bytes_per_sec: rate(tx), interface_count: count },
             battery: battery::read(),
             temperatures: self
                 .components

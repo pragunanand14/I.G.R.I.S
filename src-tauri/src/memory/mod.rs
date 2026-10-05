@@ -36,7 +36,11 @@ impl MemoryKind {
     }
 
     fn parse(s: &str) -> Self {
-        if s == "knowledge" { MemoryKind::Knowledge } else { MemoryKind::LongTerm }
+        if s == "knowledge" {
+            MemoryKind::Knowledge
+        } else {
+            MemoryKind::LongTerm
+        }
     }
 }
 
@@ -160,11 +164,10 @@ pub fn all(conn: &Connection) -> AppResult<Vec<Memory>> {
 }
 
 const STOPWORDS: &[&str] = &[
-    "the", "and", "for", "are", "but", "not", "you", "your", "with", "this", "that", "what", "whats", "was", "were", "have", "has",
-    "had", "how", "who", "why", "when", "where", "which", "can", "could", "would", "should", "about", "from", "into", "they",
-    "them", "there", "their", "then", "than", "will", "just", "its", "it's", "is", "am", "be", "me", "my", "mine", "our", "we",
-    "do", "does", "did", "a", "an", "of", "to", "in", "on", "at", "or", "if", "so", "as", "by", "up", "please", "tell", "know",
-    "remember", "igris", "hey", "hi", "hello", "thanks",
+    "the", "and", "for", "are", "but", "not", "you", "your", "with", "this", "that", "what", "whats", "was", "were", "have", "has", "had", "how", "who", "why",
+    "when", "where", "which", "can", "could", "would", "should", "about", "from", "into", "they", "them", "there", "their", "then", "than", "will", "just",
+    "its", "it's", "is", "am", "be", "me", "my", "mine", "our", "we", "do", "does", "did", "a", "an", "of", "to", "in", "on", "at", "or", "if", "so", "as",
+    "by", "up", "please", "tell", "know", "remember", "igris", "hey", "hi", "hello", "thanks",
 ];
 
 /// Build an FTS5 query from free text: significant words, prefix-matched, OR-ed.
@@ -199,16 +202,19 @@ pub fn search(conn: &Connection, text: &str, kind: Option<MemoryKind>, limit: u3
 pub fn list(conn: &Connection, kind: Option<MemoryKind>, query: Option<&str>) -> AppResult<Vec<Memory>> {
     match query.map(str::trim).filter(|q| !q.is_empty()) {
         Some(q) => search(conn, q, kind, 200),
-        None => Ok(all(conn)?.into_iter().filter(|m| match kind { Some(k) => m.kind == k, None => true }).collect()),
+        None => Ok(all(conn)?
+            .into_iter()
+            .filter(|m| match kind {
+                Some(k) => m.kind == k,
+                None => true,
+            })
+            .collect()),
     }
 }
 
 pub fn mark_used(conn: &Connection, ids: &[i64]) -> AppResult<()> {
     for id in ids {
-        conn.execute(
-            "UPDATE memories SET use_count = use_count + 1, last_used_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
-            [id],
-        )?;
+        conn.execute("UPDATE memories SET use_count = use_count + 1, last_used_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1", [id])?;
     }
     Ok(())
 }

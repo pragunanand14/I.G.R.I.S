@@ -23,9 +23,7 @@ pub async fn attach_file(state: State<'_, AppState>, request: Request<'_>) -> Ap
         .unwrap_or_default();
     let (db, store, bytes) = (state.db.clone(), state.attachments.clone(), bytes.clone());
     // PDF text extraction can take a moment; keep it off the async runtime.
-    let a = tokio::task::spawn_blocking(move || store.save_upload(&*db.conn()?, &name, &bytes))
-        .await
-        .map_err(|e| AppError::internal(e.to_string()))??;
+    let a = tokio::task::spawn_blocking(move || store.save_upload(&*db.conn()?, &name, &bytes)).await.map_err(|e| AppError::internal(e.to_string()))??;
     tracing::info!(event = "ATTACHMENT_STAGED", kind = ?a.kind, size = a.size);
     Ok(a)
 }
