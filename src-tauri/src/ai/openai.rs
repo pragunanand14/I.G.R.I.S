@@ -11,6 +11,7 @@ use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion,
 
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+pub const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
 /// Local models on a CPU can be silent for minutes while reading a long prompt.
 const LOCAL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
 
@@ -98,6 +99,11 @@ impl OpenAiCompatibleProvider {
         Self::build("openai", "OpenAI", Some(api_key), base_url.unwrap_or_else(|| OPENAI_BASE_URL.into()))
     }
 
+    /// Google Gemini through its OpenAI-compatible endpoint (free tier via AI Studio keys).
+    pub fn gemini(api_key: String, base_url: Option<String>) -> AiResult<Self> {
+        Self::build("gemini", "Gemini", Some(api_key), base_url.unwrap_or_else(|| GEMINI_BASE_URL.into()))
+    }
+
     pub fn local(api_key: Option<String>, base_url: Option<String>) -> AiResult<Self> {
         Self::build("local", "The local model server", api_key, base_url.unwrap_or_else(|| LOCAL_BASE_URL.into()))
     }
@@ -105,6 +111,49 @@ impl OpenAiCompatibleProvider {
     fn build(id: &'static str, label: &'static str, api_key: Option<String>, base_url: String) -> AiResult<Self> {
         let client = if id == "local" { http::client_with_read_timeout(LOCAL_READ_TIMEOUT)? } else { http::client()? };
         Ok(Self { id, label, client, api_key, base_url: base_url.trim_end_matches('/').to_string() })
+    }
+}
+
+/// Gemini's OpenAI-compatible endpoint accepts a subset of JSON Schema and
+/// identifies function results by name: drop `additionalProperties` (IGRIS still
+/// validates every input itself), omit empty parameter objects, and name tool
+/// results after the call they answer.
+pub fn gemini_compat(body: &mut Value) {
+    fn strip(schema: &mut Value) {
+        if let Some(obj) = schema.as_object_mut() {
+            obj.remove("additionalProperties");
+            for v in obj.values_mut() {
+                strip(v);
+            }
+        } else if let Some(arr) = schema.as_array_mut() {
+            arr.iter_mut().for_each(strip);
+        }
+    }
+    if let Some(tools) = body["tools"].as_array_mut() {
+        for t in tools {
+            let f = &mut t["function"];
+            // An object schema without properties (missing or empty) is rejected.
+            if f["parameters"]["properties"].as_object().map(|p| p.is_empty()).unwrap_or(true) {
+                f.as_object_mut().map(|o| o.remove("parameters"));
+            } else {
+                strip(&mut f["parameters"]);
+            }
+        }
+    }
+    let mut names = std::collections::HashMap::new();
+    if let Some(msgs) = body["messages"].as_array_mut() {
+        for m in msgs.iter_mut() {
+            for c in m["tool_calls"].as_array().into_iter().flatten() {
+                if let (Some(id), Some(name)) = (c["id"].as_str(), c["function"]["name"].as_str()) {
+                    names.insert(id.to_string(), name.to_string());
+                }
+            }
+            if m["role"] == "tool" {
+                if let Some(name) = m["tool_call_id"].as_str().and_then(|id| names.get(id)) {
+                    m["name"] = json!(name);
+                }
+            }
+        }
     }
 }
 
@@ -228,7 +277,10 @@ impl OpenAiCompatibleProvider {
     }
 
     async fn stream_once(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>, with_tools: bool) -> AiResult<Completion> {
-        let body = build_body(req, self.id == "openai", with_tools, self.id == "openai");
+        let mut body = build_body(req, self.id == "openai", with_tools, self.id == "openai");
+        if self.id == "gemini" {
+            gemini_compat(&mut body);
+        }
         let url = format!("{}/chat/completions", self.base_url);
         let label = self.label;
 
@@ -528,6 +580,43 @@ mod tests {
         }
         text.push_str(&f.finish());
         (text, hidden)
+    }
+
+    #[test]
+    fn gemini_requests_fit_its_schema_subset_and_name_tool_results() {
+        let mut r = tool_req();
+        r.tools[0].input_schema =
+            json!({"type":"object","properties":{"expression":{"type":"string","maxLength":500}},"required":["expression"],"additionalProperties":false});
+        r.tools.push(ToolDef {
+            name: "get_datetime".into(),
+            description: "now".into(),
+            input_schema: json!({"type":"object","properties":{},"required":[],"additionalProperties":false}),
+            server: None,
+        });
+        let mut b = build_body(&r, false, true, false);
+        gemini_compat(&mut b);
+        let tools = b["tools"].as_array().unwrap();
+        let calc = tools.iter().find(|t| t["function"]["name"] == "calculator").unwrap();
+        assert!(!calc.to_string().contains("additionalProperties"));
+        assert!(calc["function"]["parameters"]["properties"].is_object());
+        let dt = tools.iter().find(|t| t["function"]["name"] == "get_datetime").unwrap();
+        assert!(dt["function"].get("parameters").is_none(), "no empty parameter object");
+        let tool_msg = b["messages"].as_array().unwrap().iter().find(|m| m["role"] == "tool").unwrap();
+        assert_eq!(tool_msg["name"], "calculator");
+        assert!(b["tools"].as_array().unwrap().iter().all(|t| t["function"].get("strict").is_none()));
+    }
+
+    #[tokio::test]
+    async fn gemini_uses_the_compatible_endpoint_with_a_bearer_key() {
+        let body = format!("data: {}\n\ndata: [DONE]\n\n", json!({"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}));
+        let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
+        let p = OpenAiCompatibleProvider::gemini("AIza-test".into(), Some(server.url())).unwrap();
+        assert_eq!(p.id(), "gemini");
+        let c = p.stream(&req(), &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(c.text, "Hi");
+        let r = &server.requests().await[0];
+        assert_eq!(r.header("authorization").as_deref(), Some("Bearer AIza-test"));
+        assert!(r.head.starts_with("POST /chat/completions"));
     }
 
     #[test]

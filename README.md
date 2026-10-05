@@ -13,7 +13,7 @@ audited tools — there is no shell access.
 
 ## What it can do
 
-- **Chat** with Anthropic Claude, OpenAI, or a local OpenAI-compatible model (Ollama, LM Studio, llama.cpp) —
+- **Chat** with Anthropic Claude, Google Gemini (free tier), OpenAI, or a local OpenAI-compatible model (Ollama, LM Studio, llama.cpp) —
   streaming, history, edit / regenerate / stop.
 - **Memory** — remembers facts and preferences you ask it to, recalls relevant ones automatically; inspect, edit or
   delete everything on the Memory page. Refuses to store passwords, keys and ID numbers.
@@ -78,13 +78,17 @@ directory; real environment variables win. Copy [`.env.example`](.env.example) a
 at least:
 
 ```ini
-AI_PROVIDER=anthropic        # or openai, or local (Ollama / LM Studio / llama.cpp server)
+AI_PROVIDER=anthropic        # or openai, gemini, or local (Ollama / LM Studio / llama.cpp server)
 AI_API_KEY=sk-ant-...        # not needed for local
 # AI_MODEL=claude-opus-5-5   # default for anthropic; required for openai/local
 # AI_BASE_URL=http://localhost:11434/v1   # local servers only
 ```
 
 After editing `.env`, use **Settings → AI → Reload configuration** (no restart needed).
+
+**Gemini (free tier):** create a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey), then set
+`AI_PROVIDER=gemini`, `AI_API_KEY=<key>` and `AI_MODEL=` a model listed in AI Studio (e.g. `gemini-2.5-flash`). The
+free tier is rate-limited, and Google may use free-tier prompts to improve its products.
 
 **Ollama:** `AI_PROVIDER=local` and `AI_MODEL=<name from ollama list>` are enough. Also set the environment variable
 `OLLAMA_CONTEXT_LENGTH=16384` and restart Ollama — IGRIS's instructions and tool list (~7k tokens) don't fit Ollama's

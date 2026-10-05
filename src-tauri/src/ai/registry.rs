@@ -9,8 +9,8 @@ use super::openai::OpenAiCompatibleProvider;
 use super::AiProvider;
 use crate::config::AppConfig;
 
-/// Provider ids IGRIS knows about. Gemini is planned but not implemented.
-pub const SUPPORTED: &[&str] = &["anthropic", "openai", "local"];
+/// Provider ids IGRIS knows about.
+pub const SUPPORTED: &[&str] = &["anthropic", "openai", "gemini", "local"];
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -46,7 +46,7 @@ impl AiRuntime {
         };
 
         let Some(id) = provider_id.as_deref() else {
-            return fail("No AI provider configured. Set AI_PROVIDER (anthropic, openai or local) in your .env file.".into());
+            return fail("No AI provider configured. Set AI_PROVIDER (anthropic, openai, gemini or local) in your .env file.".into());
         };
         let built: Result<Arc<dyn AiProvider>, String> = match id {
             "anthropic" => match &cfg.ai_api_key {
@@ -58,7 +58,10 @@ impl AiRuntime {
                 Some(k) => OpenAiCompatibleProvider::openai(k.clone(), cfg.ai_base_url.clone()).map(|p| Arc::new(p) as _).map_err(|e| e.message),
             },
             "local" => OpenAiCompatibleProvider::local(cfg.ai_api_key.clone(), cfg.ai_base_url.clone()).map(|p| Arc::new(p) as _).map_err(|e| e.message),
-            "gemini" => Err("The Gemini provider is not implemented yet. Use anthropic, openai or local.".into()),
+            "gemini" => match &cfg.ai_api_key {
+                None => Err("AI_API_KEY is not set for the Gemini provider. Create a free key at https://aistudio.google.com/apikey.".into()),
+                Some(k) => OpenAiCompatibleProvider::gemini(k.clone(), cfg.ai_base_url.clone()).map(|p| Arc::new(p) as _).map_err(|e| e.message),
+            },
             other => Err(format!("Unknown AI_PROVIDER '{other}'. Supported: {}.", SUPPORTED.join(", "))),
         };
         match built {
@@ -110,8 +113,16 @@ mod tests {
     }
 
     #[test]
-    fn unknown_and_unimplemented_providers_are_reported() {
-        assert!(AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "gemini"), ("AI_API_KEY", "k")])).status.problem.unwrap().contains("not implemented"));
+    fn gemini_needs_a_key_and_a_model() {
+        assert!(AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "gemini")])).status.problem.unwrap().contains("aistudio.google.com"));
+        assert!(AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "gemini"), ("AI_API_KEY", "k")])).status.problem.unwrap().contains("AI_MODEL"));
+        let rt = AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "gemini"), ("AI_API_KEY", "k"), ("AI_MODEL", "gemini-2.5-flash")]));
+        assert!(rt.status.ready);
+        assert_eq!(rt.provider.unwrap().id(), "gemini");
+    }
+
+    #[test]
+    fn unknown_providers_are_reported() {
         assert!(AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "foo")])).status.problem.unwrap().contains("Unknown"));
     }
 }

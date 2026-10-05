@@ -303,7 +303,7 @@ function AiPanel({ disabled, configDir }: { disabled: boolean; configDir: string
             <InfoRow label="Loaded .env files" value={config.envFiles.length ? config.envFiles.join(", ") : "None"} />
           </div>
           <p className="mt-3 text-xs text-muted">
-            Set <code className="font-mono">AI_PROVIDER</code> (anthropic, openai or local), <code className="font-mono">AI_API_KEY</code> and optionally{" "}
+            Set <code className="font-mono">AI_PROVIDER</code> (anthropic, openai, gemini or local), <code className="font-mono">AI_API_KEY</code> and optionally{" "}
             <code className="font-mono">AI_MODEL</code> in a <code className="font-mono">.env</code> file
             {configDir ? (
               <>
