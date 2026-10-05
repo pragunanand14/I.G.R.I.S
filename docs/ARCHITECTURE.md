@@ -195,10 +195,38 @@ mic button / Ctrl+Shift+Space / wake word
 * **Not verified in CI**: real microphone capture and audio playback require hardware — logic is covered by unit
   tests and the request paths by mock-server tests.
 
+## Computer control (Phase 7)
+
+```
+tool call (path) ─▶ files::guard(allowed_folders, path, Read|Write)
+                      ├─ lexical normalise (rejects `..` escapes) → canonicalise the deepest existing ancestor
+                      ├─ must sit inside a shared folder (symlinks resolved, so links out are refused)
+                      ├─ Write access requires the folder to be marked "allow changes"
+                      └─ credential/key files (.env, id_rsa, *.pem, *.key, credentials…) are always refused
+```
+
+* **Shared folders** (`files/`, table `allowed_folders`): file tools work only inside folders the user shares on the
+  Tools page. Folders are read-only unless *Allow changes* is on. Drive roots, the home folder itself and system
+  folders are rejected as too broad.
+* **File tools** (`tools/files.rs`): `list_directory`, `search_files` (name match, skips build/VCS folders, capped),
+  `read_file` (text only, 200 KB cap, wrapped as data), `create_file` / `create_folder` (LOW — never overwrite),
+  `write_file`, `move_path`, `trash_path` (SENSITIVE — always ask; deletion goes to the Recycle Bin / Trash,
+  permanent deletion does not exist), `open_path` (opens a document with its default app; executables and scripts
+  are refused).
+* **Processes** (`tools/processes.rs`): `list_processes` (top by CPU/memory, threads excluded), `close_application`
+  (SENSITIVE; only apps on the user's allowlist, by name; sends a normal close request — SIGTERM / `taskkill`
+  without `/F` — so the app can prompt to save), `open_url` (http/https only, default browser).
+* **Projects** (`projects/`, table `projects`): user-registered projects with detected language/stack, repository and
+  git branch (`detect_project` reads manifests such as `package.json`, `Cargo.toml`, `pom.xml`). `list_projects` and
+  `get_project_context` (details, notes, branch, top-level files, README excerpt) give the model project context.
+  Adding a project can share its folder read-only.
+* **Not provided**: arbitrary shell commands, killing processes forcibly, permanent deletion, access outside shared
+  folders.
+
 ## Planned architecture (later phases)
 
 * **Orchestrator** — intent analysis, memory retrieval and planning slot into `core/` ahead of the tool loop.
-* **More tools** — web search (Phase 5), filesystem with path boundaries and process inspection (Phase 7),
-  each declaring its permission level; destructive operations will be SENSITIVE/CRITICAL.
+* **Productivity** (Phase 8) — tasks, reminders, timers and notifications; **multimodal** (Phase 9) — image/PDF
+  input and screenshots; **hardening** (Phase 10) — security review, CI and the Windows installer.
 * **Untrusted content** — web pages, files, and tool output are data, never instructions, and are fenced as such
   in model context.

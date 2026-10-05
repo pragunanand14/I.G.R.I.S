@@ -3,6 +3,7 @@ import type { AppInfo, PublicConfig, ReloadResult } from "@/types/app";
 import type { Conversation, ConversationDetail } from "@/types/chat";
 import type { Memory, MemoryKind } from "@/types/memory";
 import type { VoiceStatus } from "@/types/voice";
+import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, ProjectInput } from "@/types/workspace";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
@@ -38,4 +39,14 @@ export const api = {
   getVoiceStatus: () => call<VoiceStatus>("get_voice_status"),
   transcribeAudio: (audioBase64: string, mimeType: string) => call<string>("transcribe_audio", { audioBase64, mimeType }),
   synthesizeSpeech: (text: string) => call<string>("synthesize_speech", { text }),
+  listFolders: () => call<AllowedFolder[]>("list_folders"),
+  addFolder: (path: string, writable: boolean) => call<AllowedFolder>("add_folder", { path, writable }),
+  setFolderWritable: (id: number, writable: boolean) => call<void>("set_folder_writable", { id, writable }),
+  removeFolder: (id: number) => call<void>("remove_folder", { id }),
+  suggestFolders: () => call<FolderSuggestion[]>("suggest_folders"),
+  listProjects: () => call<Project[]>("list_projects"),
+  addProject: (project: ProjectInput) => call<Project>("add_project", { project }),
+  updateProject: (id: number, project: ProjectInput) => call<Project>("update_project", { id, project }),
+  removeProject: (id: number) => call<void>("remove_project", { id }),
+  detectProject: (path: string) => call<DetectedProject>("detect_project", { path }),
 };

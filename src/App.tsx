@@ -6,6 +6,7 @@ import { HomePage } from "@/pages/HomePage";
 import { MemoryPage } from "@/pages/MemoryPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { PlannedPage } from "@/pages/PlannedPage";
+import { ProjectsPage } from "@/pages/ProjectsPage";
 import { SecurityPage } from "@/pages/SecurityPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SystemPage } from "@/pages/SystemPage";
@@ -16,6 +17,7 @@ const IMPLEMENTED: Record<string, React.ReactNode> = {
   "/memory": <MemoryPage />,
   "/system": <SystemPage />,
   "/tools": <ToolsPage />,
+  "/projects": <ProjectsPage />,
   "/security": <SecurityPage />,
   "/settings": <SettingsPage />,
 };

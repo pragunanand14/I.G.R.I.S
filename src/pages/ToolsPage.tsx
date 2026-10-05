@@ -1,9 +1,10 @@
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { AppWindow, FolderOpen, Play, Plus, ScanSearch, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
+import { SharedFolders } from "@/components/tools/SharedFolders";
 import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
@@ -25,6 +26,7 @@ export function ToolsPage() {
   const [path, setPath] = useState("");
 
   const report = (err: unknown) => setNotice({ ok: false, text: BackendError.from(err).message });
+  const onFolderNotice = useCallback((n: { ok: boolean; text: string }) => setNotice(n), []);
 
   useEffect(() => {
     if (backend !== "ready") return;
@@ -129,7 +131,7 @@ export function ToolsPage() {
       )}
 
       <div className="space-y-4">
-        <Panel title="Available tools">
+        <Panel title={`Available tools (${tools.length})`}>
           <ul className="divide-y divide-line">
             {tools.map((t) => (
               <li key={t.name} className="flex items-start gap-4 py-3 first:pt-0 last:pb-0">
@@ -150,6 +152,8 @@ export function ToolsPage() {
             ))}
           </ul>
         </Panel>
+
+        <SharedFolders onNotice={onFolderNotice} />
 
         <Panel
           title="Applications IGRIS may open"

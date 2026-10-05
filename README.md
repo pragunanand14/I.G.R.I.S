@@ -19,7 +19,8 @@ validated commands.
 | 4 — Memory | Long-term + knowledge memory (SQLite FTS5), automatic relevant-memory retrieval, remember / search / update / forget tools, sensitive-data guard, Memory page | ✅ Done |
 | 5 — Web | `web_search` (Anthropic built-in, Brave or Tavily), `fetch_url` with SSRF protection, untrusted-content marking, source links | ✅ Done |
 | 6 — Voice | Push-to-talk (mic button + Ctrl+Shift+Space), Whisper-compatible or built-in speech recognition, sentence-streamed spoken replies, barge-in interruption, experimental wake word | ✅ Done |
-| 7–10 | Computer control, productivity, multimodal, hardening | Planned |
+| 7 — Computer control | Shared folders (read-only or writable) with path-escape and credential-file protection, file tools (list, search, read, create, overwrite/move/trash with approval), process list, close allowlisted apps, open URLs/documents, project registry with stack detection | ✅ Done |
+| 8–10 | Productivity, multimodal, hardening | Planned |
 
 ## Getting started
 

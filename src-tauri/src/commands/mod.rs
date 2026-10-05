@@ -11,3 +11,4 @@ pub mod settings;
 pub mod system;
 pub mod tools;
 pub mod voice;
+pub mod workspace;

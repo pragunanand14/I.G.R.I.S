@@ -11,8 +11,10 @@ pub mod conversations;
 pub mod core;
 pub mod db;
 pub mod error;
+pub mod files;
 pub mod logging;
 pub mod memory;
+pub mod projects;
 pub mod settings;
 pub mod state;
 pub mod system;
@@ -32,6 +34,9 @@ use crate::tools::apps::{LaunchApplicationTool, ListApplicationsTool};
 use crate::tools::calculator::CalculatorTool;
 use crate::tools::memory::{ForgetMemoryTool, RememberTool, SearchMemoryTool, UpdateMemoryTool};
 use crate::tools::system_info::SystemInfoTool;
+use crate::tools::files::{CreateFileTool, CreateFolderTool, ListDirectoryTool, MovePathTool, OpenPathTool, ReadFileTool, SearchFilesTool, TrashPathTool, WriteFileTool};
+use crate::tools::processes::{CloseApplicationTool, ListProcessesTool, OpenUrlTool};
+use crate::tools::projects::{ListProjectsTool, ProjectContextTool};
 use crate::tools::web::{FetchUrlTool, WebSearchTool};
 use crate::tools::ToolRegistry;
 use crate::system::{ConnectivityMonitor, SystemMonitor};
@@ -85,6 +90,23 @@ pub fn run() {
             tools.register(Arc::new(SearchMemoryTool::new(db.clone())));
             tools.register(Arc::new(UpdateMemoryTool::new(db.clone())));
             tools.register(Arc::new(ForgetMemoryTool::new(db.clone())));
+            tools.register(Arc::new(ListDirectoryTool::new(db.clone())));
+            tools.register(Arc::new(SearchFilesTool::new(db.clone())));
+            tools.register(Arc::new(ReadFileTool::new(db.clone())));
+            tools.register(Arc::new(CreateFileTool::new(db.clone())));
+            tools.register(Arc::new(CreateFolderTool::new(db.clone())));
+            tools.register(Arc::new(WriteFileTool::new(db.clone())));
+            tools.register(Arc::new(MovePathTool::new(db.clone())));
+            tools.register(Arc::new(TrashPathTool::new(db.clone())));
+            tools.register(Arc::new(OpenPathTool::new(
+                db.clone(),
+                Arc::new(|p: &std::path::Path| tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())),
+            )));
+            tools.register(Arc::new(ListProcessesTool::default()));
+            tools.register(Arc::new(CloseApplicationTool::new(db.clone())));
+            tools.register(Arc::new(OpenUrlTool::new(Arc::new(|u: &str| tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())))));
+            tools.register(Arc::new(ListProjectsTool::new(db.clone())));
+            tools.register(Arc::new(ProjectContextTool::new(db.clone())));
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
 
             app.manage(AppState {
@@ -134,6 +156,16 @@ pub fn run() {
             commands::voice::get_voice_status,
             commands::voice::transcribe_audio,
             commands::voice::synthesize_speech,
+            commands::workspace::list_folders,
+            commands::workspace::add_folder,
+            commands::workspace::set_folder_writable,
+            commands::workspace::remove_folder,
+            commands::workspace::suggest_folders,
+            commands::workspace::list_projects,
+            commands::workspace::add_project,
+            commands::workspace::update_project,
+            commands::workspace::remove_project,
+            commands::workspace::detect_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");

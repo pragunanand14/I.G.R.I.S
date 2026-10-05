@@ -47,9 +47,7 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/projects",
     label: "Projects",
     icon: FolderGit2,
-    plannedPhase: 7,
-    summary: "Project context for developer mode.",
-    planned: ["Project registry (path, repo, stack)", "Load project context on request", "Developer tools: search, tests, git"],
+    summary: "Your projects, so IGRIS can load their context.",
   },
   { path: "/system", label: "System", icon: Cpu, summary: "Live hardware and OS telemetry." },
   {

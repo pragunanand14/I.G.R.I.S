@@ -126,6 +126,32 @@ pub const MIGRATIONS: &[Migration] = &[
             ALTER TABLE messages ADD COLUMN memory_context TEXT;
         "#,
     },
+    Migration {
+        version: 5,
+        name: "computer_control",
+        sql: r#"
+            -- Folders IGRIS may access; nothing outside these is reachable by file tools.
+            CREATE TABLE allowed_folders (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                path       TEXT NOT NULL UNIQUE,
+                writable   INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+
+            CREATE TABLE projects (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                path        TEXT NOT NULL,
+                repository  TEXT NOT NULL DEFAULT '',
+                language    TEXT NOT NULL DEFAULT '',
+                framework   TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                notes       TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {
