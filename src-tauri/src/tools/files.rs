@@ -16,7 +16,24 @@ const MAX_WRITE_CHARS: usize = 1_000_000;
 const MAX_LIST: usize = 200;
 const MAX_SEARCH_RESULTS: usize = 50;
 const MAX_SEARCH_VISITS: usize = 50_000;
-const SKIP_DIRS: &[&str] = &["node_modules", "target", ".git", "dist", "build", "__pycache__", ".venv", "venv", ".idea", ".gradle"];
+const SKIP_DIRS: &[&str] = &[
+    "node_modules",
+    "target",
+    ".git",
+    "dist",
+    "build",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".idea",
+    ".gradle",
+    // Huge app-data trees (off-limits anyway) when a whole user folder is shared.
+    "AppData",
+    ".cache",
+    ".config",
+    ".local",
+    "$RECYCLE.BIN",
+];
 /// Opening these with the default app would execute them.
 const EXECUTABLE_EXTS: &[&str] = &[
     "exe", "bat", "cmd", "com", "ps1", "psm1", "msi", "msp", "scr", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "lnk", "reg", "jar", "sh", "bash", "zsh",

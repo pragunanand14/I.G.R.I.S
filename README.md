@@ -18,7 +18,8 @@ audited tools — there is no shell access.
 - **Memory** — remembers facts and preferences you ask it to, recalls relevant ones automatically; inspect, edit or
   delete everything on the Memory page. Refuses to store passwords, keys and ID numbers.
 - **Web** — searches (Anthropic's built-in search, Brave or Tavily) and reads pages, with source links.
-- **Voice** — push-to-talk (mic button or Ctrl+Shift+Space), spoken replies, talk over it to interrupt.
+- **Voice** — push-to-talk (mic button or Ctrl+Shift+Space), spoken replies, talk over it to interrupt, and an
+  optional always-on wake word ("IGRIS, open Spotify") with spoken yes/no approvals.
 - **Your computer** — works with files only in folders you share (read-only unless you allow changes; overwriting,
   moving and deleting always ask first), opens and closes apps you allow, opens links and documents, shows running
   processes, loads context for registered projects.
@@ -99,10 +100,17 @@ Rust backend and are never sent to the UI — the UI only learns whether a key i
 
 Then, as you need them:
 
-- **Apps** — *Tools → Applications IGRIS may open*: add apps (*Find installed apps* or *Browse…*).
-- **Files** — *Tools → Shared folders*: share folders; turn on *Allow changes* only where IGRIS may create files.
+- **Apps** — *Tools → Applications IGRIS may open*: *Find installed apps* (Start Menu + common locations) then
+  *Add all*, or add apps one by one / *Browse…*.
+- **Files** — *Tools → Shared folders*: share folders, or your whole user folder (secret folders such as `.ssh` and
+  `AppData` stay blocked); turn on *Allow changes* only where IGRIS may create files.
 - **Projects** — *Projects → Add project*: pick the folder; the stack is detected.
-- **Approvals** — *Security*: choose whether low-risk actions ask first. Sensitive actions always ask.
+- **Approvals** — *Security*: choose whether low-risk actions ask first. Sensitive actions always ask; for
+  overwriting/moving files and closing apps you can choose *Allow for this chat* (until IGRIS restarts). Deleting and
+  screenshots ask every time.
+- **Wake word** — *Settings → Voice → Always listen for “IGRIS”*. Needs a speech service (`STT_PROVIDER` other than
+  `browser`, e.g. Groq Whisper). IGRIS must be running (minimized is fine). Speech is detected locally, but each phrase
+  heard while it is on is sent to the speech service to check for the name, which uses its quota.
 - **Voice / web search** — see the voice and search sections of `.env.example`.
 
 ## Checks

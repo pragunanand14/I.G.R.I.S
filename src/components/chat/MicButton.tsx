@@ -10,6 +10,7 @@ export function MicButton({ disabled }: { disabled?: boolean }) {
   useVoiceStore((s) => s.status);
   const can = useVoiceStore.getState().canListen();
   const toggle = useVoiceStore((s) => s.toggle);
+  const wakeActive = useVoiceStore((s) => s.wakeActive);
 
   const unavailable = !can.ok;
   const label =
@@ -21,7 +22,7 @@ export function MicButton({ disabled }: { disabled?: boolean }) {
           ? "Interrupt and speak"
           : unavailable
             ? (can.reason ?? "Voice input unavailable")
-            : `Speak (${VOICE_HOTKEY_LABEL})`;
+            : `Speak (${VOICE_HOTKEY_LABEL})${wakeActive ? " — also listening for “IGRIS”" : ""}`;
 
   return (
     <button
@@ -40,6 +41,9 @@ export function MicButton({ disabled }: { disabled?: boolean }) {
           className="pointer-events-none absolute inset-0 rounded-xl border-2 border-danger"
           style={{ transform: `scale(${1 + Math.min(level * 6, 0.6)})`, opacity: 0.6 }}
         />
+      )}
+      {wakeActive && phase === "idle" && (
+        <span aria-hidden className="pointer-events-none absolute right-1 top-1 size-1.5 animate-pulse rounded-full bg-accent" />
       )}
       {phase === "transcribing" ? (
         <Loader2 className="size-4 animate-spin" />

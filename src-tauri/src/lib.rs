@@ -148,6 +148,7 @@ pub fn run() {
                 connectivity,
                 tools: Arc::new(tools),
                 approvals: Arc::new(PendingApprovals::default()),
+                trust: Arc::new(crate::tools::executor::Trust::default()),
                 paths: AppPaths { data_dir, config_dir, log_dir, db_path },
                 attachments,
             });
@@ -175,6 +176,7 @@ pub fn run() {
             commands::chat::rename_conversation,
             commands::chat::delete_conversation,
             commands::chat::respond_tool_approval,
+            commands::chat::trust_conversation,
             commands::tools::list_tools,
             commands::tools::list_tool_audit,
             commands::tools::list_applications,

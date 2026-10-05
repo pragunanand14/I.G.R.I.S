@@ -6,7 +6,7 @@ export function micSupported(): boolean {
   return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
 }
 
-async function openMic(): Promise<MediaStream> {
+export async function openMic(): Promise<MediaStream> {
   if (!micSupported()) throw new MicUnavailableError("This system doesn't provide microphone access to IGRIS.");
   try {
     try {

@@ -33,6 +33,7 @@ fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
             registry: state.tools.clone(),
             policy: Policy { confirm_low: settings.confirm_low_risk },
             approver: std::sync::Arc::new(UiApprover { pending: state.approvals.clone(), timeout: APPROVAL_TIMEOUT }),
+            trust: Some(state.trust.clone()),
         },
     })
 }
@@ -127,6 +128,17 @@ pub async fn chat_edit(
     chat::edit_user_message(&state.db, &message_id, &content, memory_enabled)?;
     tracing::info!(event = "MESSAGE_EDITED", conversation_id = %conversation_id);
     run_generation(&state, &conversation_id, &guard.token, params, &on_event).await
+}
+
+/// "Allow for this chat": later overwrite / move / close-app actions in this
+/// conversation run without asking until IGRIS restarts. Deleting files and
+/// screenshots still ask every time.
+#[tauri::command]
+pub fn trust_conversation(state: State<'_, AppState>, conversation_id: String) -> AppResult<()> {
+    conversations::require(&*state.db.conn()?, &conversation_id)?;
+    state.trust.trust(&conversation_id);
+    tracing::info!(event = "CONVERSATION_TRUSTED");
+    Ok(())
 }
 
 /// Answer a pending tool approval. Returns false if it already expired or finished.

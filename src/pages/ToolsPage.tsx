@@ -56,6 +56,24 @@ export function ToolsPage() {
     }
   };
 
+  /** Allow every detected app at once (names only — IGRIS still opens them by name). */
+  const addAll = async () => {
+    const list = candidates ?? [];
+    let added = 0;
+    const fresh: AppEntry[] = [];
+    for (const c of list) {
+      try {
+        fresh.push(await api.addApplication(c.name, c.path));
+        added++;
+      } catch {
+        // Duplicates or vanished files are skipped.
+      }
+    }
+    setApps((cur) => [...cur, ...fresh].sort((x, y) => x.name.localeCompare(y.name)));
+    setCandidates([]);
+    setNotice({ ok: true, text: `Added ${added} app${added === 1 ? "" : "s"}. IGRIS can now open them by name.` });
+  };
+
   const browse = async () => {
     try {
       const filters = platform === "windows" ? [{ name: "Applications", extensions: ["exe"] }] : undefined;
@@ -175,7 +193,14 @@ export function ToolsPage() {
 
           {candidates && (
             <div className="mb-4 rounded-lg border border-line bg-surface p-3">
-              <p className="text-label mb-2">Found on this computer</p>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-label">Found on this computer</p>
+                {candidates.length > 1 && (
+                  <button type="button" onClick={() => void addAll()} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10">
+                    Add all ({candidates.length})
+                  </button>
+                )}
+              </div>
               {candidates.length === 0 ? (
                 <p className="text-xs text-faint">No additional well-known apps found. Add one manually below.</p>
               ) : (

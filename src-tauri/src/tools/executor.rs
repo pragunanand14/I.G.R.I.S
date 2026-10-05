@@ -101,6 +101,32 @@ pub enum Actor {
     User,
 }
 
+/// Tools the user may approve once for a whole conversation ("Allow for this
+/// chat"). Deleting files and screenshots are deliberately excluded: they
+/// always ask.
+pub const TRUSTABLE: &[&str] = &["write_file", "move_path", "close_application"];
+
+/// Conversations the user has trusted this session (in memory only).
+#[derive(Default)]
+pub struct Trust {
+    inner: std::sync::Mutex<std::collections::HashSet<String>>,
+}
+
+impl Trust {
+    pub fn trust(&self, conversation_id: &str) {
+        if let Ok(mut s) = self.inner.lock() {
+            s.insert(conversation_id.to_string());
+        }
+    }
+
+    pub fn covers(&self, conversation_id: Option<&str>, tool: &str) -> bool {
+        match conversation_id {
+            Some(c) if TRUSTABLE.contains(&tool) => self.inner.lock().map(|s| s.contains(c)).unwrap_or(false),
+            _ => false,
+        }
+    }
+}
+
 pub struct ExecContext<'a> {
     pub registry: &'a ToolRegistry,
     pub db: &'a Arc<Database>,
@@ -111,6 +137,8 @@ pub struct ExecContext<'a> {
     pub allowed: Option<&'a [String]>,
     pub approver: &'a dyn Approver,
     pub cancel: &'a CancellationToken,
+    /// Conversations trusted for [`TRUSTABLE`] tools; `None` = always ask.
+    pub trust: Option<&'a Trust>,
 }
 
 fn clip(s: String) -> String {
@@ -200,7 +228,10 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
     activity.description = tool.describe(&call.input);
 
     // 4. Permission policy.
-    if ctx.policy.requires_approval(spec.permission) {
+    if ctx.policy.requires_approval(spec.permission) && ctx.trust.is_some_and(|t| t.covers(ctx.conversation_id, spec.name)) {
+        approval = "trusted";
+        tracing::info!(event = "TOOL_APPROVAL_TRUSTED", tool = spec.name);
+    } else if ctx.policy.requires_approval(spec.permission) {
         activity.status = ActivityStatus::AwaitingApproval;
         on_update(&activity);
         tracing::info!(event = "TOOL_APPROVAL_REQUESTED", tool = spec.name, permission = spec.permission.as_str());
@@ -325,7 +356,7 @@ mod tests {
         allowed: Option<&[String]>,
     ) -> (ToolResult, ToolActivity) {
         let cancel = CancellationToken::new();
-        let ctx = ExecContext { registry, db, conversation_id: Some("conv"), actor: Actor::Assistant, policy, allowed, approver, cancel: &cancel };
+        let ctx = ExecContext { registry, db, conversation_id: Some("conv"), actor: Actor::Assistant, policy, allowed, approver, cancel: &cancel, trust: None };
         execute(c, &ctx, &mut |_| {}).await
     }
 
@@ -380,6 +411,56 @@ mod tests {
         c.invalid_input = Some("{\"expression\": \"1".into());
         let (res, _) = run(&r, &db, &c, &approver, Policy::default(), None).await;
         assert!(res.content.contains("INVALID_JSON"));
+    }
+
+    #[tokio::test]
+    async fn trusted_conversations_skip_approval_only_for_trustable_tools() {
+        let named = |name: &'static str| {
+            Arc::new(Dangerous(
+                ToolSpec {
+                    name,
+                    title: "t",
+                    description: "d",
+                    input_schema: json!({"type":"object","properties":{},"required":[],"additionalProperties":false}),
+                    permission: PermissionLevel::Sensitive,
+                },
+                Mutex::new(0),
+            ))
+        };
+        let (write, trash) = (named("write_file"), named("trash_path"));
+        let mut r = ToolRegistry::default();
+        r.register(write.clone());
+        r.register(trash.clone());
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let trust = Trust::default();
+        let deny = FixedApprover(Approval::Denied, Mutex::new(0));
+        let cancel = CancellationToken::new();
+        let ctx = |cid| ExecContext {
+            registry: &r,
+            db: &db,
+            conversation_id: Some(cid),
+            actor: Actor::Assistant,
+            policy: Policy::default(),
+            allowed: None,
+            approver: &deny,
+            cancel: &cancel,
+            trust: Some(&trust),
+        };
+
+        // Not trusted yet: asks (and the approver denies).
+        execute(&call("write_file", json!({})), &ctx("c1"), &mut |_| {}).await;
+        assert_eq!(*write.1.lock().unwrap(), 0);
+
+        trust.trust("c1");
+        let (res, act) = execute(&call("write_file", json!({})), &ctx("c1"), &mut |_| {}).await;
+        assert!(!res.is_error, "{:?}", act.result);
+        assert_eq!(*write.1.lock().unwrap(), 1);
+        // Deleting still asks, and other conversations aren't trusted.
+        execute(&call("trash_path", json!({})), &ctx("c1"), &mut |_| {}).await;
+        execute(&call("write_file", json!({})), &ctx("c2"), &mut |_| {}).await;
+        assert_eq!((*trash.1.lock().unwrap(), *write.1.lock().unwrap()), (0, 1));
+        let approvals: Vec<String> = audit::list(&db.conn().unwrap(), 10).unwrap().into_iter().map(|e| e.approval).collect();
+        assert_eq!(approvals, vec!["denied", "denied", "trusted", "denied"]);
     }
 
     #[tokio::test]

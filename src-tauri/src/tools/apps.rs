@@ -223,6 +223,14 @@ pub struct AppCandidate {
     pub path: String,
 }
 
+/// Start-menu entries that aren't apps you'd ask to open (uninstallers, docs, links).
+pub fn is_app_shortcut_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    !["uninstall", "uninst", "readme", "read me", "help", "documentation", "manual", "website", "release notes", "license", "setup", "repair"]
+        .iter()
+        .any(|w| n.contains(w))
+}
+
 pub fn detect() -> Vec<AppCandidate> {
     let mut out: Vec<AppCandidate> = Vec::new();
     let mut push = |name: &str, path: PathBuf| {
@@ -259,6 +267,31 @@ pub fn detect() -> Vec<AppCandidate> {
                 push(name, p);
             }
         }
+        // Everything else the Start menu lists: resolve each shortcut to its program.
+        let start_menus = [env("ProgramData"), roaming.clone()].into_iter().flatten().map(|b| b.join("Microsoft\\Windows\\Start Menu\\Programs"));
+        for dir in start_menus {
+            for entry in walkdir::WalkDir::new(dir).max_depth(4).into_iter().flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("lnk")) != Some(true) {
+                    continue;
+                }
+                let Some(name) = p.file_stem().and_then(|n| n.to_str()) else { continue };
+                if !is_app_shortcut_name(name) {
+                    continue;
+                }
+                let target = lnk::ShellLink::open(p, lnk::encoding::WINDOWS_1252)
+                    .ok()
+                    .and_then(|l| l.link_info().as_ref().and_then(|i| i.local_base_path().map(PathBuf::from)));
+                if let Some(t) = target.filter(|t| t.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("exe")) == Some(true)) {
+                    push(name, t);
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        out.sort_by_key(|c| c.name.to_lowercase());
+        out.truncate(400);
     }
     #[cfg(target_os = "macos")]
     {
@@ -440,6 +473,15 @@ mod tests {
         std::fs::write(&script, "#!/bin/sh\n").unwrap();
         #[cfg(unix)]
         assert!(validate_path(&script.display().to_string()).is_err(), "non-executable file");
+    }
+
+    #[test]
+    fn start_menu_noise_is_skipped() {
+        assert!(is_app_shortcut_name("Visual Studio Code"));
+        assert!(is_app_shortcut_name("Spotify"));
+        for junk in ["Uninstall Zoom", "Python 3.12 Manuals", "Readme", "Steam Help", "Release Notes", "Repair Office"] {
+            assert!(!is_app_shortcut_name(junk), "{junk}");
+        }
     }
 
     #[test]

@@ -367,6 +367,12 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
   }, []);
 
   const recognition = browserRecognitionAvailable();
+
+  // Always-on listening uses the configured speech service (the webview recogniser rarely works in WebView2).
+
+  const wakeService = !!status && status.stt.mode !== "browser" && !status.stt.problem;
+
+  const wakeAvailable = wakeService || recognition;
   const sttText = !status
     ? "Unavailable without the desktop backend"
     : status.stt.problem
@@ -428,17 +434,19 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
           </button>
         </Field>
         <Field
-          label="Wake word “IGRIS” (experimental)"
+          label="Always listen for “IGRIS”"
           description={
-            recognition
-              ? "Listens continuously with the system speech recognizer while IGRIS is open. Say “IGRIS, …”."
-              : "Needs built-in speech recognition, which this system's webview doesn't provide."
+            wakeService
+              ? "Hands-free: say “IGRIS, …”, “Hey IGRIS …” or “Wake up IGRIS”. While on, every phrase spoken near the mic is sent to your speech service to check for the name (uses its quota). Works while IGRIS is open or minimised."
+              : recognition
+                ? "Hands-free with the system speech recognizer while IGRIS is open. Say “IGRIS, …”."
+                : "Needs a speech service: set STT_PROVIDER (gemini, openai or local) in .env."
           }
         >
           <Toggle
             label="Wake word"
-            checked={settings.wakeWordEnabled && recognition}
-            disabled={disabled || !recognition}
+            checked={settings.wakeWordEnabled && wakeAvailable}
+            disabled={disabled || !wakeAvailable}
             onChange={(wakeWordEnabled) => void update({ wakeWordEnabled })}
           />
         </Field>

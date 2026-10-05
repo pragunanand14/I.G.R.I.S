@@ -25,6 +25,8 @@ pub struct AppState {
     pub generations: Generations,
     pub tools: Arc<ToolRegistry>,
     pub approvals: Arc<PendingApprovals>,
+    /// Conversations trusted with "Allow for this chat" (this session only).
+    pub trust: Arc<crate::tools::executor::Trust>,
     pub paths: AppPaths,
     pub attachments: Arc<crate::attachments::AttachmentStore>,
 }

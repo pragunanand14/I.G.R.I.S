@@ -53,6 +53,8 @@ pub struct Tooling {
     pub registry: Arc<ToolRegistry>,
     pub policy: Policy,
     pub approver: Arc<dyn Approver>,
+    /// Conversations trusted with "Allow for this chat".
+    pub trust: Option<Arc<executor::Trust>>,
 }
 
 pub struct GenerationParams {
@@ -332,6 +334,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
             allowed: Some(&allowed),
             approver: params.tooling.approver.as_ref(),
             cancel,
+            trust: params.tooling.trust.as_deref(),
         };
         let mut results = Vec::new();
         let offset = Some(text.chars().count());
@@ -503,7 +506,7 @@ mod tests {
             provider: Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()),
             model: "claude-opus-5-5".into(),
             effort: Some(Effort::Medium),
-            tooling: Tooling { registry, policy, approver: Arc::new(FixedApprover(approval)) },
+            tooling: Tooling { registry, policy, approver: Arc::new(FixedApprover(approval)), trust: None },
         }
     }
 

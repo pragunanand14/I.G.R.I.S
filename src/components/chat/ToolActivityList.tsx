@@ -27,10 +27,13 @@ const STATUS_TEXT = {
 interface Props {
   activities: ToolActivity[];
   /** Present only while the turn is live; enables approval buttons. */
-  onAnswer?: (callId: string, approved: boolean) => void;
+  onAnswer?: (callId: string, approved: boolean, trustChat?: boolean) => void;
 }
 
 /** Shows what IGRIS did (or tried to do) while answering. */
+/** Mirrors `TRUSTABLE` in src-tauri/src/tools/executor.rs. */
+const TRUSTABLE = ["write_file", "move_path", "close_application"];
+
 export function ToolActivityList({ activities, onAnswer }: Props) {
   if (activities.length === 0) return null;
   return (
@@ -52,6 +55,16 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
               >
                 Allow
               </button>
+              {TRUSTABLE.includes(a.tool) && (
+                <button
+                  type="button"
+                  onClick={() => onAnswer(a.id, true, true)}
+                  title="Also allow later overwrite, move and close-app actions in this chat (until IGRIS restarts). Deleting and screenshots still ask."
+                  className="rounded-md border border-accent/50 px-3 py-1 text-xs text-accent hover:bg-accent/10"
+                >
+                  Allow for this chat
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onAnswer(a.id, false)}

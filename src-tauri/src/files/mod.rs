@@ -37,11 +37,6 @@ fn too_broad(p: &Path) -> bool {
     if p.parent().is_none() {
         return true; // "/" or "C:\\"
     }
-    if let Some(home) = dirs::home_dir().and_then(|h| h.canonicalize().ok()) {
-        if p == home {
-            return true;
-        }
-    }
     let s = p.to_string_lossy().to_ascii_lowercase().replace('\\', "/");
     let s = s.trim_end_matches('/');
     // Whole trees that are system-only.
@@ -66,7 +61,7 @@ pub fn add(conn: &Connection, path: &str, writable: bool) -> AppResult<AllowedFo
     }
     if too_broad(&canon) {
         return Err(AppError::validation(
-            "That folder is too broad to grant (a drive root, system folder or your whole home folder). Choose a more specific folder.",
+            "That folder is too broad to grant (a drive root or system folder). Choose a more specific folder, e.g. your user folder.",
         ));
     }
     let s = canon.display().to_string();
@@ -99,9 +94,12 @@ pub fn remove(conn: &Connection, id: i64) -> AppResult<()> {
 pub fn is_secret_file(path: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    let in_secret_dir = path.components().any(
-        |c| matches!(c, Component::Normal(n) if [".ssh", ".gnupg", ".aws", ".azure", ".kube"].contains(&n.to_string_lossy().to_ascii_lowercase().as_str())),
-    );
+    // Credential stores and app-data folders (browser profiles hold saved passwords
+    // and cookies). Matters most when the whole home folder is shared.
+    const SECRET_DIRS: &[&str] =
+        &[".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store", "appdata", ".config", ".local", ".mozilla", ".thunderbird", "keychains"];
+    let in_secret_dir =
+        path.components().any(|c| matches!(c, Component::Normal(n) if SECRET_DIRS.contains(&n.to_string_lossy().to_ascii_lowercase().as_str())));
     in_secret_dir
         || name == ".env"
         || name.starts_with(".env.")
@@ -260,9 +258,10 @@ mod tests {
         let root = dir.path().ancestors().last().unwrap().display().to_string();
         assert!(add(&conn, &root, false).unwrap_err().to_string().contains("too broad"), "{root}");
         assert!(add(&conn, "/etc", false).is_err());
-        if let Some(home) = dirs::home_dir() {
-            assert!(add(&conn, &home.display().to_string(), false).is_err());
-        }
+        // The home folder itself may be shared; its app-data and credential folders stay off-limits.
+        assert!(is_secret_file(std::path::Path::new("/home/u/AppData/Local/Google/Chrome/User Data/Default/Login Data")));
+        assert!(is_secret_file(std::path::Path::new("/home/u/.config/app/settings.json")));
+        assert!(!is_secret_file(std::path::Path::new("/home/u/Documents/config-notes.txt")));
         set_writable(&conn, f.id, true).unwrap();
         assert!(list(&conn).unwrap()[0].writable);
         remove(&conn, f.id).unwrap();

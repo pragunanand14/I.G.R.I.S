@@ -78,6 +78,7 @@ pub async fn launch_application(state: State<'_, AppState>, id: String) -> AppRe
         allowed: None,
         approver: &UserInitiated,
         cancel: &cancel,
+        trust: None,
     };
     let (_, activity) = executor::execute(&call, &ctx, &mut |_| {}).await;
     match activity.status {

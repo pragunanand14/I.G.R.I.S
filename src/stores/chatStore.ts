@@ -44,7 +44,8 @@ interface ChatStore {
   edit: (messageId: string, content: string) => Promise<boolean>;
   cancel: () => Promise<void>;
   /** Answer a tool approval prompt. */
-  answerApproval: (callId: string, approved: boolean) => Promise<void>;
+  /** `trustChat`: also allow later trustable actions in this conversation. */
+  answerApproval: (callId: string, approved: boolean, trustChat?: boolean) => Promise<void>;
   rename: (id: string, title: string) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
   dismissError: () => void;
@@ -221,8 +222,10 @@ export const useChatStore = create<ChatStore>((set, get) => {
       }
     },
 
-    answerApproval: async (callId, approved) => {
+    answerApproval: async (callId, approved, trustChat = false) => {
       try {
+        const conversationId = get().streaming?.conversationId ?? get().activeId;
+        if (approved && trustChat && conversationId) await api.trustConversation(conversationId);
         const delivered = await api.respondToolApproval(callId, approved);
         if (!delivered) set({ error: "That request is no longer waiting for an answer.", errorKind: "validation" });
       } catch (err) {

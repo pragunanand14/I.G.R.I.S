@@ -33,6 +33,14 @@ interface VoiceStore {
   cancel: () => void;
   /** Speak text directly (used for the voice test). */
   say: (text: string) => Promise<void>;
+  /** Speak a question, then listen once; returns the transcript (null if nothing usable). */
+  ask: (question: string) => Promise<string | null>;
+  /** Transcribe a recording with the configured speech service. */
+  transcribe: (blob: Blob, mimeType: string) => Promise<string>;
+  /** Send already-transcribed speech to chat (spoken reply if enabled). */
+  submitText: (text: string) => Promise<boolean>;
+  /** Always-on wake word is listening. */
+  wakeActive: boolean;
   /** Called with streamed reply text; speaks complete sentences. */
   replyDelta: (delta: string) => void;
   replyFinished: () => Promise<void>;
@@ -94,6 +102,41 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
     return speaker;
   };
 
+  /** Listen once and transcribe; null if cancelled or nothing usable was heard (error shown). */
+  const capture = async (): Promise<string | null> => {
+    const can = get().canListen();
+    if (!can.ok) return fail(can.reason ?? "Voice input isn't available."), null;
+    set({ phase: "listening", level: 0, error: null });
+    setActivity("listening");
+    let text: string;
+    try {
+      const st = get().status;
+      if (!st || st.stt.mode === "browser") {
+        const r = recognizeOnce();
+        recognitionCancel = r.cancel;
+        text = await r.result;
+        recognitionCancel = null;
+      } else {
+        recorder = new UtteranceRecorder((level) => set({ level }));
+        const rec = await recorder.record();
+        recorder = null;
+        if (!rec) return set({ phase: "idle", level: 0 }), setActivity("idle"), null;
+        if (!rec.heardSpeech) return fail("I didn't hear anything."), null;
+        set({ phase: "transcribing", level: 0 });
+        setActivity("thinking");
+        text = await get().transcribe(rec.blob, rec.mimeType);
+      }
+    } catch (err) {
+      recorder = null;
+      recognitionCancel = null;
+      return fail(err instanceof MicUnavailableError || err instanceof Error ? err.message : BackendError.from(err).message), null;
+    }
+    if (get().phase === "idle") return null; // cancelled meanwhile
+    if (!text.trim()) return fail("I didn't catch that."), null;
+    set({ phase: "idle", level: 0 });
+    return text.trim();
+  };
+
   return {
     phase: "idle",
     level: 0,
@@ -101,6 +144,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
     status: null,
     lastTranscript: null,
     replyPending: false,
+    wakeActive: false,
 
     loadStatus: async () => {
       try {
@@ -143,43 +187,35 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
       stopSpeaking();
       if (wasReplying) await interruptReply();
       set({ replyPending: false });
-
-      const can = get().canListen();
-      if (!can.ok) return fail(can.reason ?? "Voice input isn't available.");
-
-      set({ phase: "listening", level: 0, error: null });
-      setActivity("listening");
-      let text: string;
-      try {
-        const st = get().status;
-        if (!st || st.stt.mode === "browser") {
-          const r = recognizeOnce();
-          recognitionCancel = r.cancel;
-          text = await r.result;
-          recognitionCancel = null;
-        } else {
-          recorder = new UtteranceRecorder((level) => set({ level }));
-          const rec = await recorder.record();
-          recorder = null;
-          if (!rec) return set({ phase: "idle", level: 0 }), setActivity("idle");
-          if (!rec.heardSpeech) return fail("I didn't hear anything.");
-          set({ phase: "transcribing", level: 0 });
-          setActivity("thinking");
-          // Gemini takes WAV/MP3, not the WebM the recorder produces.
-          const audio = st.stt.mode === "gemini" ? { blob: await toWav(rec.blob), mimeType: "audio/wav" } : rec;
-          text = await api.transcribeAudio(await blobToBase64(audio.blob), audio.mimeType);
-        }
-      } catch (err) {
-        recorder = null;
-        recognitionCancel = null;
-        return fail(err instanceof MicUnavailableError || err instanceof Error ? err.message : BackendError.from(err).message);
-      }
-      if (get().phase === "idle") return; // cancelled meanwhile
-      if (!text.trim()) return fail("I didn't catch that.");
-      set({ phase: "idle", level: 0, lastTranscript: text, replyPending: useSettingsStore.getState().settings.voiceAutoSpeak });
+      const text = await capture();
+      if (text === null) return;
+      set({ lastTranscript: text, replyPending: useSettingsStore.getState().settings.voiceAutoSpeak });
       setActivity("thinking");
-      const accepted = await submit(text.trim());
+      const accepted = await submit(text);
       if (!accepted) set({ replyPending: false });
+    },
+
+    ask: async (question) => {
+      // Keep a voice reply that's mid-stream (e.g. waiting for approval) marked as spoken.
+      const pending = get().replyPending;
+      await get().say(question);
+      const answer = await capture();
+      set({ replyPending: pending });
+      return answer;
+    },
+
+    transcribe: async (blob, mimeType) => {
+      const st = get().status;
+      const audio = st?.stt.mode === "gemini" && mimeType !== "audio/wav" ? { blob: await toWav(blob), mimeType: "audio/wav" } : { blob, mimeType };
+      return api.transcribeAudio(await blobToBase64(audio.blob), audio.mimeType);
+    },
+
+    submitText: async (text) => {
+      set({ lastTranscript: text, replyPending: useSettingsStore.getState().settings.voiceAutoSpeak });
+      setActivity("thinking");
+      const accepted = await submit(text);
+      if (!accepted) set({ replyPending: false });
+      return accepted;
     },
 
     cancel: () => {

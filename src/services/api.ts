@@ -29,6 +29,7 @@ export const api = {
     callRaw<Attachment>("attach_file", new Uint8Array(await file.arrayBuffer()), { "x-file-name": encodeURIComponent(file.name) }),
   discardAttachment: (id: string) => call<void>("discard_attachment", { id }),
   readAttachment: (id: string) => call<AttachmentData>("read_attachment", { id }),
+  trustConversation: (conversationId: string) => call<void>("trust_conversation", { conversationId }),
   respondToolApproval: (callId: string, approved: boolean) => call<boolean>("respond_tool_approval", { callId, approved }),
   listTools: () => call<ToolInfo[]>("list_tools"),
   listToolAudit: (limit?: number) => call<AuditEntry[]>("list_tool_audit", { limit }),

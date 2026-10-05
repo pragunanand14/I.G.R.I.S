@@ -22,6 +22,8 @@ what the user has explicitly allowed, that every action is visible and recorded,
   append-only audit log.
 - Permission levels: SAFE (read-only, never asks), LOW (contained local changes; asks if *Ask first* is on),
   SENSITIVE and CRITICAL (always ask, every time). Approvals expire after 5 minutes and can't be auto-approved.
+- *Allow for this chat*: the user may trust one conversation for overwrite/move file and close app only. The trust
+  is in memory (cleared on restart), recorded as `trusted` in the audit log, and never covers trash or screenshots.
 - The tool set is frozen per conversation, so a conversation can't gain capabilities mid-way.
 - SENSITIVE tools: overwrite/move/trash files, close applications, take a screenshot.
 
@@ -29,7 +31,9 @@ what the user has explicitly allowed, that every action is visible and recorded,
 - Only folders the user shares are reachable; read-only unless *Allow changes* is on.
 - Paths are canonicalised; `..` escapes and symlinks out of a shared folder are refused.
 - Credential files (`.env*`, SSH/GPG/cloud credential folders, `*.pem`, `*.key`, keystores, password databases)
-  are never read or written. Drive roots, the home folder and system folders can't be shared.
+  are never read or written. Drive roots and system folders can't be shared. The home folder can, but secret
+  folders inside it (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `AppData`, `.config`, `.local`, browser
+  and mail profiles, keychains) are always refused.
 - Deletion only moves to the Recycle Bin / Trash. Executables and scripts can't be opened.
 
 **Apps and processes**: only allowlisted applications can be launched or closed (by name, never by path or
@@ -82,6 +86,9 @@ Done for the 0.1 hardening pass:
   convincingly. Read approval cards before allowing them.
 - Data at rest (SQLite database, attachments) is protected only by the OS user account; it is not encrypted.
 - Screenshots are sent to the configured AI provider after approval; their content may include anything on screen.
+- With the wake word on, every phrase the microphone picks up is sent to the configured speech service to check for
+  "IGRIS". It is off by default. Spoken "yes" approvals are only as reliable as transcription; the approval card is
+  still shown on screen.
 
 ## Reporting
 
