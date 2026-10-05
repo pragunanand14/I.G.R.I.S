@@ -3,6 +3,7 @@ import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { browserRecognitionAvailable, recognizeOnce } from "@/services/voice/browserSpeech";
 import { blobToBase64, micSupported, MicUnavailableError, UtteranceRecorder, watchForBargeIn } from "@/services/voice/recorder";
+import { toWav } from "@/services/voice/wav";
 import { Speaker } from "@/services/voice/speaker";
 import { SentenceChunker } from "@/services/voice/speechText";
 import type { VoicePhase, VoiceStatus } from "@/types/voice";
@@ -164,7 +165,9 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
           if (!rec.heardSpeech) return fail("I didn't hear anything.");
           set({ phase: "transcribing", level: 0 });
           setActivity("thinking");
-          text = await api.transcribeAudio(await blobToBase64(rec.blob), rec.mimeType);
+          // Gemini takes WAV/MP3, not the WebM the recorder produces.
+          const audio = st.stt.mode === "gemini" ? { blob: await toWav(rec.blob), mimeType: "audio/wav" } : rec;
+          text = await api.transcribeAudio(await blobToBase64(audio.blob), audio.mimeType);
         }
       } catch (err) {
         recorder = null;

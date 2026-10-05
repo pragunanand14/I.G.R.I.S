@@ -85,12 +85,30 @@ fn http_backend(cfg: &AppConfig, provider: Option<&str>, kind: &str, default_mod
                 voice,
             }),
         },
-        Some(other) => Backend::Misconfigured(format!("{kind}: unknown provider '{other}'. Use browser, openai or local.")),
+        Some(other) => Backend::Misconfigured(format!("{kind}: unknown provider '{other}'. Use browser, gemini, openai or local.")),
     }
 }
 
 pub fn stt_backend(cfg: &AppConfig) -> Backend {
+    if cfg.stt_provider.as_deref() == Some("gemini") {
+        return gemini_stt(cfg);
+    }
     http_backend(cfg, cfg.stt_provider.as_deref(), "Speech recognition", "whisper-1", cfg.stt_model.as_ref())
+}
+
+/// Gemini transcribes via its chat endpoint with audio input. Reuses the chat
+/// key and model when the chat provider is Gemini, so one key covers both.
+fn gemini_stt(cfg: &AppConfig) -> Backend {
+    let chat_is_gemini = cfg.ai_provider.as_deref() == Some("gemini");
+    let key = cfg.voice_api_key.clone().or_else(|| chat_is_gemini.then(|| cfg.ai_api_key.clone()).flatten());
+    let model = cfg.stt_model.clone().or_else(|| chat_is_gemini.then(|| cfg.ai_model.clone()).flatten());
+    match (key, model) {
+        (None, _) => Backend::Misconfigured("Speech recognition: set VOICE_API_KEY to a Gemini key (or use AI_PROVIDER=gemini).".into()),
+        (_, None) => Backend::Misconfigured("Speech recognition: set STT_MODEL to a Gemini model (e.g. gemini-flash-lite-latest).".into()),
+        (Some(k), Some(m)) => {
+            Backend::Http(HttpVoice { label: "gemini", base_url: crate::ai::openai::GEMINI_BASE_URL.into(), api_key: Some(k), model: m, voice: String::new() })
+        }
+    }
 }
 
 pub fn tts_backend(cfg: &AppConfig) -> Backend {
@@ -124,13 +142,16 @@ fn extension_for(mime: &str) -> &'static str {
 async fn error_from(resp: reqwest::Response, label: &str) -> AiError {
     let status = resp.status();
     let retry = http::retry_after(&resp);
-    let msg = resp.json::<Value>().await.ok().and_then(|v| v["error"]["message"].as_str().map(str::to_string));
+    let msg = resp.json::<Value>().await.ok().and_then(|v| crate::ai::openai::error_message(&v));
     let mut e = http::status_error(status, msg, retry, label);
     if e.kind == AiErrorKind::Authentication {
         e.message = format!("{label} rejected the voice API key. Check VOICE_API_KEY.");
     }
     e
 }
+
+const GEMINI_TRANSCRIBE_PROMPT: &str = "Transcribe this audio exactly as spoken, in the language spoken. Reply with only the \
+transcription — no quotes, labels or commentary. If there is no speech, reply with nothing.";
 
 /// Transcribe recorded audio. Returns the recognised text (may be empty).
 pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<String, AiError> {
@@ -139,6 +160,9 @@ pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<Str
     }
     if audio.len() > MAX_AUDIO_BYTES {
         return Err(AiError::new(AiErrorKind::InvalidRequest, "The recording is too long."));
+    }
+    if h.label == "gemini" {
+        return transcribe_gemini(h, audio, mime).await;
     }
     let mime_clean = mime.split(';').next().unwrap_or("audio/webm").trim().to_string();
     let part = multipart::Part::bytes(audio)
@@ -156,6 +180,36 @@ pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<Str
     }
     let v: Value = resp.json().await.map_err(|e| AiError::new(AiErrorKind::Protocol, format!("Bad transcription response: {e}")))?;
     Ok(v["text"].as_str().unwrap_or_default().trim().to_string())
+}
+
+/// Gemini accepts audio as `input_audio` on its OpenAI-compatible chat endpoint
+/// (WAV or MP3; the UI converts recordings to WAV for this backend).
+async fn transcribe_gemini(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<String, AiError> {
+    use base64::Engine;
+    let format = match extension_for(mime) {
+        "mp3" => "mp3",
+        "wav" => "wav",
+        other => return Err(AiError::new(AiErrorKind::InvalidRequest, format!("Gemini needs WAV or MP3 audio, not {other}."))),
+    };
+    let body = json!({
+        "model": h.model,
+        "temperature": 0,
+        "messages": [{ "role": "user", "content": [
+            { "type": "text", "text": GEMINI_TRANSCRIBE_PROMPT },
+            { "type": "input_audio", "input_audio": { "data": base64::engine::general_purpose::STANDARD.encode(&audio), "format": format } }
+        ]}]
+    });
+    let mut rb = client()?.post(format!("{}/chat/completions", h.base_url)).json(&body);
+    if let Some(k) = &h.api_key {
+        rb = rb.bearer_auth(k);
+    }
+    let resp = rb.send().await.map_err(http::map_reqwest_error)?;
+    if !resp.status().is_success() {
+        return Err(error_from(resp, "Speech recognition (Gemini)").await);
+    }
+    let v: Value = resp.json().await.map_err(|e| AiError::new(AiErrorKind::Protocol, format!("Bad transcription response: {e}")))?;
+    let text = v["choices"][0]["message"]["content"].as_str().unwrap_or_default().trim();
+    Ok(text.trim_matches('"').trim().to_string())
 }
 
 /// Synthesize speech; returns MP3 bytes.
@@ -216,6 +270,32 @@ mod tests {
 
     fn http(url: String) -> HttpVoice {
         HttpVoice { label: "openai", base_url: url, api_key: Some("vk".into()), model: "whisper-1".into(), voice: "alloy".into() }
+    }
+
+    #[test]
+    fn gemini_speech_reuses_the_chat_key_and_model() {
+        match stt_backend(&cfg(&[("STT_PROVIDER", "gemini"), ("AI_PROVIDER", "gemini"), ("AI_API_KEY", "AIza"), ("AI_MODEL", "gemini-flash-lite-latest")])) {
+            Backend::Http(h) => {
+                assert_eq!((h.label, h.api_key.as_deref(), h.model.as_str()), ("gemini", Some("AIza"), "gemini-flash-lite-latest"));
+                assert!(h.base_url.contains("generativelanguage.googleapis.com"));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(stt_backend(&cfg(&[("STT_PROVIDER", "gemini")])), Backend::Misconfigured(m) if m.contains("VOICE_API_KEY")));
+        assert!(matches!(stt_backend(&cfg(&[("STT_PROVIDER", "gemini"), ("VOICE_API_KEY", "k")])), Backend::Misconfigured(m) if m.contains("STT_MODEL")));
+    }
+
+    #[tokio::test]
+    async fn gemini_transcribes_wav_through_chat_with_input_audio() {
+        let reply = json!({"choices":[{"message":{"role":"assistant","content":"\"remind me to stretch\"\n"}}]}).to_string();
+        let server = MockServer::start(vec![(200, "application/json", reply)]).await;
+        let h = HttpVoice { label: "gemini", base_url: server.url(), api_key: Some("AIza".into()), model: "gemini-x".into(), voice: String::new() };
+        let text = transcribe(&h, b"RIFF....WAVE".to_vec(), "audio/wav").await.unwrap();
+        assert_eq!(text, "remind me to stretch");
+        let req = server.requests().await[0].json();
+        assert_eq!(req["model"], "gemini-x");
+        assert_eq!(req["messages"][0]["content"][1]["input_audio"]["format"], "wav");
+        assert!(transcribe(&h, b"x".to_vec(), "audio/webm").await.unwrap_err().message.contains("WAV or MP3"));
     }
 
     #[tokio::test]

@@ -31,7 +31,8 @@ function message(code: string): string {
     case "service-not-allowed":
       return "Speech recognition permission was denied.";
     case "network":
-      return "Speech recognition needs an internet connection.";
+      // WebView2 often can't reach Edge's speech service even when online.
+      return "The built-in speech recognition isn't available in this app. Set STT_PROVIDER=gemini (uses your Gemini key) or openai in .env, then reload.";
     case "no-speech":
       return "I didn't hear anything.";
     case "audio-capture":

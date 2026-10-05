@@ -1,5 +1,5 @@
 export interface VoiceBackendStatus {
-  /** browser | openai | local */
+  /** browser | gemini | openai | local */
   mode: string;
   problem: string | null;
 }

@@ -349,7 +349,7 @@ function ModelField({
   );
 }
 
-const MODE_LABEL: Record<string, string> = { browser: "Built-in (this system)", openai: "OpenAI", local: "Local server" };
+const MODE_LABEL: Record<string, string> = { browser: "Built-in (this system)", gemini: "Gemini", openai: "OpenAI", local: "Local server" };
 
 function VoicePanel({ disabled }: { disabled: boolean }) {
   const { settings, update } = useSettingsStore();
@@ -374,7 +374,7 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
       : status.stt.mode === "browser"
         ? recognition
           ? MODE_LABEL.browser
-          : "Not available here — set STT_PROVIDER=openai or local"
+          : "Not available here — set STT_PROVIDER=gemini, openai or local"
         : MODE_LABEL[status.stt.mode] ?? status.stt.mode;
   const ttsText = !status
     ? "—"
