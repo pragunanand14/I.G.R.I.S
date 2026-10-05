@@ -56,8 +56,10 @@ fn attach(m: &Memory) -> AttachedMemory {
 /// Select memories for a new user message. `previous` holds the contexts
 /// already attached earlier in this conversation.
 pub fn select(conn: &Connection, user_text: &str, previous: &[MemoryContext]) -> AppResult<Option<MemoryContext>> {
-    let seen: HashSet<(i64, String)> = previous.iter().flat_map(|c| c.items.iter().map(|m| (m.id, m.updated_at.clone()))).collect();
-    let is_new = |m: &Memory| !seen.contains(&(m.id, m.updated_at.clone()));
+    // A version is the id + timestamp + text: timestamps alone can collide when an
+    // edit lands within the clock's resolution (~15 ms on Windows).
+    let seen: HashSet<(i64, String, String)> = previous.iter().flat_map(|c| c.items.iter().map(|m| (m.id, m.updated_at.clone(), m.content.clone()))).collect();
+    let is_new = |m: &Memory| !seen.contains(&(m.id, m.updated_at.clone(), m.content.clone()));
 
     let mut items: Vec<AttachedMemory> = Vec::new();
     // Facts about the user are always useful context; send each version once.
