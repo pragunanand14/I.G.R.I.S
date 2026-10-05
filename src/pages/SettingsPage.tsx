@@ -146,6 +146,7 @@ export function SettingsPage() {
         <AiPanel disabled={disabled} configDir={info?.configDir ?? null} />
 
         <VoicePanel disabled={disabled} />
+        <OperatorPanel disabled={disabled} />
 
         <Panel title="About">
           {info ? (
@@ -452,5 +453,47 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
         </Field>
       </div>
     </Panel>
+  );
+}
+
+/** Operator mode: how to stop IGRIS while it operates the computer. */
+function OperatorPanel({ disabled }: { disabled: boolean }) {
+  const saved = useSettingsStore((s) => s.settings.operatorStopHotkey);
+  const status = useSettingsStore((s) => s.status);
+  const update = useSettingsStore((s) => s.update);
+  return (
+    <Panel title="Operator mode">
+      <p className="mb-2 text-xs text-muted">
+        When a task needs other apps, IGRIS asks to take control of the mouse, keyboard and screen. While it works, a glowing border and a
+        floating orb show it&apos;s in control; screenshots go to your AI provider and are never saved. Sending, posting, buying and deleting
+        always ask first. Using the computer yourself makes IGRIS look again before its next action; switching windows pauses it.
+      </p>
+      <Field label="Stop shortcut" description="Global shortcut that stops IGRIS immediately (only active while it operates). Examples: Escape, Ctrl+Shift+X, Pause.">
+        <HotkeyField key={`${status}:${saved}`} saved={saved} disabled={disabled} onCommit={(operatorStopHotkey) => update({ operatorStopHotkey })} />
+      </Field>
+    </Panel>
+  );
+}
+
+function HotkeyField({ saved, disabled, onCommit }: { saved: string; disabled: boolean; onCommit: (v: string) => Promise<boolean> }) {
+  const [draft, setDraft] = useState(saved);
+  const commit = async () => {
+    const next = draft.trim();
+    if (!next || next === saved) return setDraft(saved);
+    if (!(await onCommit(next))) setDraft(saved);
+  };
+  return (
+    <input
+      value={draft}
+      maxLength={40}
+      disabled={disabled}
+      aria-label="Stop shortcut"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => void commit()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      className="h-8 w-44 rounded-lg border border-line bg-surface px-2.5 font-mono text-xs text-fg focus:border-accent focus:outline-none"
+    />
   );
 }

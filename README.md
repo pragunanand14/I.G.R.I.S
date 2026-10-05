@@ -27,6 +27,12 @@ audited tools — there is no shell access.
   notifications with snooze, a local calendar.
 - **Images, PDFs and screenshots** — attach, paste or drop files into chat; ask IGRIS to look at your screen (it
   asks first, every time).
+- **Operator mode** — "IGRIS, draft an email to Professor Sharma saying I'll submit tomorrow": IGRIS asks to take
+  control, then operates your apps itself (Windows) — observing the screen, clicking, typing, checking the result —
+  with a glowing screen border and a floating orb showing what it's doing. Esc (or Stop, or "IGRIS, stop") takes
+  control back instantly. It prepares freely but asks before anything is sent, posted, bought or deleted.
+- **Builds software** — writes code in your shared project folders and runs build/test/install commands (no shell,
+  allowlisted tools, each command approved), reads the errors and fixes them; can open the project in VS Code.
 - **Security page** — choose which actions need your approval, and review the audit log of everything IGRIS did.
 
 ## Status
@@ -43,8 +49,10 @@ audited tools — there is no shell access.
 | 8 — Productivity | Tasks with due dates and priorities, reminders and timers from natural language ("tomorrow at 5pm"), desktop notifications with snooze, local calendar; all manageable from chat | ✅ Done |
 | 9 — Multimodal | Attach images and PDFs (picker, paste, drag-and-drop), vision through Anthropic and OpenAI-compatible providers, PDF reading (native or extracted text), screenshot tool that always asks first | ✅ Done |
 | 10 — Hardening | Security review ([docs/SECURITY.md](docs/SECURITY.md)), secret redaction in the audit log, crash-safe release builds, lazy-loaded UI, CI on Linux + Windows, Windows installer workflow | ✅ Done |
+| 11 — Computer operator | Operator mode: Windows computer control (UI Automation, mouse, keyboard, windows, per-display capture), closed-loop observe → act → verify task engine with pause/stop/takeover handling, consequential-action confirmation, desktop overlay (border + orb), `run_command` for development, `copy_path` | ✅ Foundation |
 
-**Not implemented** (and IGRIS says so if asked): running shell commands, calendar sync with Google/Outlook,
+**Not implemented** (and IGRIS says so if asked): operator mode on macOS/Linux, arbitrary shell commands (only
+allowlisted developer tools via `run_command`), long-running background processes, calendar sync with Google/Outlook,
 recurring reminders, screenshots on Linux Wayland sessions, Office documents, image generation, encryption of local
 data at rest.
 
@@ -105,6 +113,8 @@ Then, as you need them:
 - **Files** — *Tools → Shared folders*: share folders, or your whole user folder (secret folders such as `.ssh` and
   `AppData` stay blocked); turn on *Allow changes* only where IGRIS may create files.
 - **Projects** — *Projects → Add project*: pick the folder; the stack is detected.
+- **Operator mode** — nothing to set up; IGRIS asks when a task needs it. *Settings → Operator mode* changes the stop
+  shortcut (Esc by default). For development tasks, share the project folder with *Allow changes* on.
 - **Approvals** — *Security*: choose whether low-risk actions ask first. Sensitive actions always ask; for
   overwriting/moving files and closing apps you can choose *Allow for this chat* (until IGRIS restarts). Deleting and
   screenshots ask every time.

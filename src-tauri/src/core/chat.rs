@@ -29,6 +29,11 @@ pub const MAX_INPUT_CHARS: usize = 100_000;
 pub const MAX_OUTPUT_TOKENS: u32 = 64_000;
 /// Maximum model ↔ tool round trips for one message.
 pub const MAX_TOOL_ROUNDS: usize = 8;
+/// Round trips allowed while an operator task runs (observe → act → verify loops).
+pub const OPERATOR_MAX_ROUNDS: usize = 80;
+/// Screenshots kept in the request during a long tool loop; older ones are dropped
+/// (the model already acted on them) to bound cost.
+const KEEP_RECENT_TOOL_IMAGES: usize = 2;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -55,6 +60,8 @@ pub struct Tooling {
     pub approver: Arc<dyn Approver>,
     /// Conversations trusted with "Allow for this chat".
     pub trust: Option<Arc<executor::Trust>>,
+    /// Operator mode (computer control) for this app.
+    pub operator: Option<Arc<crate::operator::Operator>>,
 }
 
 pub struct GenerationParams {
@@ -203,9 +210,16 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
     let mut served_model = params.model.clone();
     let mut outcome = Outcome::StepLimit;
 
-    for round in 0..=MAX_TOOL_ROUNDS {
+    let operator_running = || params.tooling.operator.as_ref().is_some_and(|o| o.covers(Some(conversation_id)));
+    let mut limit = MAX_TOOL_ROUNDS;
+    let mut round = 0usize;
+    loop {
+        if operator_running() {
+            limit = OPERATOR_MAX_ROUNDS;
+        }
         let mut turns = base_turns.clone();
         turns.extend(new_turns.iter().cloned());
+        drop_old_tool_images(&mut turns, KEEP_RECENT_TOOL_IMAGES);
         let request = ChatRequest {
             model: params.model.clone(),
             system: system.clone(),
@@ -312,16 +326,17 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         new_turns.push(ChatTurn { raw: completion.raw.clone(), tool_calls: completion.tool_calls.clone(), ..ChatTurn::assistant(completion.text.clone()) });
         if completion.stop_reason == StopReason::PauseTurn {
             // A provider-side tool loop paused: re-send as-is and it resumes.
-            if round == MAX_TOOL_ROUNDS {
+            if round >= limit {
                 break; // StepLimit
             }
+            round += 1;
             continue;
         }
         if !wants_tools {
             outcome = Outcome::Finished(completion.stop_reason);
             break;
         }
-        if round == MAX_TOOL_ROUNDS {
+        if round >= limit {
             break; // StepLimit
         }
 
@@ -335,6 +350,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
             approver: params.tooling.approver.as_ref(),
             cancel,
             trust: params.tooling.trust.as_deref(),
+            operator: params.tooling.operator.as_deref(),
         };
         let mut results = Vec::new();
         let offset = Some(text.chars().count());
@@ -351,6 +367,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
             outcome = Outcome::Cancelled;
             break;
         }
+        round += 1;
     }
 
     // Raw turns are only replayable when every tool call in them was answered.
@@ -400,8 +417,8 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
             NewMessage { status: MessageStatus::Error, error: Some(e.message), ..base }
         }
         Outcome::StepLimit => {
-            tracing::warn!(event = "CHAT_TOOL_STEP_LIMIT", rounds = MAX_TOOL_ROUNDS);
-            NewMessage { status: MessageStatus::Error, error: Some(format!("Stopped after {MAX_TOOL_ROUNDS} tool steps without a final answer.")), ..base }
+            tracing::warn!(event = "CHAT_TOOL_STEP_LIMIT", rounds = limit);
+            NewMessage { status: MessageStatus::Error, error: Some(format!("Stopped after {limit} tool steps without a final answer.")), ..base }
         }
     };
 
@@ -411,6 +428,24 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
     };
     emit(ChatEvent::Finished { message: message.clone() });
     Ok(message)
+}
+
+/// Keep only the `keep` most recent tool results that carry images; older
+/// ones get a short note instead (the model has already acted on them).
+fn drop_old_tool_images(turns: &mut [ChatTurn], keep: usize) {
+    let mut seen = 0;
+    for t in turns.iter_mut().rev() {
+        for r in t.tool_results.iter_mut().rev() {
+            if r.media.is_empty() {
+                continue;
+            }
+            seen += 1;
+            if seen > keep && r.media.iter().all(|m| m.attachment_id.is_empty()) {
+                r.media.clear();
+                r.content.push_str("\n[Older screenshot omitted.]");
+            }
+        }
+    }
 }
 
 /// Prepare a regeneration: drop assistant turns after the last user message.
@@ -506,7 +541,7 @@ mod tests {
             provider: Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()),
             model: "claude-opus-5-5".into(),
             effort: Some(Effort::Medium),
-            tooling: Tooling { registry, policy, approver: Arc::new(FixedApprover(approval)), trust: None },
+            tooling: Tooling { registry, policy, approver: Arc::new(FixedApprover(approval)), trust: None, operator: None },
         }
     }
 

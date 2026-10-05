@@ -32,3 +32,16 @@ export function parseYesNo(transcript: string): boolean | null {
   if (yes === no) return null;
   return yes;
 }
+
+/** Spoken operator controls ("stop", "pause", "continue") — after the wake word has been stripped. */
+export function parseOperatorCommand(command: string): "stop" | "pause" | "resume" | null {
+  const c = command
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (/^(stop|cancel|abort|halt|enough|emergency stop)( it| that| now| everything)?$/.test(c)) return "stop";
+  if (/^(pause|wait|hold on|hold)( it| that| now| a (second|moment|sec))?$/.test(c)) return "pause";
+  if (/^(resume|continue|go on|carry on|keep going|go ahead)( now)?$/.test(c)) return "resume";
+  return null;
+}

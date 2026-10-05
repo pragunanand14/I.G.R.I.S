@@ -10,6 +10,7 @@ import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
 import { call, callRaw } from "./backend";
+import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
 
 /** All IPC commands in one place — mirrors `generate_handler!` in `src-tauri/src/lib.rs`. */
 export const api = {
@@ -29,6 +30,9 @@ export const api = {
     callRaw<Attachment>("attach_file", new Uint8Array(await file.arrayBuffer()), { "x-file-name": encodeURIComponent(file.name) }),
   discardAttachment: (id: string) => call<void>("discard_attachment", { id }),
   readAttachment: (id: string) => call<AttachmentData>("read_attachment", { id }),
+  getOperatorState: () => call<OperatorSnapshot>("get_operator_state"),
+  operatorControl: (action: OperatorAction) => call<OperatorSnapshot>("operator_control", { action }),
+  listOperatorTasks: (limit?: number) => call<OperatorTask[]>("list_operator_tasks", { limit }),
   trustConversation: (conversationId: string) => call<void>("trust_conversation", { conversationId }),
   respondToolApproval: (callId: string, approved: boolean) => call<boolean>("respond_tool_approval", { callId, approved }),
   listTools: () => call<ToolInfo[]>("list_tools"),

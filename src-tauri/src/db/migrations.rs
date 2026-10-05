@@ -220,6 +220,27 @@ pub const MIGRATIONS: &[Migration] = &[
             CREATE INDEX attachments_conversation ON attachments (conversation_id, message_id);
         "#,
     },
+    Migration {
+        version: 8,
+        name: "operator_tasks",
+        sql: r#"
+            -- Computer tasks IGRIS carried out in operator mode (history and recall).
+            CREATE TABLE operator_tasks (
+                id              TEXT PRIMARY KEY,
+                conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+                objective       TEXT NOT NULL,
+                plan            TEXT NOT NULL DEFAULT '[]',
+                state           TEXT NOT NULL,
+                steps           INTEGER NOT NULL DEFAULT 0,
+                retries         INTEGER NOT NULL DEFAULT 0,
+                result          TEXT,
+                error           TEXT,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                ended_at        TEXT
+            );
+            CREATE INDEX operator_tasks_created ON operator_tasks (created_at);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

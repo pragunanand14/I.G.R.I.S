@@ -32,7 +32,7 @@ interface Props {
 
 /** Shows what IGRIS did (or tried to do) while answering. */
 /** Mirrors `TRUSTABLE` in src-tauri/src/tools/executor.rs. */
-const TRUSTABLE = ["write_file", "move_path", "close_application"];
+const TRUSTABLE = ["write_file", "move_path", "close_application", "run_command"];
 
 export function ToolActivityList({ activities, onAnswer }: Props) {
   if (activities.length === 0) return null;
@@ -59,7 +59,7 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
                 <button
                   type="button"
                   onClick={() => onAnswer(a.id, true, true)}
-                  title="Also allow later overwrite, move and close-app actions in this chat (until IGRIS restarts). Deleting and screenshots still ask."
+                  title="Also allow later overwrite, move, close-app and routine build/test command actions in this chat (until IGRIS restarts). Deleting, screenshots, installs and publishing still ask."
                   className="rounded-md border border-accent/50 px-3 py-1 text-xs text-accent hover:bg-accent/10"
                 >
                   Allow for this chat

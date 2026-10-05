@@ -14,6 +14,7 @@ pub const USER_NAME_MAX_CHARS: usize = 48;
 pub const TELEMETRY_INTERVAL_MIN_MS: u32 = 1_000;
 pub const TELEMETRY_INTERVAL_MAX_MS: u32 = 10_000;
 pub const AI_MODEL_MAX_CHARS: usize = 100;
+pub const DEFAULT_STOP_HOTKEY: &str = "Escape";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -56,6 +57,8 @@ pub struct Settings {
     pub wake_word_enabled: bool,
     /// Preferred browser voice name; empty = system default.
     pub tts_voice: String,
+    /// Global shortcut that stops operator mode (only active while IGRIS operates the computer).
+    pub operator_stop_hotkey: String,
 }
 
 impl Default for Settings {
@@ -73,6 +76,7 @@ impl Default for Settings {
             voice_auto_speak: true,
             wake_word_enabled: false,
             tts_voice: String::new(),
+            operator_stop_hotkey: DEFAULT_STOP_HOTKEY.into(),
         }
     }
 }
@@ -93,6 +97,7 @@ pub struct SettingsPatch {
     pub voice_auto_speak: Option<bool>,
     pub wake_word_enabled: Option<bool>,
     pub tts_voice: Option<String>,
+    pub operator_stop_hotkey: Option<String>,
 }
 
 impl SettingsPatch {
@@ -131,6 +136,17 @@ impl SettingsPatch {
                 return Err(AppError::validation("Invalid voice name."));
             }
             self.tts_voice = Some(v);
+        }
+        if let Some(v) = self.operator_stop_hotkey.take() {
+            let v = v.trim().to_string();
+            let ok = !v.is_empty()
+                && v.len() <= 40
+                && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
+                && v.parse::<tauri_plugin_global_shortcut::Shortcut>().is_ok();
+            if !ok {
+                return Err(AppError::validation("Invalid shortcut. Use e.g. Escape, Ctrl+Shift+X or Pause."));
+            }
+            self.operator_stop_hotkey = Some(v);
         }
         Ok(self)
     }
@@ -174,6 +190,9 @@ impl SettingsPatch {
         if self.tts_voice.is_some() {
             f.push("ttsVoice");
         }
+        if self.operator_stop_hotkey.is_some() {
+            f.push("operatorStopHotkey");
+        }
         f
     }
 }
@@ -215,6 +234,9 @@ impl Settings {
         }
         if let Some(v) = patch.tts_voice {
             self.tts_voice = v;
+        }
+        if let Some(v) = patch.operator_stop_hotkey {
+            self.operator_stop_hotkey = v;
         }
     }
 }

@@ -29,6 +29,8 @@ pub struct AppState {
     pub trust: Arc<crate::tools::executor::Trust>,
     pub paths: AppPaths,
     pub attachments: Arc<crate::attachments::AttachmentStore>,
+    /// Operator mode (IGRIS operating the computer).
+    pub operator: Arc<crate::operator::Operator>,
 }
 
 #[derive(Debug, Clone)]

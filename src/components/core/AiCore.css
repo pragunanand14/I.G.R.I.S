@@ -133,6 +133,50 @@
   stroke-width: 3;
 }
 
+/* Operator states. */
+.ai-core--planning {
+  --spin: 2.6s;
+  --breath: 1.6s;
+}
+.ai-core--planning .ai-core__ticks {
+  animation: core-spin 7.2s steps(72) infinite;
+}
+.ai-core--planning .ai-core__dash circle {
+  stroke: rgb(var(--core-rgb) / 0.6);
+}
+
+.ai-core--waiting {
+  --spin: 90s;
+  --breath: 3.6s;
+}
+.ai-core--waiting .ai-core__pulses circle {
+  animation: core-pulse 3.6s ease-out infinite;
+}
+
+.ai-core--verifying {
+  --spin: 1.8s;
+  --breath: 1.4s;
+}
+.ai-core--verifying .ai-core__arc circle {
+  stroke-dasharray: 8 42;
+  stroke-width: 3;
+}
+.ai-core--verifying .ai-core__ticks {
+  animation: core-spin 2.4s steps(24) infinite reverse;
+}
+
+.ai-core--success {
+  --core-rgb: 79 209 161;
+  --spin: 24s;
+}
+.ai-core--success .ai-core__arc circle {
+  stroke-dasharray: 100 0;
+  transition: stroke-dasharray 600ms ease;
+}
+.ai-core--success .ai-core__pulses circle:first-child {
+  animation: core-pulse 1.2s cubic-bezier(0.2, 0.6, 0.3, 1) 1;
+}
+
 .ai-core--error {
   --spin: 120s;
 }

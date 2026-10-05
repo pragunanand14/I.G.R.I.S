@@ -512,6 +512,102 @@ impl Tool for MovePathTool {
     }
 }
 
+// ----- copy_path -----
+/// Copy limits, so a mistaken copy of a huge tree can't fill the disk.
+const MAX_COPY_FILES: usize = 20_000;
+const MAX_COPY_BYTES: u64 = 2 << 30;
+
+file_tool!(CopyPathTool);
+impl CopyPathTool {
+    pub fn new(db: Arc<Database>) -> Self {
+        Self {
+            spec: simple_spec(
+                "copy_path",
+                "Copy",
+                "Copy a file or folder from a shared folder into a writable shared folder. The destination must not exist \
+(nothing is overwritten). Credential files are skipped.",
+                json!({ "from": path_schema("Path to copy"), "to": path_schema("New path for the copy") }),
+                &["from", "to"],
+                PermissionLevel::Low,
+            ),
+            db,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Tool for CopyPathTool {
+    fn spec(&self) -> &ToolSpec {
+        &self.spec
+    }
+    fn describe(&self, input: &Value) -> String {
+        format!("Copy {} → {}", input["from"].as_str().unwrap_or_default(), input["to"].as_str().unwrap_or_default())
+    }
+    async fn execute(&self, input: &Value) -> ToolResultT {
+        let from = guarded(&self.db, input["from"].as_str().unwrap_or_default(), Access::Read)?;
+        let to = guarded(&self.db, input["to"].as_str().unwrap_or_default(), Access::Write)?;
+        if !from.path.exists() {
+            return Err(ToolError::not_found(format!("{} doesn't exist.", from.path.display())));
+        }
+        if to.path.exists() {
+            return Err(ToolError::invalid(format!("{} already exists.", to.path.display())));
+        }
+        if to.path.starts_with(&from.path) {
+            return Err(ToolError::invalid("Can't copy a folder into itself."));
+        }
+        let (src, dst, root) = (from.path.clone(), to.path.clone(), from.root.clone());
+        let (files, bytes, skipped) = tokio::task::spawn_blocking(move || copy_tree(&src, &dst, &root))
+            .await
+            .map_err(|e| ToolError::failed(e.to_string()))?
+            .map_err(ToolError::failed)?;
+        let skipped = if skipped > 0 { format!(" Skipped {skipped} credential file(s) or link(s).") } else { String::new() };
+        Ok(ToolOutput {
+            content: format!("Copied {} to {} ({files} file(s), {}).{skipped}", from.path.display(), to.path.display(), human_size(bytes)),
+            summary: format!("Copied {files} file(s)"),
+            sources: vec![],
+            media: Vec::new(),
+        })
+    }
+}
+
+/// Copy a file or folder tree; returns (files, bytes, skipped). Symlinks and
+/// secret files are skipped; limits are checked before anything is written.
+fn copy_tree(src: &Path, dst: &Path, root: &Path) -> Result<(usize, u64, usize), String> {
+    let mut plan: Vec<(std::path::PathBuf, std::path::PathBuf, bool)> = Vec::new();
+    let (mut bytes, mut skipped) = (0u64, 0usize);
+    for entry in walkdir::WalkDir::new(src).follow_links(false) {
+        let entry = entry.map_err(|e| format!("Couldn't read {}: {e}", src.display()))?;
+        let p = entry.path();
+        if entry.path_is_symlink() || files::is_secret(root, p) {
+            skipped += 1;
+            continue;
+        }
+        let rel = p.strip_prefix(src).map_err(|e| e.to_string())?;
+        let target = if rel.as_os_str().is_empty() { dst.to_path_buf() } else { dst.join(rel) };
+        let is_dir = entry.file_type().is_dir();
+        if !is_dir {
+            bytes += entry.metadata().map(|m| m.len()).unwrap_or(0);
+        }
+        plan.push((p.to_path_buf(), target, is_dir));
+        if plan.len() > MAX_COPY_FILES || bytes > MAX_COPY_BYTES {
+            return Err(format!("That's too much to copy at once (limit {MAX_COPY_FILES} files / {}).", human_size(MAX_COPY_BYTES)));
+        }
+    }
+    let mut files = 0;
+    for (from, to, is_dir) in plan {
+        if is_dir {
+            std::fs::create_dir_all(&to).map_err(|e| format!("Couldn't create {}: {e}", to.display()))?;
+        } else {
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("Couldn't create {}: {e}", parent.display()))?;
+            }
+            std::fs::copy(&from, &to).map_err(|e| format!("Couldn't copy {}: {e}", from.display()))?;
+            files += 1;
+        }
+    }
+    Ok((files, bytes, skipped))
+}
+
 // ----- trash_path -----
 file_tool!(TrashPathTool);
 impl TrashPathTool {
@@ -723,5 +819,25 @@ mod tests {
         assert!(tool.execute(&json!({"path": p(&dir, "shared/run.ps1")})).await.is_err());
         tool.execute(&json!({"path": p(&dir, "shared/notes.md")})).await.unwrap();
         assert_eq!(opened.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn copies_files_and_folders_without_overwriting_or_secrets() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("shared");
+        std::fs::create_dir_all(shared.join("app/src")).unwrap();
+        std::fs::write(shared.join("app/src/main.py"), "print(1)").unwrap();
+        std::fs::write(shared.join("app/.env"), "KEY=secret").unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        files::add(&db.conn().unwrap(), &shared.display().to_string(), true).unwrap();
+        let copy = CopyPathTool::new(db.clone());
+        let p = |rel: &str| shared.join(rel).display().to_string();
+        let out = copy.execute(&json!({"from": p("app"), "to": p("app-copy")})).await.unwrap();
+        assert!(out.content.contains("1 file(s)") && out.content.contains("Skipped 1"), "{}", out.content);
+        assert_eq!(std::fs::read_to_string(shared.join("app-copy/src/main.py")).unwrap(), "print(1)");
+        assert!(!shared.join("app-copy/.env").exists(), "secrets aren't copied");
+        assert!(copy.execute(&json!({"from": p("app"), "to": p("app-copy")})).await.unwrap_err().message.contains("already exists"));
+        assert!(copy.execute(&json!({"from": p("app"), "to": p("app/inner")})).await.is_err());
+        assert!(copy.execute(&json!({"from": p("app/src/main.py"), "to": dir.path().join("out.py").display().to_string()})).await.is_err(), "outside");
     }
 }

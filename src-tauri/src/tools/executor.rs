@@ -103,8 +103,9 @@ pub enum Actor {
 
 /// Tools the user may approve once for a whole conversation ("Allow for this
 /// chat"). Deleting files and screenshots are deliberately excluded: they
-/// always ask.
-pub const TRUSTABLE: &[&str] = &["write_file", "move_path", "close_application"];
+/// always ask. For `run_command` only routine build/test commands are covered
+/// (others always ask, see `Tool::always_ask`).
+pub const TRUSTABLE: &[&str] = &["write_file", "move_path", "close_application", "run_command"];
 
 /// Conversations the user has trusted this session (in memory only).
 #[derive(Default)]
@@ -139,6 +140,8 @@ pub struct ExecContext<'a> {
     pub cancel: &'a CancellationToken,
     /// Conversations trusted for [`TRUSTABLE`] tools; `None` = always ask.
     pub trust: Option<&'a Trust>,
+    /// The running operator task, whose approval covers its computer actions.
+    pub operator: Option<&'a crate::operator::Operator>,
 }
 
 fn clip(s: String) -> String {
@@ -227,11 +230,16 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
     }
     activity.description = tool.describe(&call.input);
 
-    // 4. Permission policy.
-    if ctx.policy.requires_approval(spec.permission) && ctx.trust.is_some_and(|t| t.covers(ctx.conversation_id, spec.name)) {
+    // 4. Permission policy. A call that must always be confirmed asks even
+    // inside an approved operator task or a trusted chat.
+    let must_ask = tool.always_ask(&call.input);
+    let needs_approval = must_ask || ctx.policy.requires_approval(spec.permission);
+    if needs_approval && !must_ask && tool.operator_scoped() && ctx.operator.is_some_and(|o| o.covers(ctx.conversation_id)) {
+        approval = "operator";
+    } else if needs_approval && !must_ask && ctx.trust.is_some_and(|t| t.covers(ctx.conversation_id, spec.name)) {
         approval = "trusted";
         tracing::info!(event = "TOOL_APPROVAL_TRUSTED", tool = spec.name);
-    } else if ctx.policy.requires_approval(spec.permission) {
+    } else if needs_approval {
         activity.status = ActivityStatus::AwaitingApproval;
         on_update(&activity);
         tracing::info!(event = "TOOL_APPROVAL_REQUESTED", tool = spec.name, permission = spec.permission.as_str());
@@ -267,19 +275,22 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
     activity.status = ActivityStatus::Running;
     on_update(&activity);
     tracing::info!(event = "TOOL_STARTED", tool = spec.name);
+    let limit = tool.timeout(&call.input);
+    let tool_ctx = super::ToolCtx { conversation_id: ctx.conversation_id.map(str::to_string) };
     let outcome = tokio::select! {
         _ = ctx.cancel.cancelled() => None,
-        r = tokio::time::timeout(TOOL_TIMEOUT, tool.execute(&call.input)) => Some(r),
+        r = tokio::time::timeout(limit, tool.execute_in(&call.input, &tool_ctx)) => Some(r),
     };
     match outcome {
         None => finish(&mut activity, ActivityStatus::Cancelled, "Cancelled by the user.".into(), "Cancelled".into(), true, approval),
         Some(Err(_)) => {
-            let msg = format!("{} timed out after {}s.", spec.title, TOOL_TIMEOUT.as_secs());
+            let msg = format!("{} timed out after {}s.", spec.title, limit.as_secs());
             finish(&mut activity, ActivityStatus::Failed, msg.clone(), msg, true, approval)
         }
         Some(Ok(Ok(out))) => {
             activity.sources = out.sources;
-            activity.attachments = out.media.iter().map(|m| m.attachment_id.clone()).collect();
+            // Media without an id (operator-mode screenshots) is sent to the model but never stored.
+            activity.attachments = out.media.iter().filter(|m| !m.attachment_id.is_empty()).map(|m| m.attachment_id.clone()).collect();
             if let (Some(cid), false) = (ctx.conversation_id, activity.attachments.is_empty()) {
                 // Captures belong to the conversation they were taken in (deleted with it).
                 if let Err(e) = ctx.db.conn().and_then(|c| crate::attachments::adopt(&c, &activity.attachments, cid)) {
@@ -356,7 +367,18 @@ mod tests {
         allowed: Option<&[String]>,
     ) -> (ToolResult, ToolActivity) {
         let cancel = CancellationToken::new();
-        let ctx = ExecContext { registry, db, conversation_id: Some("conv"), actor: Actor::Assistant, policy, allowed, approver, cancel: &cancel, trust: None };
+        let ctx = ExecContext {
+            registry,
+            db,
+            conversation_id: Some("conv"),
+            actor: Actor::Assistant,
+            policy,
+            allowed,
+            approver,
+            cancel: &cancel,
+            trust: None,
+            operator: None,
+        };
         execute(c, &ctx, &mut |_| {}).await
     }
 
@@ -445,6 +467,7 @@ mod tests {
             approver: &deny,
             cancel: &cancel,
             trust: Some(&trust),
+            operator: None,
         };
 
         // Not trusted yet: asks (and the approver denies).
@@ -461,6 +484,88 @@ mod tests {
         assert_eq!((*trash.1.lock().unwrap(), *write.1.lock().unwrap()), (0, 1));
         let approvals: Vec<String> = audit::list(&db.conn().unwrap(), 10).unwrap().into_iter().map(|e| e.approval).collect();
         assert_eq!(approvals, vec!["denied", "denied", "trusted", "denied"]);
+    }
+
+    /// A tool that is part of operator mode, optionally one whose calls must always be confirmed.
+    struct Scoped(ToolSpec, Mutex<u32>, bool);
+
+    #[async_trait::async_trait]
+    impl Tool for Scoped {
+        fn spec(&self) -> &ToolSpec {
+            &self.0
+        }
+        fn describe(&self, _i: &serde_json::Value) -> String {
+            "act".into()
+        }
+        fn operator_scoped(&self) -> bool {
+            true
+        }
+        fn always_ask(&self, _i: &serde_json::Value) -> bool {
+            self.2
+        }
+        async fn execute(&self, _i: &serde_json::Value) -> ToolResultT {
+            *self.1.lock().unwrap() += 1;
+            Ok(ToolOutput { content: "ok".into(), summary: "ok".into(), sources: vec![], media: Vec::new() })
+        }
+    }
+
+    #[tokio::test]
+    async fn operator_approval_covers_its_actions_but_not_consequential_ones() {
+        let tool = |name: &'static str, always: bool| {
+            Arc::new(Scoped(
+                ToolSpec {
+                    name,
+                    title: "t",
+                    description: "d",
+                    input_schema: json!({"type":"object","properties":{},"required":[],"additionalProperties":false}),
+                    permission: if always { PermissionLevel::Critical } else { PermissionLevel::Low },
+                },
+                Mutex::new(0),
+                always,
+            ))
+        };
+        let (click, send) = (tool("computer_click", false), tool("computer_confirmed_action", true));
+        let mut r = ToolRegistry::default();
+        r.register(click.clone());
+        r.register(send.clone());
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let c1 = crate::conversations::create(&db.conn().unwrap(), "t", "s", &[]).unwrap().id;
+        let op = crate::operator::Operator::new(db.clone(), Arc::new(crate::computer::Unsupported));
+        let deny = FixedApprover(Approval::Denied, Mutex::new(0));
+        let cancel = CancellationToken::new();
+        let trust = Trust::default();
+        trust.trust(&c1);
+        // "Ask before low-risk actions" is on: outside operator mode the click asks.
+        let base = ExecContext {
+            registry: &r,
+            db: &db,
+            conversation_id: Some(c1.as_str()),
+            actor: Actor::Assistant,
+            policy: Policy { confirm_low: true },
+            allowed: None,
+            approver: &deny,
+            cancel: &cancel,
+            trust: Some(&trust),
+            operator: Some(&op),
+        };
+        let other = ExecContext { conversation_id: Some("other"), ..base };
+        let ctx = |cid: &str| if cid == "other" { &other } else { &base };
+        execute(&call("computer_click", json!({})), ctx(&c1), &mut |_| {}).await;
+        assert_eq!(*click.1.lock().unwrap(), 0, "no operator task: asks (denied)");
+
+        op.start(Some(&c1), "task", vec![]).unwrap();
+        let (res, _) = execute(&call("computer_click", json!({})), ctx(&c1), &mut |_| {}).await;
+        assert!(!res.is_error);
+        assert_eq!(*click.1.lock().unwrap(), 1, "covered by the approved task");
+        execute(&call("computer_click", json!({})), ctx("other"), &mut |_| {}).await;
+        assert_eq!(*click.1.lock().unwrap(), 1, "only the task's own conversation");
+
+        // Consequential actions ask even inside the task and a trusted chat.
+        execute(&call("computer_confirmed_action", json!({})), ctx(&c1), &mut |_| {}).await;
+        assert_eq!(*send.1.lock().unwrap(), 0);
+        assert_eq!(*deny.1.lock().unwrap(), 3);
+        let approvals: Vec<String> = audit::list(&db.conn().unwrap(), 10).unwrap().into_iter().map(|e| e.approval).collect();
+        assert_eq!(approvals, vec!["denied", "denied", "operator", "denied"]);
     }
 
     #[tokio::test]

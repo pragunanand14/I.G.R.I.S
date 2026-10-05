@@ -9,6 +9,7 @@
 pub mod apps;
 pub mod audit;
 pub mod calculator;
+pub mod computer;
 pub mod executor;
 pub mod files;
 pub mod memory;
@@ -18,6 +19,7 @@ pub mod projects;
 pub mod schema;
 pub mod screen;
 pub mod system_info;
+pub mod terminal;
 pub mod web;
 
 use std::collections::BTreeMap;
@@ -112,6 +114,13 @@ impl ToolError {
 
 pub type ToolResultT = Result<ToolOutput, ToolError>;
 
+/// Who is calling: lets tools that act on behalf of a conversation (operator
+/// mode) know which one.
+#[derive(Debug, Clone, Default)]
+pub struct ToolCtx {
+    pub conversation_id: Option<String>,
+}
+
 #[async_trait::async_trait]
 pub trait Tool: Send + Sync {
     fn spec(&self) -> &ToolSpec;
@@ -126,6 +135,28 @@ pub trait Tool: Send + Sync {
     }
 
     async fn execute(&self, input: &Value) -> ToolResultT;
+
+    /// Like [`Tool::execute`], with the calling context. Defaults to `execute`.
+    async fn execute_in(&self, input: &Value, _ctx: &ToolCtx) -> ToolResultT {
+        self.execute(input).await
+    }
+
+    /// Part of operator mode: while the user-approved operator task of this
+    /// conversation runs, calls don't ask again one by one.
+    fn operator_scoped(&self) -> bool {
+        false
+    }
+
+    /// This particular call must be confirmed by the user even when the tool
+    /// would otherwise run without asking (e.g. a command that publishes).
+    fn always_ask(&self, _input: &Value) -> bool {
+        false
+    }
+
+    /// Time limit for one call.
+    fn timeout(&self, _input: &Value) -> std::time::Duration {
+        executor::TOOL_TIMEOUT
+    }
 }
 
 #[derive(Default, Clone)]

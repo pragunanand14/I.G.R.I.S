@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet } from "react-router";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { OperatorBanner } from "@/components/operator/OperatorBanner";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
 import { useTelemetryPolling } from "@/hooks/useTelemetryPolling";
@@ -8,6 +9,7 @@ import { useThemeEffect } from "@/hooks/useThemeEffect";
 import { useVoice } from "@/hooks/useVoice";
 import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useOperatorStore } from "@/stores/operatorStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 export function AppShell() {
@@ -27,6 +29,9 @@ export function AppShell() {
     void loadAiStatus();
   }, [backend, loadSettings, loadAiStatus]);
 
+  const connectOperator = useOperatorStore((s) => s.connect);
+  useEffect(() => (backend === "ready" ? connectOperator() : undefined), [backend, connectOperator]);
+
   useThemeEffect(settings);
   useTelemetryPolling(backend === "ready", settings.telemetryIntervalMs);
   useVoice(backend === "ready");
@@ -34,6 +39,7 @@ export function AppShell() {
   return (
     <div className="flex h-full flex-col">
       <TitleBar />
+      <OperatorBanner />
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="bg-grid relative min-w-0 flex-1 overflow-y-auto">

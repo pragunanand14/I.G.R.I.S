@@ -4,8 +4,9 @@ import { useNavigate } from "react-router";
 import { BackendError, hasBackend } from "@/services/backend";
 import { listenContinuously } from "@/services/voice/browserSpeech";
 import { WakeListener } from "@/services/voice/wakeListener";
-import { parseWakeCommand, parseWakeWord, parseYesNo } from "@/services/voice/wakeWord";
+import { parseOperatorCommand, parseWakeCommand, parseWakeWord, parseYesNo } from "@/services/voice/wakeWord";
 import { useChatStore } from "@/stores/chatStore";
+import { useOperatorStore } from "@/stores/operatorStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVoiceStore } from "@/stores/voiceStore";
 
@@ -89,18 +90,27 @@ export function useVoice(enabled: boolean) {
     let pausedUntil = 0;
     let stopped = false;
     const listener = new WakeListener((wav) => void onPhrase(wav));
+    // While IGRIS operates the computer, keep listening (except while it speaks) so "IGRIS, stop" works.
+    const operating = () => useOperatorStore.getState().snapshot.active;
     const sync = () => {
       const v = useVoiceStore.getState();
-      listener.setPaused(busy || v.phase !== "idle" || v.replyPending || Date.now() < pausedUntil);
+      listener.setPaused(busy || v.phase !== "idle" || (v.replyPending && !operating()) || Date.now() < pausedUntil);
     };
     const onPhrase = async (wav: Blob) => {
       const v = useVoiceStore.getState();
-      if (busy || v.phase !== "idle" || v.replyPending || useChatStore.getState().streaming || Date.now() < pausedUntil) return;
+      const op = operating();
+      if (busy || v.phase !== "idle" || (!op && (v.replyPending || useChatStore.getState().streaming)) || Date.now() < pausedUntil) return;
       busy = true;
       sync();
       try {
         const command = parseWakeCommand(await v.transcribe(wav, "audio/wav"));
         if (command === null || stopped) return; // not addressed to IGRIS
+        if (operating()) {
+          // Only controls are accepted mid-task; new requests wait until it's done.
+          const action = parseOperatorCommand(command);
+          if (action) await useOperatorStore.getState().control(action);
+          return;
+        }
         if (command) await useVoiceStore.getState().submitText(command);
         else {
           await useVoiceStore.getState().say("Yes?");
@@ -116,6 +126,7 @@ export function useVoice(enabled: boolean) {
       }
     };
     const unsubscribe = useVoiceStore.subscribe(sync);
+    const unsubscribeOperator = useOperatorStore.subscribe(sync);
     listener
       .start()
       .then(() => !stopped && useVoiceStore.setState({ wakeActive: true }))
@@ -123,6 +134,7 @@ export function useVoice(enabled: boolean) {
     return () => {
       stopped = true;
       unsubscribe();
+      unsubscribeOperator();
       listener.stop();
       useVoiceStore.setState({ wakeActive: false });
     };

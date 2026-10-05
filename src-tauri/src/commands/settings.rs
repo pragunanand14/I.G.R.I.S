@@ -10,7 +10,12 @@ pub fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
 }
 
 #[tauri::command]
-pub fn update_settings(state: State<'_, AppState>, patch: SettingsPatch) -> AppResult<Settings> {
+pub fn update_settings(state: State<'_, AppState>, overlay: State<'_, std::sync::Arc<crate::overlay::Overlay>>, patch: SettingsPatch) -> AppResult<Settings> {
     let mut conn = state.db.conn()?;
-    settings::update(&mut conn, patch)
+    let hotkey_changed = patch.operator_stop_hotkey.is_some();
+    let s = settings::update(&mut conn, patch)?;
+    if hotkey_changed {
+        overlay.set_stop_hotkey(&s.operator_stop_hotkey);
+    }
+    Ok(s)
 }

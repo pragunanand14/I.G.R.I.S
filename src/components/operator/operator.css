@@ -1,0 +1,193 @@
+/*
+ * Operator overlay windows (transparent, always on top). Animations use only
+ * transform and opacity so they stay on the compositor and cost little.
+ */
+html.operator-window,
+html.operator-window body,
+html.operator-window #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+/* ---- Screen border ---- */
+
+.op-border {
+  --op-rgb: var(--accent-rgb);
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 420ms ease;
+}
+.op-border[data-visible="true"] {
+  opacity: 1;
+}
+.op-border[data-phase="waiting"],
+.op-border[data-phase="paused"] {
+  --op-rgb: 232 176 75;
+}
+.op-border[data-phase="success"] {
+  --op-rgb: 79 209 161;
+}
+.op-border[data-phase="error"],
+.op-border[data-phase="stopped"] {
+  --op-rgb: var(--danger-rgb);
+}
+
+/* A thin frame; the moving highlight is a rotating conic gradient clipped to it. */
+.op-border__frame {
+  position: absolute;
+  inset: 0;
+  padding: 3px;
+  border-radius: 12px;
+  overflow: hidden;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.op-border__base {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--op-rgb) / 0.58);
+}
+.op-border__sweep {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 300vmax;
+  height: 300vmax;
+  margin: -150vmax 0 0 -150vmax;
+  background: conic-gradient(from 0deg, transparent 0turn 0.6turn, rgb(var(--op-rgb) / 0.95) 0.72turn, transparent 0.78turn 1turn);
+  animation: op-spin 5.5s linear infinite;
+  will-change: transform;
+}
+.op-border__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  box-shadow: inset 0 0 30px 3px rgb(var(--op-rgb) / 0.28);
+  animation: op-breathe 3.2s ease-in-out infinite;
+}
+.op-border[data-phase="waiting"] .op-border__sweep,
+.op-border[data-phase="paused"] .op-border__sweep {
+  animation-duration: 14s;
+  opacity: 0.6;
+}
+.op-border[data-phase="verifying"] .op-border__sweep {
+  animation-duration: 2.6s;
+}
+.op-border[data-phase="planning"] .op-border__sweep {
+  animation-duration: 3.6s;
+}
+.op-border[data-phase="success"] .op-border__glow,
+.op-border[data-phase="error"] .op-border__glow,
+.op-border[data-phase="stopped"] .op-border__glow {
+  animation: op-flash 900ms ease-out 1 forwards;
+}
+
+/* ---- Floating orb ---- */
+
+.op-orb {
+  --op-rgb: var(--accent-rgb);
+  position: fixed;
+  inset: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 9999px;
+  background: rgb(5 7 11 / 0.86);
+  border: 1px solid rgb(var(--op-rgb) / 0.35);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.4), 0 8px 28px -10px rgb(0 0 0 / 0.8), 0 0 22px -8px rgb(var(--op-rgb) / 0.6);
+  color: #e6edf5;
+  cursor: grab;
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+.op-orb[data-visible="true"] {
+  opacity: 1;
+  transform: none;
+}
+.op-orb[data-phase="waiting"],
+.op-orb[data-phase="paused"] {
+  --op-rgb: 232 176 75;
+}
+.op-orb[data-phase="success"] {
+  --op-rgb: 79 209 161;
+}
+.op-orb[data-phase="error"],
+.op-orb[data-phase="stopped"] {
+  --op-rgb: var(--danger-rgb);
+}
+.op-orb__core {
+  flex: none;
+  pointer-events: none;
+}
+.op-orb__text {
+  min-width: 0;
+  flex: 1;
+  pointer-events: none;
+}
+.op-orb__name {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: rgb(var(--op-rgb));
+}
+.op-orb__status {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.op-orb__btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(255 255 255 / 0.05);
+  color: inherit;
+  cursor: pointer;
+}
+.op-orb__btn:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+.op-orb__btn--stop {
+  background: rgb(var(--danger-rgb) / 0.85);
+  border-color: transparent;
+  color: #fff;
+}
+.op-orb__btn--stop:hover {
+  background: rgb(var(--danger-rgb));
+}
+
+@keyframes op-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes op-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes op-flash {
+  0% {
+    opacity: 1;
+    box-shadow: inset 0 0 60px 6px rgb(var(--op-rgb) / 0.45);
+  }
+  100% {
+    opacity: 0.7;
+  }
+}

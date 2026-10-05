@@ -34,6 +34,7 @@ fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
             policy: Policy { confirm_low: settings.confirm_low_risk },
             approver: std::sync::Arc::new(UiApprover { pending: state.approvals.clone(), timeout: APPROVAL_TIMEOUT }),
             trust: Some(state.trust.clone()),
+            operator: Some(state.operator.clone()),
         },
     })
 }
@@ -63,7 +64,10 @@ async fn run_generation(
             tracing::warn!(event = "CHAT_EVENT_DELIVERY_FAILED", error = %e);
         }
     };
-    let message = chat::generate(&state.db, conversation_id, &params, guard_token, &mut emit).await?;
+    let message = chat::generate(&state.db, conversation_id, &params, guard_token, &mut emit).await;
+    // Control always returns to the user when the reply ends, however it ended.
+    state.operator.end_turn(conversation_id);
+    let message = message?;
     Ok(TurnResult { conversation_id: conversation_id.to_string(), assistant_message: message })
 }
 

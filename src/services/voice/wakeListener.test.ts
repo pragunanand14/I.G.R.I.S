@@ -1,5 +1,5 @@
 import { SEGMENTER_DEFAULTS, SpeechSegmenter } from "./wakeListener";
-import { parseWakeCommand, parseYesNo } from "./wakeWord";
+import { parseOperatorCommand, parseWakeCommand, parseYesNo } from "./wakeWord";
 
 const FRAME_MS = 64;
 const frame = (amp: number) => new Float32Array(1024).fill(amp);
@@ -63,5 +63,18 @@ describe("wake phrases", () => {
     expect(parseYesNo("Yes, go ahead.")).toBe(true);
     expect(parseYesNo("No, don't.")).toBe(false);
     expect(parseYesNo("hmm what")).toBeNull();
+  });
+});
+
+describe("parseOperatorCommand", () => {
+  it("recognises spoken operator controls", () => {
+    expect(parseOperatorCommand("stop")).toBe("stop");
+    expect(parseOperatorCommand("Stop now.")).toBe("stop");
+    expect(parseOperatorCommand("pause")).toBe("pause");
+    expect(parseOperatorCommand("hold on")).toBe("pause");
+    expect(parseOperatorCommand("continue")).toBe("resume");
+    expect(parseOperatorCommand("keep going!")).toBe("resume");
+    expect(parseOperatorCommand("stop the music in Spotify")).toBeNull();
+    expect(parseOperatorCommand("open Chrome")).toBeNull();
   });
 });

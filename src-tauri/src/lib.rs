@@ -7,6 +7,7 @@
 pub mod ai;
 pub mod attachments;
 pub mod commands;
+pub mod computer;
 pub mod config;
 pub mod conversations;
 pub mod core;
@@ -15,6 +16,8 @@ pub mod error;
 pub mod files;
 pub mod logging;
 pub mod memory;
+pub mod operator;
+pub mod overlay;
 pub mod productivity;
 pub mod projects;
 pub mod settings;
@@ -36,7 +39,7 @@ use crate::system::{ConnectivityMonitor, SystemMonitor};
 use crate::tools::apps::{LaunchApplicationTool, ListApplicationsTool};
 use crate::tools::calculator::CalculatorTool;
 use crate::tools::files::{
-    CreateFileTool, CreateFolderTool, ListDirectoryTool, MovePathTool, OpenPathTool, ReadFileTool, SearchFilesTool, TrashPathTool, WriteFileTool,
+    CopyPathTool, CreateFileTool, CreateFolderTool, ListDirectoryTool, MovePathTool, OpenPathTool, ReadFileTool, SearchFilesTool, TrashPathTool, WriteFileTool,
 };
 use crate::tools::memory::{ForgetMemoryTool, RememberTool, SearchMemoryTool, UpdateMemoryTool};
 use crate::tools::processes::{CloseApplicationTool, ListProcessesTool, OpenUrlTool};
@@ -112,6 +115,7 @@ pub fn run() {
             tools.register(Arc::new(CreateFolderTool::new(db.clone())));
             tools.register(Arc::new(WriteFileTool::new(db.clone())));
             tools.register(Arc::new(MovePathTool::new(db.clone())));
+            tools.register(Arc::new(CopyPathTool::new(db.clone())));
             tools.register(Arc::new(TrashPathTool::new(db.clone())));
             tools.register(Arc::new(OpenPathTool::new(
                 db.clone(),
@@ -135,7 +139,27 @@ pub fn run() {
             tools.register(Arc::new(ListEventsTool::new(db.clone())));
             tools.register(Arc::new(DeleteEventTool::new(db.clone())));
             tools.register(Arc::new(crate::tools::screen::ScreenshotTool::new(db.clone(), attachments.clone())));
+
+            // Operator mode: IGRIS operating the computer (see operator/ and tools/computer.rs).
+            let operator = Arc::new(operator::Operator::new(db.clone(), computer::native()));
+            {
+                use crate::tools::computer::*;
+                tools.register(Arc::new(OperatorStartTool::new(operator.clone())));
+                tools.register(Arc::new(OperatorUpdateTool::new(operator.clone())));
+                tools.register(Arc::new(OperatorFinishTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerObserveTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerClickTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerTypeTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerKeyTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerScrollTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerDragTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerFocusWindowTool::new(operator.clone())));
+                tools.register(Arc::new(ComputerConfirmedActionTool::new(operator.clone())));
+            }
+            tools.register(Arc::new(crate::tools::terminal::RunCommandTool::new(db.clone(), Some(operator.clone()))));
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
+            let stop_hotkey = settings::load(&*db.conn()?).map(|s| s.operator_stop_hotkey).unwrap_or_else(|_| settings::DEFAULT_STOP_HOTKEY.into());
+            app.manage(overlay::Overlay::install(app.handle(), operator.clone(), &stop_hotkey));
 
             productivity::spawn_scheduler(db.clone(), reminder_notifier(app.handle().clone()));
 
@@ -151,6 +175,7 @@ pub fn run() {
                 trust: Arc::new(crate::tools::executor::Trust::default()),
                 paths: AppPaths { data_dir, config_dir, log_dir, db_path },
                 attachments,
+                operator,
             });
             register_voice_hotkey(app.handle());
             tracing::info!(event = "APP_STARTED");
@@ -177,6 +202,9 @@ pub fn run() {
             commands::chat::delete_conversation,
             commands::chat::respond_tool_approval,
             commands::chat::trust_conversation,
+            commands::operator::get_operator_state,
+            commands::operator::operator_control,
+            commands::operator::list_operator_tasks,
             commands::tools::list_tools,
             commands::tools::list_tool_audit,
             commands::tools::list_applications,

@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "operator-overlay",
+  "description": "The operator overlay windows (screen border and orb): receive operator state events and drag the orb. Pause/Stop go through IGRIS's own commands.",
+  "windows": [
+    "operator-border",
+    "operator-orb"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging"
+  ]
+}

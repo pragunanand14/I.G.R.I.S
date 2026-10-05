@@ -25,7 +25,40 @@ what the user has explicitly allowed, that every action is visible and recorded,
 - *Allow for this chat*: the user may trust one conversation for overwrite/move file and close app only. The trust
   is in memory (cleared on restart), recorded as `trusted` in the audit log, and never covers trash or screenshots.
 - The tool set is frozen per conversation, so a conversation can't gain capabilities mid-way.
-- SENSITIVE tools: overwrite/move/trash files, close applications, take a screenshot.
+- SENSITIVE tools: overwrite/move/trash files, close applications, take a screenshot, start operator mode, run a
+  command. CRITICAL: confirmed consequential operator actions (send, publish, buy, delete…).
+- Levels in the operator brief map as SAFE = Safe, LOCAL = Low, SENSITIVE = Sensitive, CONSEQUENTIAL = Critical.
+
+**Operator mode (`operator/`, `computer/`, `tools/computer.rs`)**
+- IGRIS can only operate the computer inside a task the user approved (`operator_start`, SENSITIVE). The approval
+  states that the mouse, keyboard and screen will be used and that screenshots go to the AI provider.
+- Control is always visible (screen border, orb, main-window banner) and always interruptible: Stop/Pause buttons,
+  a global stop shortcut (Esc by default) and "IGRIS, stop" by voice. Stop ends the task immediately; typing stops
+  between chunks. When the user uses the mouse or keyboard, IGRIS must look again before acting; switching windows
+  pauses it. A task never outlives the chat turn that started it.
+- Actions refuse to run when the screen changed under them (different window, element moved). Consequential
+  controls (send, post, publish, buy, pay, delete, submit…) and send shortcuts are refused unless the user confirms
+  them through `computer_confirmed_action` (CRITICAL, always asks, described from what is actually on screen).
+  These are guard rails based on control names and known shortcuts, not a guarantee — an app can label a sending
+  control unusually. Read confirmation prompts.
+- IGRIS never types into terminals or the Run dialog and can't press Win+R/Win+X; commands only run through
+  `run_command`. IGRIS's own windows are excluded from window lists and captures.
+- Screenshots and on-screen text are untrusted content (`<untrusted_screen_content>`). Operator screenshots are
+  sent to the model only — never written to disk or the database — and only the two most recent stay in a request.
+  Control names read through accessibility are kept in the conversation's tool results like other tool output;
+  password field contents are never read.
+- Limits: 150 actions and 8 failures per task, 5 minutes paused, 80 model round trips.
+- Input to windows of elevated (administrator) apps is blocked by Windows and reported as a failure.
+
+**Commands (`tools/terminal.rs`)**
+- No shell: a program from a fixed list of developer tools plus an argument array; no pipes, redirects, `&&` or
+  globbing. Runs only in a writable shared folder, with IGRIS's API keys removed from the environment, a time limit
+  (max 10 minutes), cancellation, and the whole process tree killed on timeout (Windows job object).
+- Every command is shown and needs approval. Routine build/test commands can be allowed for a chat; installs and
+  other commands always ask; publishing (`git push`, `npm publish`, `cargo publish`…) always asks with a warning.
+  Refused: force-push, hard reset, `git clean`, credential/login and config changes, inline code (`python -c`,
+  `node -e`). Commands can still run project code (that is what build and test scripts do) — approve commands for
+  projects you trust.
 
 **Files (`files/`)**
 - Only folders the user shares are reachable; read-only unless *Allow changes* is on.

@@ -23,6 +23,8 @@ export interface Settings {
   wakeWordEnabled: boolean;
   /** Browser voice name; empty = default. */
   ttsVoice: string;
+  /** Global shortcut that stops operator mode (active only while IGRIS operates the computer). */
+  operatorStopHotkey: string;
 }
 
 export type SettingsPatch = Partial<Settings>;

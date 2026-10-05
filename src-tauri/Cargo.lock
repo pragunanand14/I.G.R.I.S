@@ -2307,6 +2307,7 @@ dependencies = [
  "trash",
  "uuid",
  "walkdir",
+ "windows",
  "x11rb",
  "xcap",
 ]
@@ -5728,6 +5729,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceAutoSpeak: true,
   wakeWordEnabled: false,
   ttsVoice: "",
+  operatorStopHotkey: "Escape",
 };
 
 type Status = "idle" | "loading" | "ready" | "error";

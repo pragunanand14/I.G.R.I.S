@@ -289,7 +289,61 @@ take_screenshot (SENSITIVE) ─▶ capture ─▶ ≤1568 px JPEG ─▶ attachm
 * **Release** (`.github/workflows/release.yml`) — Windows NSIS + MSI installers as artifacts, or a draft GitHub
   release when a `v*` tag is pushed. Installers are not code-signed yet.
 
+## Operator mode (computer operator)
+
+IGRIS can operate the computer itself — see the screen, use mouse and keyboard, work in other apps — as a native
+capability on the existing tool layer, not a separate bot.
+
+```
+chat turn ─ operator_start (SENSITIVE: user approves the task) ─┐
+            ┌───────────────────────────────────────────────────┘
+            ▼
+   computer_observe ──► one action ──► "what changed" ──► observe again (verify) ──► … ──► operator_finish
+   (window, a11y          click / type / key / scroll /                                    ("completed" only
+    elements, optional    drag / focus window                                              after a fresh look)
+    screenshot)
+```
+
+* **`computer/`** — the `Driver` trait (displays, windows, foreground, focus, capture, UI Automation elements,
+  element at a point, mouse, keyboard, idle time). `windows.rs` implements it with Win32 `SendInput`,
+  `SetForegroundWindow` (with the thread-input workaround), DWM bounds, UI Automation (`FindAllBuildCache` over
+  interactive control types) and xcap capture per display. Other platforms get `Unsupported`, which says so. A fake
+  desktop backs the tests. Targeting prefers accessibility elements (name, role, bounds) over screenshot coordinates;
+  coordinates are mapped from the downscaled screenshot back to the display.
+* **`operator/`** — the task engine. States: `created → planning → waiting_for_permission → executing ⇄ paused →
+  verifying → completed | failed | cancelled`, persisted in `operator_tasks` (objective, plan, steps, retries,
+  result, error). One task at a time; it belongs to the chat turn that started it and always ends with that turn
+  (control returns to the user). `checkpoint()` runs before every action: it enforces stop/pause, and when the user
+  has used the mouse or keyboard since IGRIS's last input it requires a fresh observation — or pauses if they switched
+  windows. Limits: 8 failed actions, 150 actions per task, 5 minutes paused.
+* **`tools/computer.rs`** — `operator_start/update/finish`, `computer_observe`, `computer_click/type/key/scroll/drag/
+  focus_window`, `computer_confirmed_action`. Actions refuse to run on a changed screen (different foreground window,
+  or the element no longer at its observed position). Controls named Send/Post/Publish/Buy/Pay/Delete…, Ctrl+Enter,
+  Alt+S, and Enter in chat apps are refused and must go through `computer_confirmed_action` (CRITICAL, always asks;
+  its approval text is built from the element actually on screen). Typing into terminals and Win+R/Win+X are refused:
+  commands go through `run_command`.
+* **`tools/terminal.rs`** — `run_command`: an allowlisted developer tool + argument array, run without a shell in a
+  writable shared folder, with secrets removed from the environment, a time limit, captured (clipped) output, and a
+  Windows job object so timeouts kill the whole process tree. Routine build/test commands can be trusted for a chat;
+  installs and everything else ask each time; publishing (`git push`, `npm publish`…) always asks; destructive git
+  commands, credential/config changes and inline code (`python -c`, `node -e`) are refused.
+* **Executor** — tools declare `operator_scoped()` (covered by the running task's approval instead of per-action
+  prompts, audited as `operator`), `always_ask(input)` (forces a prompt even in an approved task or trusted chat) and
+  `timeout(input)`.
+* **Chat loop** — up to 80 tool rounds while a task runs (8 otherwise). Only the two most recent operator screenshots
+  stay in the request; screenshots are never written to disk or the database.
+* **Overlay (`overlay.rs`, `components/operator/`)** — two always-on-top, transparent, content-protected (excluded
+  from capture) windows created on first use: a click-through animated border on the display IGRIS works on, and a
+  draggable orb with the status line and Pause/Resume/Stop. They follow `operator-state` events, fade out ~2 s after
+  the task ends, and the orb moves out of the way of IGRIS's own clicks. A global stop shortcut (Esc by default,
+  configurable) is registered only while a task runs and briefly released when IGRIS itself presses Esc. The main
+  window shows a banner with the same controls; the IGRIS core shows planning / executing / waiting / verifying /
+  success states. Voice: "IGRIS, stop / pause / continue" control a running task.
+
 ## Possible next steps
+
+* Operator mode on macOS/Linux; browser automation via the DevTools protocol for pages with poor accessibility data;
+  visual diffing between observations.
 
 * Code signing for Windows installers; auto-update.
 * Calendar sync (Google / Microsoft Graph) via OAuth; recurring reminders.
