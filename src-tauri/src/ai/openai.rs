@@ -114,6 +114,13 @@ impl OpenAiCompatibleProvider {
     }
 }
 
+/// The provider's own error text. OpenAI-style servers send `{"error":{"message"}}`;
+/// Gemini wraps it in an array (`[{"error":{…}}]`); some local servers send `{"message"}`.
+pub fn error_message(v: &Value) -> Option<String> {
+    let v = v.as_array().and_then(|a| a.first()).unwrap_or(v);
+    v["error"]["message"].as_str().or(v["error"].as_str()).or(v["message"].as_str()).map(str::to_string)
+}
+
 /// Gemini's OpenAI-compatible endpoint accepts a subset of JSON Schema and
 /// identifies function results by name: drop `additionalProperties` (IGRIS still
 /// validates every input itself), omit empty parameter objects, and name tool
@@ -296,8 +303,14 @@ impl OpenAiCompatibleProvider {
             |resp| async move {
                 let status = resp.status();
                 let retry = http::retry_after(&resp);
-                let msg = resp.json::<Value>().await.ok().and_then(|v| v["error"]["message"].as_str().map(str::to_string));
-                http::status_error(status, msg, retry, label)
+                let msg = resp.json::<Value>().await.ok().and_then(|v| error_message(&v));
+                let mut err = http::status_error(status, msg, retry, label);
+                if label == "Gemini" && status.as_u16() == 404 {
+                    err.message.push_str(
+                        " Model names change over time — use one listed at https://aistudio.google.com (Models), e.g. the current Flash or Flash-Lite.",
+                    );
+                }
+                err
             },
         )
         .await
@@ -580,6 +593,25 @@ mod tests {
         }
         text.push_str(&f.finish());
         (text, hidden)
+    }
+
+    #[test]
+    fn provider_error_text_is_found_in_every_shape() {
+        assert_eq!(error_message(&json!({"error":{"message":"bad model"}})).as_deref(), Some("bad model"));
+        assert_eq!(error_message(&json!([{"error":{"code":404,"message":"models/x is not found"}}])).as_deref(), Some("models/x is not found"));
+        assert_eq!(error_message(&json!({"error":"model 'x' not found"})).as_deref(), Some("model 'x' not found"));
+        assert_eq!(error_message(&json!({"message":"nope"})).as_deref(), Some("nope"));
+        assert_eq!(error_message(&json!({"ok":true})), None);
+    }
+
+    #[tokio::test]
+    async fn gemini_not_found_shows_googles_reason_and_where_to_find_models() {
+        let body = json!([{"error":{"code":404,"message":"models/gemini-old is not found for API version v1beta"}}]).to_string();
+        let server = MockServer::start(vec![(404, "application/json", body)]).await;
+        let p = OpenAiCompatibleProvider::gemini("k".into(), Some(server.url())).unwrap();
+        let e = p.stream(&req(), &CancellationToken::new(), &mut |_| {}).await.unwrap_err();
+        assert!(e.message.contains("models/gemini-old is not found"), "{}", e.message);
+        assert!(e.message.contains("aistudio.google.com"), "{}", e.message);
     }
 
     #[test]
