@@ -9,7 +9,38 @@ use tokio_util::sync::CancellationToken;
 use super::{AiError, AiErrorKind, AiResult};
 
 pub const MAX_ATTEMPTS: u32 = 3;
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(20);
+/// Rate limits (e.g. Gemini's free tier, a few requests per minute) clear
+/// within a minute, so they get more patience than other transient errors.
+pub const MAX_RATE_LIMIT_ATTEMPTS: u32 = 5;
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
+
+/// Retry delay a provider put in its error body: Google's `RetryInfo.retryDelay`
+/// ("23s") or "Please retry in 23.5s." in the message.
+pub fn retry_hint(v: &serde_json::Value) -> Option<Duration> {
+    fn secs(s: &str) -> Option<f64> {
+        s.trim().trim_end_matches('s').trim().parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0)
+    }
+    fn walk(v: &serde_json::Value) -> Option<f64> {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let Some(d) = m.get("retryDelay").and_then(|d| d.as_str()).and_then(secs) {
+                    return Some(d);
+                }
+                m.values().find_map(walk)
+            }
+            serde_json::Value::Array(a) => a.iter().find_map(walk),
+            serde_json::Value::String(s) => {
+                let lower = s.to_ascii_lowercase();
+                let i = lower.find("retry in ")?;
+                let rest = &lower[i + 9..];
+                let end = rest.find('s').unwrap_or(rest.len());
+                secs(&rest[..end])
+            }
+            _ => None,
+        }
+    }
+    walk(v).map(|s| Duration::from_secs_f64(s + 0.5).min(MAX_RETRY_DELAY))
+}
 
 pub fn client() -> AiResult<reqwest::Client> {
     client_with_read_timeout(Duration::from_secs(180))
@@ -84,10 +115,12 @@ where
             Ok(resp) => on_error(resp).await,
             Err(e) => map_reqwest_error(e),
         };
-        if !err.is_retryable() || attempt >= MAX_ATTEMPTS {
+        let max = if err.kind == AiErrorKind::RateLimited { MAX_RATE_LIMIT_ATTEMPTS } else { MAX_ATTEMPTS };
+        if !err.is_retryable() || attempt >= max {
             return Err(err);
         }
-        let delay = err.retry_after.unwrap_or_else(|| Duration::from_millis(800 * 2u64.pow(attempt - 1)));
+        let backoff = if err.kind == AiErrorKind::RateLimited { 4000 } else { 800 };
+        let delay = err.retry_after.unwrap_or_else(|| Duration::from_millis(backoff * 2u64.pow(attempt - 1)).min(MAX_RETRY_DELAY));
         tracing::warn!(event = "AI_REQUEST_RETRY", attempt, kind = ?err.kind, delay_ms = delay.as_millis() as u64);
         tokio::select! {
             _ = cancel.cancelled() => return Err(cancelled()),
@@ -114,6 +147,18 @@ mod tests {
         assert_eq!(k(429), AiErrorKind::RateLimited);
         assert_eq!(k(529), AiErrorKind::Overloaded);
         assert_eq!(k(503), AiErrorKind::Server);
+    }
+
+    #[test]
+    fn reads_retry_delays_from_error_bodies() {
+        let google = serde_json::json!([{ "error": { "code": 429, "message": "Quota exceeded. Please retry in 23.4s.", "details": [
+            { "@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "23s" }
+        ] } }]);
+        assert_eq!(retry_hint(&google), Some(Duration::from_secs_f64(23.5)));
+        let msg_only = serde_json::json!({ "error": { "message": "Rate limit. Please retry in 7.5s." } });
+        assert_eq!(retry_hint(&msg_only), Some(Duration::from_secs(8)));
+        assert_eq!(retry_hint(&serde_json::json!({ "error": { "message": "bad" } })), None);
+        assert_eq!(retry_hint(&serde_json::json!({ "retryDelay": "900s" })), Some(MAX_RETRY_DELAY));
     }
 
     #[test]

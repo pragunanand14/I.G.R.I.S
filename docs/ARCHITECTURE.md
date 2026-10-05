@@ -330,6 +330,12 @@ chat turn ─ operator_start (SENSITIVE: user approves the task) ─┐
 * **Executor** — tools declare `operator_scoped()` (covered by the running task's approval instead of per-action
   prompts, audited as `operator`), `always_ask(input)` (forces a prompt even in an approved task or trusted chat) and
   `timeout(input)`.
+* **Reliability** — `computer_observe` reads up to 4000 controls and shows 150, always including the focused control and
+  every text field (so a form at the bottom of a busy page like Gmail's compose box is never cut off), with a `find`
+  filter. Targets are re-checked by position (the control found there now must be the same control, its content or an
+  unnamed container — not a popup over it). Typing refuses when focus isn't a text field (web apps read stray keys as
+  shortcuts) and reads the field back afterwards. Safety refusals don't count toward the failure limit. Rate limits
+  are retried after the delay the provider asks for (up to 60 s); a used-up daily quota is reported as such.
 * **Chat loop** — up to 80 tool rounds while a task runs (8 otherwise). Only the two most recent operator screenshots
   stay in the request; screenshots are never written to disk or the database.
 * **Overlay (`overlay.rs`, `components/operator/`)** — two always-on-top, transparent, content-protected (excluded

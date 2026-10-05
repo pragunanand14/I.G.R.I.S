@@ -350,7 +350,13 @@ function ModelField({
   );
 }
 
-const MODE_LABEL: Record<string, string> = { browser: "Built-in (this system)", gemini: "Gemini", openai: "OpenAI", local: "Local server" };
+const MODE_LABEL: Record<string, string> = {
+  browser: "Built-in (this system)",
+  groq: "Groq",
+  gemini: "Gemini",
+  openai: "OpenAI-compatible",
+  local: "Local server",
+};
 
 function VoicePanel({ disabled }: { disabled: boolean }) {
   const { settings, update } = useSettingsStore();
@@ -398,6 +404,13 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
       <InfoRow label="Speech recognition" value={sttText} />
       <InfoRow label="Speech output" value={ttsText} />
       <InfoRow label="Push-to-talk hotkey" value={VOICE_HOTKEY_LABEL} />
+      {status?.tts.mode === "browser" && !status.tts.problem && (
+        <p className="mt-2 text-xs text-muted">
+          For a natural, human-sounding voice set <code className="font-mono">TTS_PROVIDER=groq</code> (uses your Groq key; voices: troy,
+          daniel, austin, hannah, diana, autumn) or <code className="font-mono">TTS_PROVIDER=gemini</code> in .env, then reload the
+          configuration.
+        </p>
+      )}
       {voiceError && <p className="mt-2 text-xs text-warning">{voiceError}</p>}
 
       <div className="mt-2">
@@ -414,7 +427,7 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
                 aria-label="Voice"
                 className="h-8 max-w-56 rounded-lg border border-line bg-surface px-2 text-xs text-fg focus:border-accent focus:outline-none"
               >
-                <option value="">System default</option>
+                <option value="">Most natural available</option>
                 {voices.map((v) => (
                   <option key={v.name} value={v.name}>
                     {v.name} ({v.lang})

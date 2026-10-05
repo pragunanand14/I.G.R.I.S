@@ -24,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsIconic, IsWindow, IsWindowVisible, SetCursorPos, SetForegroundWindow, ShowWindow, WindowFromPoint, GA_ROOT, GWL_EXSTYLE, SW_RESTORE, WS_EX_TOOLWINDOW,
 };
 
-use super::{Display, Driver, Key, MouseButton, Rect, UiElement, WindowInfo};
+use super::{Display, Driver, FieldInfo, Key, MouseButton, Rect, UiElement, WindowInfo};
 
 pub struct WindowsDriver;
 
@@ -381,7 +381,7 @@ impl Driver for WindowsDriver {
                     }
                 }
             }
-            out.sort_by_key(|e| (e.rect.y / 8, e.rect.x));
+            // Selection (fields first, top-to-bottom) happens in `select_elements`.
             out.truncate(max);
             Ok(out)
         }
@@ -390,6 +390,18 @@ impl Driver for WindowsDriver {
     fn element_at(&self, x: i32, y: i32) -> Result<Option<UiElement>, String> {
         let auto = uia()?;
         unsafe { Ok(auto.ElementFromPoint(POINT { x, y }).ok().and_then(|e| element(&e, false))) }
+    }
+
+    fn focused_field(&self) -> Option<FieldInfo> {
+        let auto = uia().ok()?;
+        unsafe {
+            let e = auto.GetFocusedElement().ok()?;
+            let password = e.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false);
+            let pattern = e.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId).ok();
+            let read_only = pattern.as_ref().and_then(|p| p.CurrentIsReadOnly().ok()).map(|b| b.as_bool());
+            let value = if password { None } else { pattern.as_ref().and_then(|p| p.CurrentValue().ok()).map(|v| v.to_string().chars().take(2000).collect()) };
+            Some(FieldInfo { value, read_only, password })
+        }
     }
 
     fn focused_element(&self) -> Result<Option<UiElement>, String> {

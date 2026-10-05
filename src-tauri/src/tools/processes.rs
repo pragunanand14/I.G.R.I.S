@@ -202,7 +202,8 @@ impl OpenUrlTool {
             spec: ToolSpec {
                 name: "open_url",
                 title: "Open website",
-                description: "Open an http(s) web address in the user's default browser.",
+                description: "Open an http(s) web address in the user's default browser, or a mailto: link (opens a new, unsent \
+email in the user's mail app, e.g. mailto:a@b.com?subject=Hi&body=Hello — URL-encode the subject and body).",
                 input_schema: json!({
                     "type": "object",
                     "properties": { "url": { "type": "string", "minLength": 8, "maxLength": 2000 } },
@@ -222,19 +223,30 @@ impl Tool for OpenUrlTool {
         &self.spec
     }
     fn describe(&self, input: &Value) -> String {
-        format!("Open {}", input["url"].as_str().unwrap_or_default())
+        let url = input["url"].as_str().unwrap_or_default();
+        if url.trim().to_ascii_lowercase().starts_with("mailto:") {
+            format!("Start a new email draft ({})", url.chars().take(120).collect::<String>())
+        } else {
+            format!("Open {url}")
+        }
     }
     fn validate(&self, input: &Value) -> Result<(), ToolError> {
         let url = reqwest::Url::parse(input["url"].as_str().unwrap_or_default().trim()).map_err(|_| ToolError::invalid("That isn't a valid URL."))?;
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err(ToolError::invalid("Only http and https links can be opened."));
+        // mailto: only opens a compose window; nothing is sent without the user.
+        if !matches!(url.scheme(), "http" | "https" | "mailto") {
+            return Err(ToolError::invalid("Only http(s) and mailto: links can be opened."));
         }
         Ok(())
     }
     async fn execute(&self, input: &Value) -> ToolResultT {
         let url = input["url"].as_str().unwrap_or_default().trim();
         (self.opener)(url).map_err(|e| ToolError::failed(format!("Couldn't open the browser: {e}")))?;
-        Ok(ToolOutput { content: format!("Opened {url} in the default browser."), summary: "Opened".into(), sources: vec![], media: Vec::new() })
+        let content = if url.to_ascii_lowercase().starts_with("mailto:") {
+            "Asked Windows to open a new email draft in the default mail app. It isn't sent; check it opened (computer_observe in operator mode).".to_string()
+        } else {
+            format!("Opened {url} in the default browser.")
+        };
+        Ok(ToolOutput { content, summary: "Opened".into(), sources: vec![], media: Vec::new() })
     }
 }
 
@@ -254,6 +266,7 @@ mod tests {
     fn open_url_only_allows_web_links() {
         let t = OpenUrlTool::new(Arc::new(|_: &str| Ok(())));
         assert!(t.validate(&json!({"url":"https://example.com"})).is_ok());
+        assert!(t.validate(&json!({"url":"mailto:rahul@example.com?subject=Late&body=Running%2020%20minutes%20late"})).is_ok());
         for bad in ["file:///etc/passwd", "javascript:alert(1)", "ms-settings:privacy", "not a url"] {
             assert!(t.validate(&json!({ "url": bad })).is_err(), "{bad}");
         }

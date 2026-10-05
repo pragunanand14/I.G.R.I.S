@@ -9,6 +9,19 @@ import { useChatStore } from "@/stores/chatStore";
 import { useOperatorStore } from "@/stores/operatorStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVoiceStore } from "@/stores/voiceStore";
+import type { ToolActivity } from "@/types/tools";
+
+/** Operator mode, or several tool calls: the turn is step-by-step work. */
+export function isStepwork(activities: ToolActivity[]): boolean {
+  return activities.length >= 3 || activities.some((a) => a.tool.startsWith("computer_") || a.tool.startsWith("operator_"));
+}
+
+/** The text written after the last tool call — the answer, not the commentary. */
+export function finalAnswer(text: string, activities: ToolActivity[]): string {
+  const offset = Math.max(0, ...activities.map((a) => a.textOffset ?? 0));
+  const chars = Array.from(text);
+  return chars.slice(Math.min(offset, chars.length)).join("").trim();
+}
 
 /** Connects voice to chat, the global hotkey, Esc, spoken replies and the wake word. */
 export function useVoice(enabled: boolean) {
@@ -52,17 +65,30 @@ export function useVoice(enabled: boolean) {
     };
   }, [enabled]);
 
-  // Speak streamed replies to spoken requests.
+  // Speak streamed replies to spoken requests. In multi-step tool work (operating
+  // the computer, several tool calls) only the final answer is spoken, not the
+  // text written along the way.
   useEffect(() => {
     let prev = useChatStore.getState().streaming;
+    let quiet = false;
     return useChatStore.subscribe((s) => {
       const cur = s.streaming;
-      if (cur && prev && cur.requestId === prev.requestId && cur.text.length > prev.text.length) {
-        useVoiceStore.getState().replyDelta(cur.text.slice(prev.text.length));
-      } else if (cur && (!prev || cur.requestId !== prev.requestId) && cur.text) {
-        useVoiceStore.getState().replyDelta(cur.text);
+      if (cur && (!prev || cur.requestId !== prev.requestId)) quiet = false;
+      if (cur && !quiet && isStepwork(cur.activities)) quiet = true;
+      if (!quiet) {
+        if (cur && prev && cur.requestId === prev.requestId && cur.text.length > prev.text.length) {
+          useVoiceStore.getState().replyDelta(cur.text.slice(prev.text.length));
+        } else if (cur && (!prev || cur.requestId !== prev.requestId) && cur.text) {
+          useVoiceStore.getState().replyDelta(cur.text);
+        }
       }
-      if (prev && !cur) void useVoiceStore.getState().replyFinished();
+      if (prev && !cur) {
+        if (quiet) {
+          const final = finalAnswer(prev.text, prev.activities);
+          if (final) useVoiceStore.getState().replyDelta(final);
+        }
+        void useVoiceStore.getState().replyFinished();
+      }
       prev = cur;
     });
   }, []);
@@ -150,7 +176,9 @@ export function useVoice(enabled: boolean) {
       if (!v.replyPending && !v.wakeActive) return; // typed request at the keyboard: buttons only
       asked.add(pending.id);
       void (async () => {
-        const what = pending.description.charAt(0).toLowerCase() + pending.description.slice(1);
+        // Speak just the first sentence; the full text is on the approval card.
+        const first = (pending.description.split(/(?<=\.)\s/)[0] ?? pending.description).replace(/\.$/, "");
+        const what = first.charAt(0).toLowerCase() + first.slice(1);
         const answer = await useVoiceStore.getState().ask(`I need your approval to ${what}. Say yes or no.`);
         const stillWaiting = useChatStore.getState().streaming?.activities.some((a) => a.id === pending.id && a.status === "awaitingApproval");
         if (!stillWaiting) return; // answered with the buttons meanwhile

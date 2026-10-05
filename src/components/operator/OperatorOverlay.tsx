@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { AiCore } from "@/components/core/AiCore";
 import { api } from "@/services/api";
 import { phaseToCore, useOperatorStore } from "@/stores/operatorStore";
+import type { OperatorTask } from "@/types/operator";
 import "./operator.css";
 
 /** Apply the user's theme/accent to an overlay window (it has no app shell). */
@@ -22,6 +23,11 @@ function useOverlayTheme() {
   }, []);
 }
 
+/** A just-finished task stays on screen briefly so its outcome is seen. */
+function isEnding(task: OperatorTask | null): boolean {
+  return task !== null && ["completed", "failed", "cancelled", "ended"].includes(task.state);
+}
+
 /** Click-through animated frame around the display IGRIS is working on. */
 export function OperatorBorder() {
   useOverlayTheme();
@@ -29,7 +35,7 @@ export function OperatorBorder() {
   useEffect(() => connect(), [connect]);
   const snap = useOperatorStore((s) => s.snapshot);
   const phase = snap.task?.phase ?? "executing";
-  const visible = snap.active || (snap.task !== null && ["success", "error", "stopped"].includes(phase));
+  const visible = snap.active || isEnding(snap.task);
 
   return (
     <div className="op-border" data-phase={phase} data-visible={visible} aria-hidden="true">
@@ -62,8 +68,8 @@ export function OperatorOrb() {
   const task = snap.task;
   const phase = task?.phase ?? "executing";
   const paused = task?.state === "paused";
-  const visible = snap.active || (task !== null && ["success", "error", "stopped"].includes(phase));
-  const status = (phase === "executing" ? task?.status : PHASE_LABEL[phase]) || task?.status || "EXECUTING";
+  const visible = snap.active || isEnding(task);
+  const status = (phase === "executing" || task?.state === "ended" ? task?.status : PHASE_LABEL[phase]) || task?.status || "EXECUTING";
 
   return (
     <div className="op-orb" data-phase={phase} data-visible={visible} data-tauri-drag-region role="status" aria-live="polite">

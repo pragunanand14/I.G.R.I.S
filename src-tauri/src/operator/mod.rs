@@ -39,6 +39,9 @@ pub enum TaskState {
     Completed,
     Failed,
     Cancelled,
+    /// Control handed back without a verified result: the user has to act
+    /// (log in, decide) or IGRIS ended its reply without reporting.
+    Ended,
 }
 
 impl TaskState {
@@ -53,10 +56,11 @@ impl TaskState {
             TaskState::Completed => "completed",
             TaskState::Failed => "failed",
             TaskState::Cancelled => "cancelled",
+            TaskState::Ended => "ended",
         }
     }
     pub fn is_final(self) -> bool {
-        matches!(self, TaskState::Completed | TaskState::Failed | TaskState::Cancelled)
+        matches!(self, TaskState::Completed | TaskState::Failed | TaskState::Cancelled | TaskState::Ended)
     }
 }
 
@@ -444,7 +448,8 @@ impl Operator {
 
     /// IGRIS reports the outcome. "Completed" requires a look at the screen
     /// after the last action, so success is never claimed blind.
-    pub fn finish(&self, completed: bool, summary: &str) -> Result<TaskView, String> {
+    pub fn finish(&self, outcome: TaskState, summary: &str) -> Result<TaskView, String> {
+        let completed = outcome == TaskState::Completed;
         {
             let g = self.lock();
             let t = g.task.as_ref().filter(|t| !t.state.is_final()).ok_or("No operator task is running.")?;
@@ -452,8 +457,11 @@ impl Operator {
                 return Err("Verify the result first: call computer_observe after your last action, check it shows the expected outcome, then finish.".into());
             }
         }
-        let (state, result, error) =
-            if completed { (TaskState::Completed, Some(summary.to_string()), None) } else { (TaskState::Failed, None, Some(summary.to_string())) };
+        let (state, result, error) = match outcome {
+            TaskState::Completed => (TaskState::Completed, Some(summary.to_string()), None),
+            TaskState::Ended => (TaskState::Ended, Some(summary.to_string()), None),
+            _ => (TaskState::Failed, None, Some(summary.to_string())),
+        };
         self.finish_with(state, result, error).ok_or_else(|| "No operator task is running.".to_string())
     }
 
@@ -466,11 +474,13 @@ impl Operator {
             t.phase = match state {
                 TaskState::Completed => Phase::Success,
                 TaskState::Cancelled => Phase::Stopped,
+                TaskState::Ended => Phase::Waiting,
                 _ => Phase::Error,
             };
             t.status = match state {
                 TaskState::Completed => "COMPLETE",
                 TaskState::Cancelled => "STOPPED",
+                TaskState::Ended => "OVER TO YOU",
                 _ => "FAILED",
             }
             .into();
@@ -487,7 +497,13 @@ impl Operator {
     /// user. A task IGRIS didn't report on counts as not completed.
     pub fn end_turn(&self, conversation_id: &str) {
         if self.covers(Some(conversation_id)) {
-            self.finish_with(TaskState::Failed, None, Some("The reply ended before IGRIS confirmed the result.".into()));
+            // Not a claimed success; a failure only if the last action was never checked.
+            let unchecked = self.lock().actions_since_observe > 0;
+            if unchecked {
+                self.finish_with(TaskState::Failed, None, Some("The reply ended before IGRIS confirmed the result.".into()));
+            } else {
+                self.finish_with(TaskState::Ended, Some("The reply ended without a final report.".into()), None);
+            }
         }
     }
 
@@ -506,6 +522,7 @@ impl Operator {
                 "completed" => TaskState::Completed,
                 "cancelled" => TaskState::Cancelled,
                 "failed" => TaskState::Failed,
+                "ended" => TaskState::Ended,
                 "paused" => TaskState::Paused,
                 _ => TaskState::Executing,
             };
@@ -577,9 +594,9 @@ mod tests {
         op.checkpoint().await.unwrap();
         op.action_done("Opening Notepad").unwrap();
         assert_eq!(op.snapshot().task.unwrap().status, "OPENING NOTEPAD");
-        assert!(op.finish(true, "done").unwrap_err().contains("Verify"), "can't claim success without looking");
+        assert!(op.finish(TaskState::Completed, "done").unwrap_err().contains("Verify"), "can't claim success without looking");
         op.set_observation(Observation { window: None, display: op.driver.displays().unwrap()[0].clone(), image: None, elements: vec![] });
-        let done = op.finish(true, "Notepad is open").unwrap();
+        let done = op.finish(TaskState::Completed, "Notepad is open").unwrap();
         assert_eq!(done.state, TaskState::Completed);
         assert!(!op.is_active());
         assert!(op.checkpoint().await.is_err());
@@ -639,10 +656,19 @@ mod tests {
         assert!(op.action_failed("click missed").unwrap().contains("stopped"));
         assert_eq!(op.snapshot().task.unwrap().state, TaskState::Failed);
 
+        // The reply ended right after an unchecked action: not a success.
         op.start(Some("c1"), "task 2", vec![]).unwrap();
+        op.action_done("Clicking").unwrap();
         op.end_turn("c1");
         let t = op.snapshot().task.unwrap();
         assert_eq!(t.state, TaskState::Failed);
         assert!(t.error.unwrap().contains("before IGRIS confirmed"));
+
+        // Ended after looking, just without a report: handed back, neither success nor failure.
+        op.start(Some("c1"), "task 3", vec![]).unwrap();
+        op.end_turn("c1");
+        let t = op.snapshot().task.unwrap();
+        assert_eq!((t.state, t.phase, t.status.as_str()), (TaskState::Ended, Phase::Waiting, "OVER TO YOU"));
+        assert!(!op.is_active());
     }
 }

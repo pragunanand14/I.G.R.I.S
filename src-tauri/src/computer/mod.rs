@@ -65,6 +65,16 @@ pub struct UiElement {
     pub focused: bool,
 }
 
+/// The focused text field's state, read through accessibility.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FieldInfo {
+    /// Current text, when the control exposes it (never for password fields).
+    pub value: Option<String>,
+    /// `Some(true)` read-only, `Some(false)` editable, `None` unknown.
+    pub read_only: Option<bool>,
+    pub password: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseButton {
     Left,
@@ -177,6 +187,56 @@ pub trait Driver: Send + Sync {
     fn owner_at(&self, _x: i32, _y: i32) -> Option<u32> {
         None
     }
+    /// Value / editability of the focused control.
+    fn focused_field(&self) -> Option<FieldInfo> {
+        None
+    }
+}
+
+/// Roles you type into.
+pub fn is_field_role(role: &str) -> bool {
+    matches!(role, "edit" | "combo box" | "document")
+}
+
+/// Pick the controls worth showing from a large accessibility tree: the focused
+/// control and text fields first (so a form opened at the bottom of a busy page,
+/// like Gmail's compose box, is never cut off), then buttons and other
+/// controls; shown top-to-bottom. `find` keeps only names containing it.
+pub fn select_elements(all: Vec<UiElement>, find: &str, max: usize) -> (Vec<UiElement>, usize) {
+    let needle = find.trim().to_lowercase();
+    let mut pool: Vec<UiElement> = all.into_iter().filter(|e| needle.is_empty() || e.name.to_lowercase().contains(&needle)).collect();
+    let total = pool.len();
+    let rank = |e: &UiElement| -> u8 {
+        if e.focused {
+            0
+        } else if is_field_role(&e.role) {
+            1
+        } else {
+            match e.role.as_str() {
+                "button" | "split button" | "menu item" | "tab" | "checkbox" | "radio button" => 2,
+                "hyperlink" => 3,
+                _ => 4,
+            }
+        }
+    };
+    pool.sort_by_key(|e| (rank(e), e.rect.y / 8, e.rect.x));
+    pool.truncate(max);
+    pool.sort_by_key(|e| (e.rect.y / 8, e.rect.x));
+    (pool, total)
+}
+
+/// Whether the control found at a point now is (part of) the one observed
+/// there: the same control, something inside it, or a container around it.
+/// A different control covering the spot (a popup, a moved layout) isn't.
+pub fn same_spot(observed: &UiElement, now: &UiElement) -> bool {
+    let grow = |r: &Rect, d: i32| Rect { x: r.x - d, y: r.y - d, w: r.w + 2 * d, h: r.h + 2 * d };
+    let inside = |a: &Rect, b: &Rect| a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+    (!observed.name.is_empty() && observed.name == now.name)
+        // Something inside it (e.g. the text in a field) — but not a different control in its place.
+        || (inside(&now.rect, &grow(&observed.rect, 6))
+            && (now.name.trim().is_empty() || (now.rect.w as i64 * now.rect.h as i64) * 10 < (observed.rect.w as i64 * observed.rect.h as i64) * 9))
+        // An unnamed container (layout group, page) — a named one covering it is a dialog or popup.
+        || (inside(&observed.rect, &grow(&now.rect, 6)) && now.name.trim().is_empty())
 }
 
 /// Whether a window belongs to IGRIS itself (it must never operate its own UI,
@@ -303,13 +363,17 @@ pub fn is_actionable_role(role: &str) -> bool {
     matches!(role, "button" | "split button" | "hyperlink" | "menu item" | "list item" | "image" | "custom" | "group" | "text")
 }
 
-const MESSAGING: &[&str] = &["whatsapp", "telegram", "discord", "slack", "teams", "messenger", "signal", "instagram", "skype", "wechat", "line"];
+/// Chat apps (by executable) and chat sites (by a whole word in the window title).
+const MESSAGING_PROCESSES: &[&str] = &["whatsapp", "telegram", "discord", "slack", "ms-teams", "teams", "signal", "messenger", "skype", "wechat"];
+const MESSAGING_TITLES: &[&str] = &["whatsapp", "telegram", "discord", "slack", "messenger", "instagram", "skype", "wechat"];
 
 /// Apps where Enter sends a message.
 pub fn is_messaging_app(w: &WindowInfo) -> bool {
     let p = w.process.to_lowercase();
+    let p = p.trim_end_matches(".exe");
     let t = w.title.to_lowercase();
-    MESSAGING.iter().any(|m| p.starts_with(m) || p.contains(&format!("{m}.")) || t.contains(m))
+    let words: Vec<&str> = t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    MESSAGING_PROCESSES.contains(&p) || MESSAGING_TITLES.iter().any(|m| words.contains(m))
 }
 
 const TERMINALS: &[&str] = &[
@@ -389,6 +453,9 @@ pub mod fake {
         pub on_click_focus: Option<u64>,
         /// Pid reported by `owner_at` (to simulate IGRIS's own window under a point).
         pub owner: Option<u32>,
+        pub field: Option<FieldInfo>,
+        /// Element reported at every point instead of the observed list (simulates a popup).
+        pub cover: Option<UiElement>,
     }
 
     #[derive(Default)]
@@ -447,7 +514,11 @@ pub mod fake {
             Ok(self.0.lock().unwrap().elements.iter().take(max).cloned().collect())
         }
         fn element_at(&self, x: i32, y: i32) -> Result<Option<UiElement>, String> {
-            Ok(self.0.lock().unwrap().elements.iter().find(|e| e.rect.contains(x, y)).cloned())
+            let s = self.0.lock().unwrap();
+            if let Some(c) = &s.cover {
+                return Ok(Some(c.clone()));
+            }
+            Ok(s.elements.iter().find(|e| e.rect.contains(x, y)).cloned())
         }
         fn focused_element(&self) -> Result<Option<UiElement>, String> {
             Ok(self.0.lock().unwrap().focused.clone())
@@ -483,6 +554,9 @@ pub mod fake {
         }
         fn owner_at(&self, _x: i32, _y: i32) -> Option<u32> {
             self.0.lock().unwrap().owner
+        }
+        fn focused_field(&self) -> Option<FieldInfo> {
+            self.0.lock().unwrap().field.clone()
         }
     }
 }
@@ -527,6 +601,9 @@ mod tests {
         assert!(is_messaging_app(&chat));
         assert!(is_messaging_app(&w("WhatsApp", "WhatsApp.exe")));
         assert!(!is_messaging_app(&w("Inbox - Outlook", "OUTLOOK.EXE")));
+        assert!(!is_messaging_app(&w("Deadline online - Google Chrome", "chrome.exe")), "no substring matches");
+        assert!(!is_messaging_app(&w("Inbox (3) - me@gmail.com - Gmail - Google Chrome", "chrome.exe")));
+        assert!(is_messaging_app(&w("Slack | general", "chrome.exe")));
 
         let k = |s: &str| parse_keys(s).unwrap();
         assert_eq!(combo_risk(&k("win+r"), None, None), Some("blocked"));
@@ -537,6 +614,44 @@ mod tests {
         let send = UiElement { name: "Send".into(), role: "button".into(), rect: Rect::default(), enabled: true, focused: true };
         assert!(combo_risk(&k("enter"), None, Some(&send)).is_some());
         assert!(combo_risk(&k("ctrl+s"), None, None).is_none());
+    }
+
+    #[test]
+    fn keeps_fields_of_busy_pages() {
+        let el = |name: &str, role: &str, y: i32| UiElement {
+            name: name.into(),
+            role: role.into(),
+            rect: Rect { x: 10, y, w: 50, h: 20 },
+            enabled: true,
+            focused: false,
+        };
+        // 300 inbox rows above a compose box at the bottom of the page.
+        let mut all: Vec<UiElement> = (0..300).map(|i| el(&format!("Email {i}"), "list item", 100 + i)).collect();
+        all.push(el("To recipients", "combo box", 900));
+        all.push(el("Subject", "edit", 940));
+        all.push(el("Message Body", "edit", 980));
+        all.push(el("Send", "button", 1100));
+        let (shown, total) = select_elements(all.clone(), "", 50);
+        assert_eq!((shown.len(), total), (50, 304));
+        for n in ["To recipients", "Subject", "Message Body", "Send"] {
+            assert!(shown.iter().any(|e| e.name == n), "{n}");
+        }
+        assert!(shown.windows(2).all(|w| w[0].rect.y <= w[1].rect.y), "shown top to bottom");
+        let (found, total) = select_elements(all, "message", 50);
+        assert_eq!((found.len(), total), (1, 1));
+    }
+
+    #[test]
+    fn recognises_the_same_spot() {
+        let r = |x, y, w, h| Rect { x, y, w, h };
+        let el = |name: &str, rect| UiElement { name: name.into(), role: "edit".into(), rect, enabled: true, focused: false };
+        let body = el("Message Body", r(100, 100, 400, 200));
+        assert!(same_spot(&body, &el("Message Body", r(100, 100, 400, 200))));
+        assert!(same_spot(&body, &el("Hello Rahul,", r(110, 110, 100, 20))), "text inside the field");
+        assert!(same_spot(&body, &el("", r(90, 90, 420, 220))), "its container");
+        assert!(!same_spot(&body, &el("Discard draft?", r(0, 0, 2000, 1200))), "a dialog covering it");
+        assert!(!same_spot(&body, &el("Suggestion", r(450, 250, 300, 40))), "a popup over part of it");
+        assert!(!same_spot(&body, &el("Delete", r(100, 100, 400, 200))), "a different control in its place");
     }
 
     #[test]

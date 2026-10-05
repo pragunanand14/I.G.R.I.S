@@ -319,8 +319,19 @@ impl OpenAiCompatibleProvider {
             |resp| async move {
                 let status = resp.status();
                 let retry = http::retry_after(&resp);
-                let msg = resp.json::<Value>().await.ok().and_then(|v| error_message(&v));
-                let mut err = http::status_error(status, msg, retry, label);
+                let body = resp.json::<Value>().await.ok();
+                let msg = body.as_ref().and_then(error_message);
+                let retry = retry.or_else(|| body.as_ref().and_then(http::retry_hint));
+                let daily = msg.as_deref().is_some_and(|m| m.to_ascii_lowercase().contains("per day") || m.contains("PerDay"));
+                let mut err = http::status_error(status, msg, if daily { None } else { retry }, label);
+                if daily && status.as_u16() == 429 {
+                    // A daily quota won't clear by waiting a minute.
+                    err.kind = AiErrorKind::PermissionDenied; // not retryable, no fallbacks
+                    err.message = format!(
+                        "{label}'s daily free quota for this model is used up. It resets tomorrow; or set AI_MODEL to another model. ({})",
+                        err.message
+                    );
+                }
                 if label == "Gemini" && status.as_u16() == 404 {
                     err.message.push_str(
                         " Model names change over time — use one listed at https://aistudio.google.com (Models), e.g. the current Flash or Flash-Lite.",

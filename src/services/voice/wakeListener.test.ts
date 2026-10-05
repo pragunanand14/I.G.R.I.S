@@ -78,3 +78,15 @@ describe("parseOperatorCommand", () => {
     expect(parseOperatorCommand("open Chrome")).toBeNull();
   });
 });
+
+describe("speaking only the answer of step-by-step work", () => {
+  it("detects operator work and finds the final answer", async () => {
+    const { isStepwork, finalAnswer } = await import("@/hooks/useVoice");
+    const act = (tool: string, textOffset: number) => ({ id: tool, tool, textOffset }) as never;
+    expect(isStepwork([act("calculator", 0)])).toBe(false);
+    expect(isStepwork([act("operator_start", 0)])).toBe(true);
+    const text = "Opening Gmail now. Clicking compose. The email to Rahul is drafted.";
+    expect(finalAnswer(text, [act("operator_start", 19), act("computer_click", 37)])).toBe("The email to Rahul is drafted.");
+    expect(finalAnswer("Done.", [])).toBe("Done.");
+  });
+});

@@ -91,6 +91,8 @@ pub enum ToolErrorKind {
     NotFound,
     Failed,
     Timeout,
+    /// Deliberately not done (a safety check or a changed screen), not a malfunction.
+    Refused,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -109,6 +111,9 @@ impl ToolError {
     }
     pub fn failed(msg: impl Into<String>) -> Self {
         Self { kind: ToolErrorKind::Failed, message: msg.into() }
+    }
+    pub fn refused(msg: impl Into<String>) -> Self {
+        Self { kind: ToolErrorKind::Refused, message: msg.into() }
     }
 }
 

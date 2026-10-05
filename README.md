@@ -18,7 +18,8 @@ audited tools — there is no shell access.
 - **Memory** — remembers facts and preferences you ask it to, recalls relevant ones automatically; inspect, edit or
   delete everything on the Memory page. Refuses to store passwords, keys and ID numbers.
 - **Web** — searches (Anthropic's built-in search, Brave or Tavily) and reads pages, with source links.
-- **Voice** — push-to-talk (mic button or Ctrl+Shift+Space), spoken replies, talk over it to interrupt, and an
+- **Voice** — push-to-talk (mic button or Ctrl+Shift+Space), natural spoken replies (Groq Orpheus or Gemini voices,
+  or the system voice), talk over it to interrupt, and an
   optional always-on wake word ("IGRIS, open Spotify") with spoken yes/no approvals.
 - **Your computer** — works with files only in folders you share (read-only unless you allow changes; overwriting,
   moving and deleting always ask first), opens and closes apps you allow, opens links and documents, shows running

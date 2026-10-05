@@ -18,6 +18,16 @@ use crate::config::AppConfig;
 pub const MAX_AUDIO_BYTES: usize = 15 * 1024 * 1024;
 pub const MAX_TTS_CHARS: usize = 4096;
 const OPENAI_BASE: &str = "https://api.openai.com/v1";
+const GROQ_BASE: &str = "https://api.groq.com/openai/v1";
+const GEMINI_NATIVE_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
+/// Natural-sounding defaults per service.
+const GROQ_TTS_MODEL: &str = "canopylabs/orpheus-v1-english";
+const GROQ_TTS_VOICE: &str = "troy";
+const GROQ_STT_MODEL: &str = "whisper-large-v3-turbo";
+const GEMINI_TTS_MODEL: &str = "gemini-2.5-flash-preview-tts";
+const GEMINI_TTS_VOICE: &str = "Charon";
+/// Groq's Orpheus voices accept at most 200 characters per request.
+const ORPHEUS_MAX_CHARS: usize = 190;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpVoice {
@@ -65,6 +75,16 @@ fn http_backend(cfg: &AppConfig, provider: Option<&str>, kind: &str, default_mod
     let voice = cfg.tts_voice.clone().unwrap_or_else(|| "alloy".into());
     match provider {
         None | Some("browser") | Some("") => Backend::Browser,
+        Some("groq") => match &cfg.voice_api_key {
+            None => Backend::Misconfigured(format!("{kind}: set VOICE_API_KEY to your Groq API key.")),
+            Some(k) => Backend::Http(HttpVoice {
+                label: "groq",
+                base_url: cfg.voice_base_url.clone().filter(|u| u.contains("groq.com")).unwrap_or_else(|| GROQ_BASE.into()).trim_end_matches('/').into(),
+                api_key: Some(k.clone()),
+                model: model.cloned().unwrap_or_else(|| (if kind == "Speech output" { GROQ_TTS_MODEL } else { GROQ_STT_MODEL }).into()),
+                voice: cfg.tts_voice.clone().unwrap_or_else(|| GROQ_TTS_VOICE.into()),
+            }),
+        },
         Some("openai") => match key {
             None => Backend::Misconfigured(format!("{kind}: set VOICE_API_KEY (an OpenAI key) or use the browser voice.")),
             Some(k) => Backend::Http(HttpVoice {
@@ -85,7 +105,7 @@ fn http_backend(cfg: &AppConfig, provider: Option<&str>, kind: &str, default_mod
                 voice,
             }),
         },
-        Some(other) => Backend::Misconfigured(format!("{kind}: unknown provider '{other}'. Use browser, gemini, openai or local.")),
+        Some(other) => Backend::Misconfigured(format!("{kind}: unknown provider '{other}'. Use browser, groq, gemini, openai or local.")),
     }
 }
 
@@ -112,7 +132,26 @@ fn gemini_stt(cfg: &AppConfig) -> Backend {
 }
 
 pub fn tts_backend(cfg: &AppConfig) -> Backend {
+    if cfg.tts_provider.as_deref() == Some("gemini") {
+        return gemini_tts(cfg);
+    }
     http_backend(cfg, cfg.tts_provider.as_deref(), "Speech output", "tts-1", cfg.tts_model.as_ref())
+}
+
+/// Gemini's speech models (natural voices such as Charon, Kore, Puck). Uses the
+/// chat key when the chat provider is Gemini, otherwise VOICE_API_KEY.
+fn gemini_tts(cfg: &AppConfig) -> Backend {
+    let key = if cfg.ai_provider.as_deref() == Some("gemini") { cfg.ai_api_key.clone() } else { cfg.voice_api_key.clone() };
+    match key {
+        None => Backend::Misconfigured("Speech output: Gemini voices need a Gemini key (AI_PROVIDER=gemini, or VOICE_API_KEY).".into()),
+        Some(k) => Backend::Http(HttpVoice {
+            label: "gemini",
+            base_url: GEMINI_NATIVE_BASE.into(),
+            api_key: Some(k),
+            model: cfg.tts_model.clone().unwrap_or_else(|| GEMINI_TTS_MODEL.into()),
+            voice: cfg.tts_voice.clone().unwrap_or_else(|| GEMINI_TTS_VOICE.into()),
+        }),
+    }
 }
 
 pub fn voice_status(cfg: &AppConfig) -> VoiceStatus {
@@ -240,15 +279,35 @@ async fn transcribe_gemini(h: &HttpVoice, audio: Vec<u8>, mime: &str, language: 
     Ok(text.trim_matches('"').trim().to_string())
 }
 
-/// Synthesize speech; returns MP3 bytes.
+/// Synthesize speech; returns audio bytes (MP3 or WAV — the UI detects which).
 pub async fn synthesize(h: &HttpVoice, text: &str) -> Result<Vec<u8>, AiError> {
     let text = text.trim();
     if text.is_empty() {
         return Err(AiError::new(AiErrorKind::InvalidRequest, "Nothing to say."));
     }
     let text: String = text.chars().take(MAX_TTS_CHARS).collect();
+    if h.label == "gemini" {
+        return synthesize_gemini(h, &text).await;
+    }
+    if is_orpheus(h) {
+        // Short requests, joined into one WAV.
+        let mut parts = Vec::new();
+        for chunk in split_for_tts(&text, ORPHEUS_MAX_CHARS) {
+            parts.push(speech_request(h, &chunk, "wav").await?);
+        }
+        return concat_wavs(&parts).ok_or_else(|| AiError::new(AiErrorKind::Protocol, "The speech service returned audio IGRIS couldn't read."));
+    }
+    speech_request(h, &text, "mp3").await
+}
+
+/// Groq's Orpheus models: WAV only, 200 characters per request.
+fn is_orpheus(h: &HttpVoice) -> bool {
+    h.model.to_ascii_lowercase().contains("orpheus") || h.base_url.contains("groq.com")
+}
+
+async fn speech_request(h: &HttpVoice, text: &str, format: &str) -> Result<Vec<u8>, AiError> {
     let mut rb =
-        client()?.post(format!("{}/audio/speech", h.base_url)).json(&json!({ "model": h.model, "input": text, "voice": h.voice, "response_format": "mp3" }));
+        client()?.post(format!("{}/audio/speech", h.base_url)).json(&json!({ "model": h.model, "input": text, "voice": h.voice, "response_format": format }));
     if let Some(k) = &h.api_key {
         rb = rb.bearer_auth(k);
     }
@@ -257,6 +316,126 @@ pub async fn synthesize(h: &HttpVoice, text: &str) -> Result<Vec<u8>, AiError> {
         return Err(error_from(resp, "Speech output").await);
     }
     Ok(resp.bytes().await.map_err(http::map_reqwest_error)?.to_vec())
+}
+
+/// Gemini speech: `generateContent` with audio output (24 kHz 16-bit PCM), wrapped as WAV.
+async fn synthesize_gemini(h: &HttpVoice, text: &str) -> Result<Vec<u8>, AiError> {
+    use base64::Engine;
+    let body = json!({
+        "contents": [{ "parts": [{ "text": text }] }],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": h.voice } } }
+        }
+    });
+    let mut rb = client()?.post(format!("{}/models/{}:generateContent", h.base_url, h.model)).json(&body);
+    if let Some(k) = &h.api_key {
+        rb = rb.header("x-goog-api-key", k);
+    }
+    let resp = rb.send().await.map_err(http::map_reqwest_error)?;
+    if !resp.status().is_success() {
+        return Err(error_from(resp, "Speech output (Gemini)").await);
+    }
+    let v: Value = resp.json().await.map_err(|e| AiError::new(AiErrorKind::Protocol, format!("Bad speech response: {e}")))?;
+    let part = v["candidates"][0]["content"]["parts"].as_array().and_then(|p| p.iter().find(|p| p["inlineData"]["data"].is_string()));
+    let Some(part) = part else {
+        return Err(AiError::new(AiErrorKind::Protocol, "Gemini returned no audio for that text."));
+    };
+    let pcm = base64::engine::general_purpose::STANDARD
+        .decode(part["inlineData"]["data"].as_str().unwrap_or_default())
+        .map_err(|_| AiError::new(AiErrorKind::Protocol, "Gemini returned invalid audio data."))?;
+    let rate = part["inlineData"]["mimeType"]
+        .as_str()
+        .and_then(|m| m.split(';').find_map(|p| p.trim().strip_prefix("rate=")))
+        .and_then(|r| r.parse().ok())
+        .unwrap_or(24_000);
+    Ok(pcm_to_wav(&pcm, rate, 1, 16))
+}
+
+/// Split text into pieces of at most `max` characters, preferring sentence,
+/// then clause, then word boundaries.
+pub fn split_for_tts(text: &str, max: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text.trim().to_string();
+    while rest.chars().count() > max {
+        let head: String = rest.chars().take(max).collect();
+        let cut = [". ", "! ", "? ", "; ", ": ", ", ", " "]
+            .iter()
+            .find_map(|sep| head.rfind(sep).filter(|&i| i >= max / 3).map(|i| i + sep.trim_end().len()))
+            .unwrap_or(head.len());
+        out.push(head[..cut].trim().to_string());
+        rest = rest[cut..].trim().to_string();
+    }
+    if !rest.is_empty() {
+        out.push(rest);
+    }
+    out
+}
+
+pub fn pcm_to_wav(pcm: &[u8], rate: u32, channels: u16, bits: u16) -> Vec<u8> {
+    let block = channels * bits / 8;
+    let mut w = Vec::with_capacity(44 + pcm.len());
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    w.extend_from_slice(&channels.to_le_bytes());
+    w.extend_from_slice(&rate.to_le_bytes());
+    w.extend_from_slice(&(rate * block as u32).to_le_bytes());
+    w.extend_from_slice(&block.to_le_bytes());
+    w.extend_from_slice(&bits.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+    w.extend_from_slice(pcm);
+    w
+}
+
+/// (sample rate, channels, bits, PCM data) of a PCM WAV file. Tolerates the
+/// "unknown length" sizes streaming encoders write.
+fn parse_wav(b: &[u8]) -> Option<(u32, u16, u16, &[u8])> {
+    if b.len() < 12 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
+        return None;
+    }
+    let (mut pos, mut fmt) = (12usize, None);
+    while pos + 8 <= b.len() {
+        let id = &b[pos..pos + 4];
+        let size = u32::from_le_bytes(b[pos + 4..pos + 8].try_into().ok()?) as usize;
+        let start = pos + 8;
+        let end = start.saturating_add(size).min(b.len());
+        if id == b"fmt " && end - start >= 16 {
+            let f = &b[start..end];
+            fmt = Some((
+                u32::from_le_bytes(f[4..8].try_into().ok()?),
+                u16::from_le_bytes(f[2..4].try_into().ok()?),
+                u16::from_le_bytes(f[14..16].try_into().ok()?),
+            ));
+        } else if id == b"data" {
+            let (rate, ch, bits) = fmt?;
+            return Some((rate, ch, bits, &b[start..end]));
+        }
+        pos = start + size + (size & 1);
+    }
+    None
+}
+
+/// Join WAV files with the same format into one.
+pub fn concat_wavs(parts: &[Vec<u8>]) -> Option<Vec<u8>> {
+    if parts.len() == 1 {
+        return Some(parts[0].clone());
+    }
+    let mut format = None;
+    let mut pcm = Vec::new();
+    for p in parts {
+        let (rate, ch, bits, data) = parse_wav(p)?;
+        if format.is_some_and(|f| f != (rate, ch, bits)) {
+            return None;
+        }
+        format = Some((rate, ch, bits));
+        pcm.extend_from_slice(data);
+    }
+    let (rate, ch, bits) = format?;
+    Some(pcm_to_wav(&pcm, rate, ch, bits))
 }
 
 #[cfg(test)]
@@ -352,6 +531,62 @@ mod tests {
         let server = MockServer::start(vec![(401, "application/json", "{}".into())]).await;
         let e = transcribe(&http(server.url()), vec![1], "audio/webm", None).await.unwrap_err();
         assert!(e.message.contains("VOICE_API_KEY"));
+    }
+
+    #[test]
+    fn natural_voice_providers() {
+        match tts_backend(&cfg(&[("TTS_PROVIDER", "groq"), ("VOICE_API_KEY", "gsk")])) {
+            Backend::Http(h) => {
+                assert_eq!((h.label, h.base_url.as_str(), h.model.as_str(), h.voice.as_str()), ("groq", GROQ_BASE, GROQ_TTS_MODEL, GROQ_TTS_VOICE))
+            }
+            other => panic!("{other:?}"),
+        }
+        match stt_backend(&cfg(&[("STT_PROVIDER", "groq"), ("VOICE_API_KEY", "gsk")])) {
+            Backend::Http(h) => assert_eq!(h.model, GROQ_STT_MODEL),
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(tts_backend(&cfg(&[("TTS_PROVIDER", "groq")])), Backend::Misconfigured(_)));
+        // Gemini voices reuse the chat key even when VOICE_API_KEY is a Groq key.
+        match tts_backend(&cfg(&[("TTS_PROVIDER", "gemini"), ("AI_PROVIDER", "gemini"), ("AI_API_KEY", "g-key"), ("VOICE_API_KEY", "gsk")])) {
+            Backend::Http(h) => assert_eq!((h.label, h.api_key.as_deref(), h.voice.as_str()), ("gemini", Some("g-key"), GEMINI_TTS_VOICE)),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn splits_text_and_joins_audio() {
+        let text = "Your email to Professor Sharma is drafted and waiting in Gmail. I added a subject line, a short apology for the delay, and a promise to submit tomorrow morning. It is signed with your name, and nothing has been sent yet. Want me to send it?";
+        let parts = split_for_tts(text, ORPHEUS_MAX_CHARS);
+        assert!(parts.len() >= 2 && parts.iter().all(|p| p.chars().count() <= ORPHEUS_MAX_CHARS), "{parts:?}");
+        assert_eq!(parts.join(" "), text);
+        assert_eq!(split_for_tts("Short.", 190), vec!["Short."]);
+
+        let a = pcm_to_wav(&[1, 0, 2, 0], 24_000, 1, 16);
+        let mut b = pcm_to_wav(&[3, 0], 24_000, 1, 16);
+        b[40..44].copy_from_slice(&u32::MAX.to_le_bytes()); // streamed "unknown length"
+        let joined = concat_wavs(&[a, b]).unwrap();
+        assert_eq!(parse_wav(&joined).unwrap(), (24_000, 1, 16, &[1u8, 0, 2, 0, 3, 0][..]));
+        assert!(concat_wavs(&[pcm_to_wav(&[0, 0], 24_000, 1, 16), pcm_to_wav(&[0, 0], 16_000, 1, 16)]).is_none(), "mixed formats");
+        assert!(concat_wavs(&[b"not audio".to_vec(), b"x".to_vec()]).is_none());
+    }
+
+    #[tokio::test]
+    async fn gemini_voice_returns_wav() {
+        use base64::Engine;
+        let pcm = base64::engine::general_purpose::STANDARD.encode([5u8, 0, 6, 0]);
+        let server = MockServer::start(vec![(
+            200,
+            "application/json",
+            serde_json::json!({ "candidates": [{ "content": { "parts": [{ "inlineData": { "mimeType": "audio/L16;codec=pcm;rate=24000", "data": pcm } }] } }] }).to_string(),
+        )])
+        .await;
+        let h = HttpVoice { label: "gemini", base_url: server.url(), api_key: Some("k".into()), model: GEMINI_TTS_MODEL.into(), voice: "Kore".into() };
+        let wav = synthesize(&h, "Hello there.").await.unwrap();
+        assert_eq!(parse_wav(&wav).unwrap(), (24_000, 1, 16, &[5u8, 0, 6, 0][..]));
+        let req = &server.requests().await[0];
+        assert!(req.head.contains(":generateContent"), "{}", req.head);
+        assert_eq!(req.header("x-goog-api-key").as_deref(), Some("k"));
+        assert!(req.body.contains("\"voiceName\":\"Kore\"") && req.body.contains("AUDIO"));
     }
 
     #[tokio::test]

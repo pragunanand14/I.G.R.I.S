@@ -11,7 +11,9 @@ export type OperatorTaskState =
   | "verifying"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /** Handed back without a verified result (the user has to act, or no final report). */
+  | "ended";
 
 export interface OperatorDisplay {
   id: number;
