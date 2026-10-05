@@ -150,11 +150,33 @@ async fn error_from(resp: reqwest::Response, label: &str) -> AiError {
     e
 }
 
-const GEMINI_TRANSCRIBE_PROMPT: &str = "Transcribe this audio exactly as spoken, in the language spoken. Reply with only the \
-transcription — no quotes, labels or commentary. If there is no speech, reply with nothing.";
+/// Context makes short commands far more accurate, and the explicit "nothing"
+/// rule stops the model inventing text for silence or noise.
+fn gemini_transcribe_prompt(language: Option<&str>) -> String {
+    let lang = match language {
+        Some(l) => format!("The speaker is speaking language code \"{l}\"; write it in that language and never translate."),
+        None => "Write it in the language spoken; never translate.".to_string(),
+    };
+    format!(
+        "You are a speech-to-text engine. The audio is someone talking to their desktop assistant (IGRIS): usually a short \
+command or question, e.g. about reminders, apps, files or their computer. Transcribe exactly the words spoken. {lang} \
+Keep names, numbers and technical terms as spoken. Do not answer, summarise, fix grammar or add anything. Reply with \
+only the transcription — no quotes or labels. If the audio has no clear speech (silence, noise, music), reply with \
+nothing at all."
+    )
+}
+
+/// Gemini 3 thinks by default, which only slows transcription down.
+fn gemini_reasoning_effort(model: &str) -> &'static str {
+    if model.contains("2.5") {
+        "none"
+    } else {
+        "low"
+    }
+}
 
 /// Transcribe recorded audio. Returns the recognised text (may be empty).
-pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<String, AiError> {
+pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str, language: Option<&str>) -> Result<String, AiError> {
     if audio.is_empty() {
         return Err(AiError::new(AiErrorKind::InvalidRequest, "No audio was recorded."));
     }
@@ -162,14 +184,19 @@ pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<Str
         return Err(AiError::new(AiErrorKind::InvalidRequest, "The recording is too long."));
     }
     if h.label == "gemini" {
-        return transcribe_gemini(h, audio, mime).await;
+        return transcribe_gemini(h, audio, mime, language).await;
     }
     let mime_clean = mime.split(';').next().unwrap_or("audio/webm").trim().to_string();
     let part = multipart::Part::bytes(audio)
         .file_name(format!("speech.{}", extension_for(mime)))
         .mime_str(&mime_clean)
         .map_err(|e| AiError::new(AiErrorKind::InvalidRequest, e.to_string()))?;
-    let form = multipart::Form::new().text("model", h.model.clone()).text("response_format", "json").part("file", part);
+    let mut form = multipart::Form::new().text("model", h.model.clone()).text("response_format", "json").text("temperature", "0");
+    if let Some(l) = language {
+        // Whisper takes ISO 639-1 ("en"); drop any region ("en-in" → "en").
+        form = form.text("language", l.split(['-', '_']).next().unwrap_or(l).to_string());
+    }
+    let form = form.part("file", part);
     let mut rb = client()?.post(format!("{}/audio/transcriptions", h.base_url)).multipart(form);
     if let Some(k) = &h.api_key {
         rb = rb.bearer_auth(k);
@@ -184,7 +211,7 @@ pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<Str
 
 /// Gemini accepts audio as `input_audio` on its OpenAI-compatible chat endpoint
 /// (WAV or MP3; the UI converts recordings to WAV for this backend).
-async fn transcribe_gemini(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<String, AiError> {
+async fn transcribe_gemini(h: &HttpVoice, audio: Vec<u8>, mime: &str, language: Option<&str>) -> Result<String, AiError> {
     use base64::Engine;
     let format = match extension_for(mime) {
         "mp3" => "mp3",
@@ -194,8 +221,9 @@ async fn transcribe_gemini(h: &HttpVoice, audio: Vec<u8>, mime: &str) -> Result<
     let body = json!({
         "model": h.model,
         "temperature": 0,
+        "reasoning_effort": gemini_reasoning_effort(&h.model),
         "messages": [{ "role": "user", "content": [
-            { "type": "text", "text": GEMINI_TRANSCRIBE_PROMPT },
+            { "type": "text", "text": gemini_transcribe_prompt(language) },
             { "type": "input_audio", "input_audio": { "data": base64::engine::general_purpose::STANDARD.encode(&audio), "format": format } }
         ]}]
     });
@@ -290,18 +318,21 @@ mod tests {
         let reply = json!({"choices":[{"message":{"role":"assistant","content":"\"remind me to stretch\"\n"}}]}).to_string();
         let server = MockServer::start(vec![(200, "application/json", reply)]).await;
         let h = HttpVoice { label: "gemini", base_url: server.url(), api_key: Some("AIza".into()), model: "gemini-x".into(), voice: String::new() };
-        let text = transcribe(&h, b"RIFF....WAVE".to_vec(), "audio/wav").await.unwrap();
+        let text = transcribe(&h, b"RIFF....WAVE".to_vec(), "audio/wav", Some("en")).await.unwrap();
         assert_eq!(text, "remind me to stretch");
         let req = server.requests().await[0].json();
         assert_eq!(req["model"], "gemini-x");
         assert_eq!(req["messages"][0]["content"][1]["input_audio"]["format"], "wav");
-        assert!(transcribe(&h, b"x".to_vec(), "audio/webm").await.unwrap_err().message.contains("WAV or MP3"));
+        assert_eq!(req["reasoning_effort"], "low");
+        assert!(req["messages"][0]["content"][0]["text"].as_str().unwrap().contains("\"en\""));
+        assert_eq!(gemini_reasoning_effort("gemini-2.5-flash"), "none");
+        assert!(transcribe(&h, b"x".to_vec(), "audio/webm", None).await.unwrap_err().message.contains("WAV or MP3"));
     }
 
     #[tokio::test]
     async fn transcribes_via_multipart() {
         let server = MockServer::start(vec![(200, "application/json", json!({"text":"  Open VS Code.  "}).to_string())]).await;
-        let text = transcribe(&http(server.url()), b"fake-webm-bytes".to_vec(), "audio/webm;codecs=opus").await.unwrap();
+        let text = transcribe(&http(server.url()), b"fake-webm-bytes".to_vec(), "audio/webm;codecs=opus", Some("en-in")).await.unwrap();
         assert_eq!(text, "Open VS Code.");
         let req = &server.requests().await[0];
         assert!(req.head.starts_with("POST /audio/transcriptions"));
@@ -310,15 +341,16 @@ mod tests {
         assert!(req.body.contains("name=\"model\"") && req.body.contains("whisper-1"));
         assert!(req.body.contains("filename=\"speech.webm\""));
         assert!(req.body.contains("fake-webm-bytes"));
+        assert!(req.body.contains("name=\"language\"\r\n\r\nen\r\n"), "region stripped for Whisper");
     }
 
     #[tokio::test]
     async fn rejects_empty_or_huge_audio_and_reports_bad_keys() {
         let h = http("http://127.0.0.1:9".into());
-        assert!(transcribe(&h, vec![], "audio/webm").await.is_err());
-        assert!(transcribe(&h, vec![0; MAX_AUDIO_BYTES + 1], "audio/webm").await.is_err());
+        assert!(transcribe(&h, vec![], "audio/webm", None).await.is_err());
+        assert!(transcribe(&h, vec![0; MAX_AUDIO_BYTES + 1], "audio/webm", None).await.is_err());
         let server = MockServer::start(vec![(401, "application/json", "{}".into())]).await;
-        let e = transcribe(&http(server.url()), vec![1], "audio/webm").await.unwrap_err();
+        let e = transcribe(&http(server.url()), vec![1], "audio/webm", None).await.unwrap_err();
         assert!(e.message.contains("VOICE_API_KEY"));
     }
 

@@ -17,7 +17,8 @@ pub fn get_voice_status(state: State<'_, AppState>) -> AppResult<VoiceStatus> {
 /// Transcribe base64-encoded audio with the configured speech-to-text service.
 #[tauri::command]
 pub async fn transcribe_audio(state: State<'_, AppState>, audio_base64: String, mime_type: String) -> AppResult<String> {
-    let backend = voice::stt_backend(&config(&state)?);
+    let cfg = config(&state)?;
+    let backend = voice::stt_backend(&cfg);
     let h = match backend {
         Backend::Http(h) => h,
         Backend::Browser => return Err(AppError::validation("Speech recognition is set to the browser; nothing to send.")),
@@ -28,7 +29,7 @@ pub async fn transcribe_audio(state: State<'_, AppState>, audio_base64: String, 
     }
     let audio = base64::engine::general_purpose::STANDARD.decode(audio_base64.as_bytes()).map_err(|_| AppError::validation("Invalid audio data."))?;
     let started = std::time::Instant::now();
-    let text = voice::transcribe(&h, audio, &mime_type).await.map_err(|e| AppError::AiUnavailable(e.message))?;
+    let text = voice::transcribe(&h, audio, &mime_type, cfg.stt_language.as_deref()).await.map_err(|e| AppError::AiUnavailable(e.message))?;
     tracing::info!(event = "VOICE_TRANSCRIBED", backend = h.label, chars = text.chars().count(), ms = started.elapsed().as_millis() as u64);
     Ok(text)
 }
