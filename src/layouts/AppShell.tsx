@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Outlet } from "react-router";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TitleBar } from "@/components/layout/TitleBar";
+import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
 import { useTelemetryPolling } from "@/hooks/useTelemetryPolling";
 import { useThemeEffect } from "@/hooks/useThemeEffect";
 import { useVoice } from "@/hooks/useVoice";
@@ -39,6 +40,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <ReminderAlerts enabled={backend === "ready"} />
     </div>
   );
 }

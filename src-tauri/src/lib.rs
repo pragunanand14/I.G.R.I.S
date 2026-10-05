@@ -14,6 +14,7 @@ pub mod error;
 pub mod files;
 pub mod logging;
 pub mod memory;
+pub mod productivity;
 pub mod projects;
 pub mod settings;
 pub mod state;
@@ -36,6 +37,10 @@ use crate::tools::memory::{ForgetMemoryTool, RememberTool, SearchMemoryTool, Upd
 use crate::tools::system_info::SystemInfoTool;
 use crate::tools::files::{CreateFileTool, CreateFolderTool, ListDirectoryTool, MovePathTool, OpenPathTool, ReadFileTool, SearchFilesTool, TrashPathTool, WriteFileTool};
 use crate::tools::processes::{CloseApplicationTool, ListProcessesTool, OpenUrlTool};
+use crate::tools::productivity::{
+    AddEventTool, AddTaskTool, CancelReminderTool, DateTimeTool, DeleteEventTool, DeleteTaskTool, ListEventsTool, ListRemindersTool, ListTasksTool,
+    SetReminderTool, StartTimerTool, UpdateTaskTool,
+};
 use crate::tools::projects::{ListProjectsTool, ProjectContextTool};
 use crate::tools::web::{FetchUrlTool, WebSearchTool};
 use crate::tools::ToolRegistry;
@@ -48,6 +53,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let resolver = app.path();
             let data_dir = resolver.app_data_dir()?;
@@ -107,7 +113,21 @@ pub fn run() {
             tools.register(Arc::new(OpenUrlTool::new(Arc::new(|u: &str| tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())))));
             tools.register(Arc::new(ListProjectsTool::new(db.clone())));
             tools.register(Arc::new(ProjectContextTool::new(db.clone())));
+            tools.register(Arc::new(DateTimeTool::default()));
+            tools.register(Arc::new(AddTaskTool::new(db.clone())));
+            tools.register(Arc::new(ListTasksTool::new(db.clone())));
+            tools.register(Arc::new(UpdateTaskTool::new(db.clone())));
+            tools.register(Arc::new(DeleteTaskTool::new(db.clone())));
+            tools.register(Arc::new(SetReminderTool::new(db.clone())));
+            tools.register(Arc::new(StartTimerTool::new(db.clone())));
+            tools.register(Arc::new(ListRemindersTool::new(db.clone())));
+            tools.register(Arc::new(CancelReminderTool::new(db.clone())));
+            tools.register(Arc::new(AddEventTool::new(db.clone())));
+            tools.register(Arc::new(ListEventsTool::new(db.clone())));
+            tools.register(Arc::new(DeleteEventTool::new(db.clone())));
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
+
+            productivity::spawn_scheduler(db.clone(), reminder_notifier(app.handle().clone()));
 
             app.manage(AppState {
                 config,
@@ -166,9 +186,47 @@ pub fn run() {
             commands::workspace::update_project,
             commands::workspace::remove_project,
             commands::workspace::detect_project,
+            commands::productivity::list_tasks,
+            commands::productivity::add_task,
+            commands::productivity::update_task,
+            commands::productivity::set_task_done,
+            commands::productivity::delete_task,
+            commands::productivity::clear_done_tasks,
+            commands::productivity::parse_time,
+            commands::productivity::list_reminders,
+            commands::productivity::reminder_history,
+            commands::productivity::add_reminder,
+            commands::productivity::start_timer,
+            commands::productivity::cancel_reminder,
+            commands::productivity::dismiss_reminder,
+            commands::productivity::snooze_reminder,
+            commands::productivity::clear_reminder_history,
+            commands::productivity::list_events,
+            commands::productivity::add_event,
+            commands::productivity::update_event,
+            commands::productivity::delete_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");
+}
+
+/// A fired reminder becomes an OS notification plus a `reminder-fired` event
+/// for the in-app alert. Notification failures (e.g. no notification daemon)
+/// are logged; the in-app alert still shows.
+fn reminder_notifier(app: tauri::AppHandle) -> productivity::OnFire {
+    use tauri_plugin_notification::NotificationExt;
+    Arc::new(move |f: &productivity::FiredReminder| {
+        let heading = match (f.reminder.kind.as_str(), f.late) {
+            ("timer", _) => "Timer finished".to_string(),
+            (_, true) => "Missed reminder".to_string(),
+            _ => "Reminder".to_string(),
+        };
+        let body = if f.late { format!("{} (was due while IGRIS was closed)", f.reminder.title) } else { f.reminder.title.clone() };
+        if let Err(e) = app.notification().builder().title(format!("IGRIS · {heading}")).body(body).show() {
+            tracing::warn!(event = "NOTIFICATION_FAILED", error = %e);
+        }
+        let _ = app.emit("reminder-fired", f);
+    })
 }
 
 /// Global push-to-talk hotkey. Failing to register (e.g. another app owns the

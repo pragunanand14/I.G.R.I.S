@@ -33,9 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/tasks",
     label: "Tasks",
     icon: CheckSquare,
-    plannedPhase: 8,
-    summary: "Tasks, reminders and notifications.",
-    planned: ["Natural-language reminders", "Native notifications", "Calendar integration"],
+    summary: "Tasks, reminders, timers and a local calendar.",
   },
   {
     path: "/memory",

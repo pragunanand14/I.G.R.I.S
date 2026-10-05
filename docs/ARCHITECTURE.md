@@ -223,10 +223,35 @@ tool call (path) ─▶ files::guard(allowed_folders, path, Read|Write)
 * **Not provided**: arbitrary shell commands, killing processes forcibly, permanent deletion, access outside shared
   folders.
 
+## Productivity (Phase 8)
+
+```
+"remind me tomorrow at 5pm"  ─▶ set_reminder(text, when) ─▶ productivity::time::parse_when ─▶ reminders (SQLite)
+                                                                (backend clock, local TZ)          │
+scheduler (1 s tick, spawn_blocking) ─▶ take_due: UPDATE … SET status='fired' … RETURNING ──────────┘
+        └─▶ OS notification (tauri-plugin-notification) + `reminder-fired` event ─▶ in-app alert (snooze / done)
+```
+
+* **Time parsing** (`productivity/time.rs`): the conversation's system prompt is frozen with only the date, so the
+  model passes the user's phrasing ("in 20 minutes", "tomorrow at 5pm", "friday 9:30am", "20 october 6pm", ISO) and
+  the backend resolves it against the real clock. Results always echo the resolved time; past times and unreadable
+  phrases are errors with examples. `get_datetime` gives the model the exact current time.
+* **Storage**: UTC `YYYY-MM-DDTHH:MM:SSZ` strings (ordered as text). Tables `tasks`, `reminders` (reminders and
+  timers; `pending → fired → dismissed`, `cancelled`, snooze returns to `pending`) and `events`.
+* **Scheduler** (`productivity/mod.rs`): fires each due item exactly once (atomic `UPDATE … RETURNING`). Items that
+  came due while IGRIS was closed fire on the next start and are labelled *missed*. Reminders only fire while IGRIS is
+  running.
+* **Tools** (all local data): `get_datetime`, `list_tasks`, `list_reminders`, `list_events` (SAFE); `add_task`,
+  `update_task`, `delete_task`, `set_reminder`, `start_timer`, `cancel_reminder`, `add_event`, `delete_event` (LOW).
+* **UI**: Tasks page (tasks with natural-language due dates and live preview, reminders and timers with countdowns,
+  a two-week calendar agenda) and a global alert stack with a synthesized chime.
+* **Not provided**: calendar sync with Google/Outlook (needs OAuth app registration — TODO), recurring reminders,
+  notifications for events or task due dates (set a reminder instead).
+
 ## Planned architecture (later phases)
 
 * **Orchestrator** — intent analysis, memory retrieval and planning slot into `core/` ahead of the tool loop.
-* **Productivity** (Phase 8) — tasks, reminders, timers and notifications; **multimodal** (Phase 9) — image/PDF
-  input and screenshots; **hardening** (Phase 10) — security review, CI and the Windows installer.
+* **Multimodal** (Phase 9) — image/PDF input and screenshots; **hardening** (Phase 10) — security review, CI and the
+  Windows installer.
 * **Untrusted content** — web pages, files, and tool output are data, never instructions, and are fenced as such
   in model context.

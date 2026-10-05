@@ -152,6 +152,52 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 6,
+        name: "productivity",
+        sql: r#"
+            -- Times are UTC 'YYYY-MM-DDTHH:MM:SSZ' so they compare as strings.
+            CREATE TABLE tasks (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                title        TEXT NOT NULL,
+                notes        TEXT NOT NULL DEFAULT '',
+                due_at       TEXT,
+                priority     TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high')),
+                done         INTEGER NOT NULL DEFAULT 0,
+                completed_at TEXT,
+                created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            CREATE INDEX tasks_open_due ON tasks (done, due_at);
+
+            -- Reminders and timers; the scheduler fires pending rows whose due_at has passed.
+            CREATE TABLE reminders (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                title         TEXT NOT NULL,
+                kind          TEXT NOT NULL CHECK (kind IN ('reminder', 'timer')),
+                due_at        TEXT NOT NULL,
+                duration_secs INTEGER,
+                status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'fired', 'dismissed', 'cancelled')),
+                fired_at      TEXT,
+                created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            CREATE INDEX reminders_status_due ON reminders (status, due_at);
+
+            -- Local calendar (no external sync).
+            CREATE TABLE events (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                title      TEXT NOT NULL,
+                starts_at  TEXT NOT NULL,
+                ends_at    TEXT,
+                all_day    INTEGER NOT NULL DEFAULT 0,
+                location   TEXT NOT NULL DEFAULT '',
+                notes      TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            CREATE INDEX events_starts ON events (starts_at);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

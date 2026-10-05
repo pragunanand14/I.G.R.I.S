@@ -13,6 +13,7 @@ pub mod executor;
 pub mod files;
 pub mod memory;
 pub mod processes;
+pub mod productivity;
 pub mod projects;
 pub mod schema;
 pub mod web;

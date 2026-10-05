@@ -10,10 +10,12 @@ import { ProjectsPage } from "@/pages/ProjectsPage";
 import { SecurityPage } from "@/pages/SecurityPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SystemPage } from "@/pages/SystemPage";
+import { TasksPage } from "@/pages/TasksPage";
 import { ToolsPage } from "@/pages/ToolsPage";
 
 const IMPLEMENTED: Record<string, React.ReactNode> = {
   "/chat": <ChatPage />,
+  "/tasks": <TasksPage />,
   "/memory": <MemoryPage />,
   "/system": <SystemPage />,
   "/tools": <ToolsPage />,

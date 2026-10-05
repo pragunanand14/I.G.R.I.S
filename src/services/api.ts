@@ -2,6 +2,7 @@ import type { AiStatus } from "@/types/ai";
 import type { AppInfo, PublicConfig, ReloadResult } from "@/types/app";
 import type { Conversation, ConversationDetail } from "@/types/chat";
 import type { Memory, MemoryKind } from "@/types/memory";
+import type { CalendarEvent, EventInput, ParsedTime, Reminder, Task, TaskInput } from "@/types/productivity";
 import type { VoiceStatus } from "@/types/voice";
 import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, ProjectInput } from "@/types/workspace";
 import type { Settings, SettingsPatch } from "@/types/settings";
@@ -49,4 +50,23 @@ export const api = {
   updateProject: (id: number, project: ProjectInput) => call<Project>("update_project", { id, project }),
   removeProject: (id: number) => call<void>("remove_project", { id }),
   detectProject: (path: string) => call<DetectedProject>("detect_project", { path }),
+  listTasks: (filter: "open" | "done" | "all") => call<Task[]>("list_tasks", { filter }),
+  addTask: (task: TaskInput) => call<Task>("add_task", { task }),
+  updateTask: (id: number, task: TaskInput) => call<Task>("update_task", { id, task }),
+  setTaskDone: (id: number, done: boolean) => call<Task>("set_task_done", { id, done }),
+  deleteTask: (id: number) => call<void>("delete_task", { id }),
+  clearDoneTasks: () => call<number>("clear_done_tasks"),
+  parseTime: (text: string) => call<ParsedTime>("parse_time", { text }),
+  listReminders: () => call<Reminder[]>("list_reminders"),
+  reminderHistory: () => call<Reminder[]>("reminder_history"),
+  addReminder: (title: string, when: string) => call<Reminder>("add_reminder", { title, when }),
+  startTimer: (label: string, duration: string) => call<Reminder>("start_timer", { label, duration }),
+  cancelReminder: (id: number) => call<Reminder>("cancel_reminder", { id }),
+  dismissReminder: (id: number) => call<Reminder>("dismiss_reminder", { id }),
+  snoozeReminder: (id: number, minutes: number) => call<Reminder>("snooze_reminder", { id, minutes }),
+  clearReminderHistory: () => call<number>("clear_reminder_history"),
+  listEvents: (from: string, to: string) => call<CalendarEvent[]>("list_events", { from, to }),
+  addEvent: (event: EventInput) => call<CalendarEvent>("add_event", { event }),
+  updateEvent: (id: number, event: EventInput) => call<CalendarEvent>("update_event", { id, event }),
+  deleteEvent: (id: number) => call<void>("delete_event", { id }),
 };
