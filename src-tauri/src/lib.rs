@@ -37,21 +37,6 @@ use crate::config::AppConfig;
 use crate::db::Database;
 use crate::state::{AppPaths, AppState, Generations, PendingApprovals};
 use crate::system::{ConnectivityMonitor, SystemMonitor};
-use crate::tools::apps::{LaunchApplicationTool, ListApplicationsTool};
-use crate::tools::calculator::CalculatorTool;
-use crate::tools::files::{
-    CopyPathTool, CreateFileTool, CreateFolderTool, ListDirectoryTool, MovePathTool, OpenPathTool, ReadFileTool, SearchFilesTool, TrashPathTool, WriteFileTool,
-};
-use crate::tools::memory::{ForgetMemoryTool, RememberTool, SearchMemoryTool, UpdateMemoryTool};
-use crate::tools::processes::{CloseApplicationTool, ListProcessesTool, OpenUrlTool};
-use crate::tools::productivity::{
-    AddEventTool, AddTaskTool, CancelReminderTool, DateTimeTool, DeleteEventTool, DeleteTaskTool, ListEventsTool, ListRemindersTool, ListTasksTool,
-    SetReminderTool, StartTimerTool, UpdateTaskTool,
-};
-use crate::tools::projects::{ListProjectsTool, ProjectContextTool};
-use crate::tools::system_info::SystemInfoTool;
-use crate::tools::web::{FetchUrlTool, WebSearchTool};
-use crate::tools::ToolRegistry;
 
 const CONNECTIVITY_INTERVAL: Duration = Duration::from_secs(15);
 
@@ -98,75 +83,8 @@ pub fn run() {
             let system = Arc::new(Mutex::new(SystemMonitor::new()));
             let connectivity = ConnectivityMonitor::start(CONNECTIVITY_INTERVAL);
             let config = Arc::new(RwLock::new(config));
-            let mut tools = ToolRegistry::default();
-            tools.register(Arc::new(WebSearchTool::new(config.clone())));
-            tools.register(Arc::new(FetchUrlTool::default()));
-            tools.register(Arc::new(CalculatorTool::default()));
-            tools.register(Arc::new(SystemInfoTool::new(system.clone(), connectivity.clone())));
-            tools.register(Arc::new(ListApplicationsTool::new(db.clone())));
-            tools.register(Arc::new(LaunchApplicationTool::new(db.clone())));
-            tools.register(Arc::new(RememberTool::new(db.clone())));
-            tools.register(Arc::new(SearchMemoryTool::new(db.clone())));
-            tools.register(Arc::new(UpdateMemoryTool::new(db.clone())));
-            tools.register(Arc::new(ForgetMemoryTool::new(db.clone())));
-            tools.register(Arc::new(ListDirectoryTool::new(db.clone())));
-            tools.register(Arc::new(SearchFilesTool::new(db.clone())));
-            tools.register(Arc::new(ReadFileTool::new(db.clone())));
-            tools.register(Arc::new(CreateFileTool::new(db.clone())));
-            tools.register(Arc::new(CreateFolderTool::new(db.clone())));
-            tools.register(Arc::new(WriteFileTool::new(db.clone())));
-            tools.register(Arc::new(MovePathTool::new(db.clone())));
-            tools.register(Arc::new(CopyPathTool::new(db.clone())));
-            tools.register(Arc::new(TrashPathTool::new(db.clone())));
-            tools.register(Arc::new(OpenPathTool::new(
-                db.clone(),
-                Arc::new(|p: &std::path::Path| tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())),
-            )));
-            tools.register(Arc::new(ListProcessesTool::default()));
-            tools.register(Arc::new(CloseApplicationTool::new(db.clone())));
-            tools.register(Arc::new(OpenUrlTool::new(Arc::new(|u: &str| tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())))));
-            tools.register(Arc::new(ListProjectsTool::new(db.clone())));
-            tools.register(Arc::new(ProjectContextTool::new(db.clone())));
-            tools.register(Arc::new(DateTimeTool::default()));
-            tools.register(Arc::new(AddTaskTool::new(db.clone())));
-            tools.register(Arc::new(ListTasksTool::new(db.clone())));
-            tools.register(Arc::new(UpdateTaskTool::new(db.clone())));
-            tools.register(Arc::new(DeleteTaskTool::new(db.clone())));
-            tools.register(Arc::new(SetReminderTool::new(db.clone())));
-            tools.register(Arc::new(StartTimerTool::new(db.clone())));
-            tools.register(Arc::new(ListRemindersTool::new(db.clone())));
-            tools.register(Arc::new(CancelReminderTool::new(db.clone())));
-            tools.register(Arc::new(AddEventTool::new(db.clone())));
-            tools.register(Arc::new(ListEventsTool::new(db.clone())));
-            tools.register(Arc::new(DeleteEventTool::new(db.clone())));
-            tools.register(Arc::new(crate::tools::screen::ScreenshotTool::new(db.clone(), attachments.clone())));
-
             // Operator mode: IGRIS operating the computer (see operator/ and tools/computer.rs).
             let operator = Arc::new(operator::Operator::new(db.clone(), computer::native()));
-            {
-                use crate::tools::computer::*;
-                tools.register(Arc::new(OperatorStartTool::new(operator.clone())));
-                tools.register(Arc::new(OperatorUpdateTool::new(operator.clone())));
-                tools.register(Arc::new(OperatorFinishTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerObserveTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerClickTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerTypeTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerKeyTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerScrollTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerDragTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerFocusWindowTool::new(operator.clone())));
-                tools.register(Arc::new(ComputerConfirmedActionTool::new(operator.clone())));
-                // IGRIS's own Chrome/Edge, driven through the DevTools protocol (operator mode).
-                use crate::tools::browser::*;
-                let b = BrowserTools::new(crate::computer::browser::Browser::new(data_dir.join("browser-profile")), operator.clone());
-                tools.register(Arc::new(BrowserOpenTool::new(b.clone())));
-                tools.register(Arc::new(BrowserSnapshotTool::new(b.clone())));
-                tools.register(Arc::new(BrowserClickTool::new(b.clone())));
-                tools.register(Arc::new(BrowserTypeTool::new(b.clone())));
-                tools.register(Arc::new(BrowserConfirmedClickTool::new(b)));
-            }
-            tools.register(Arc::new(crate::tools::terminal::RunCommandTool::new(db.clone(), Some(operator.clone()))));
-
             // The task orchestrator: actionable requests become tasks (see orchestrator/).
             let orchestrator = orchestrator::Orchestrator::new(db.clone(), Some(operator.clone()));
             match orchestrator.recover() {
@@ -180,8 +98,18 @@ pub fn run() {
                     let _ = app.emit("task-update", u);
                 }));
             }
-            tools.register(Arc::new(crate::tools::task::TaskPlanTool::new(orchestrator.clone())));
-            tools.register(Arc::new(crate::tools::task::RequestToolsTool::default()));
+            let tools = crate::tools::standard::registry(crate::tools::standard::Deps {
+                db: db.clone(),
+                config: config.clone(),
+                system: system.clone(),
+                connectivity: connectivity.clone(),
+                attachments: attachments.clone(),
+                operator: operator.clone(),
+                orchestrator: orchestrator.clone(),
+                browser_profile: data_dir.join("browser-profile"),
+                open_path: Arc::new(|p: &std::path::Path| tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())),
+                open_url: Arc::new(|u: &str| tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())),
+            });
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
             let stop_hotkey = settings::load(&*db.conn()?).map(|s| s.operator_stop_hotkey).unwrap_or_else(|_| settings::DEFAULT_STOP_HOTKEY.into());
             app.manage(overlay::Overlay::install(app.handle(), operator.clone(), &stop_hotkey));

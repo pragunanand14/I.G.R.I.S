@@ -217,10 +217,17 @@ impl TaskSession {
                 {
                     self.hub.update(&self.id, Some(TaskEvent::ApprovalRequested { tool: a.tool.clone() }), |_| {});
                 }
+                // The overlay must not say "executing" while IGRIS waits for the user.
+                if let Some(op) = self.hub.operator().filter(|o| o.covers(Some(&self.conversation_id))) {
+                    op.set_status("Waiting for your OK", crate::operator::Phase::Waiting);
+                }
             }
             ActivityStatus::Running => {
                 if self.state() == TaskState::WaitingForApproval {
                     let _ = self.hub.transition(&self.id, TaskState::Executing, |t| t.activity = Some(a.description.clone()));
+                    if let Some(op) = self.hub.operator().filter(|o| o.covers(Some(&self.conversation_id))) {
+                        op.set_status(&a.title, crate::operator::Phase::Executing);
+                    }
                 }
                 self.hub.update(&self.id, Some(TaskEvent::ToolStarted { tool: a.tool.clone() }), |t| t.activity = Some(a.description.clone()));
             }

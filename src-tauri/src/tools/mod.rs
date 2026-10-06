@@ -19,6 +19,7 @@ pub mod productivity;
 pub mod projects;
 pub mod schema;
 pub mod screen;
+pub mod standard;
 pub mod system_info;
 pub mod task;
 pub mod terminal;

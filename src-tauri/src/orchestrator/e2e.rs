@@ -647,3 +647,42 @@ async fn questions_get_a_focused_tool_list_and_the_model_can_ask_for_more() {
     assert!(tool_names(&reqs[1].json()).contains(&"add_task".to_string()), "added after request_tools");
     assert_eq!(add.calls(), 1);
 }
+
+/// While a consequential computer action waits for the user, the overlay says so.
+#[tokio::test]
+async fn the_overlay_shows_waiting_while_an_operator_action_awaits_approval() {
+    use crate::computer::fake::{element, window, FakeDriver};
+    struct Watch(Arc<crate::operator::Operator>, Mutex<Vec<(crate::operator::Phase, String)>>);
+    #[async_trait::async_trait]
+    impl Approver for Watch {
+        async fn request(&self, _a: &ToolActivity, _c: &CancellationToken) -> Approval {
+            if let Some(t) = self.0.snapshot().task {
+                self.1.lock().unwrap().push((t.phase, t.status));
+            }
+            Approval::Approved
+        }
+    }
+    let db = Arc::new(Database::open_in_memory().unwrap());
+    let driver = Arc::new(FakeDriver::with(vec![window(1, "Inbox - Mail", "mail.exe")], vec![element("Send", "button", 10, 10)]));
+    let op = Arc::new(crate::operator::Operator::new(db.clone(), driver));
+    let hub = Orchestrator::new(db.clone(), Some(op.clone()));
+    let mut env = Env::with(db, hub, tempfile::tempdir().unwrap(), Approval::Approved, Some(op.clone()));
+    env.extra.push(Arc::new(crate::tools::computer::ComputerConfirmedActionTool::new(op.clone())));
+    let watch = Arc::new(Watch(op.clone(), Mutex::new(Vec::new())));
+    let server = MockServer::start(vec![
+        (200, "text/event-stream", sse::tool("s1", "operator_start", json!({"objective": "Send the mail", "plan": []}))),
+        (200, "text/event-stream", sse::tool("o1", "computer_observe", json!({"screenshot": false, "list_windows": false, "find": "", "ocr": false}))),
+        (
+            200,
+            "text/event-stream",
+            sse::tool("c1", "computer_confirmed_action", json!({"action": "click", "element": 0, "x": -1, "y": -1, "keys": "", "effect": "Sends the email"})),
+        ),
+        (200, "text/event-stream", sse::text("Sent.")),
+    ])
+    .await;
+    let mut p = env.params(server.url());
+    p.tooling.approver = watch.clone();
+    env.turn_with(p, None, "Send the mail", &CancellationToken::new()).await;
+    let seen = watch.1.lock().unwrap().clone();
+    assert!(seen.iter().any(|(phase, status)| *phase == crate::operator::Phase::Waiting && status.contains("WAITING")), "{seen:?}");
+}

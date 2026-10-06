@@ -1,0 +1,62 @@
+name: Operator live
+
+# Live operator scenarios with a real AI provider on a real Windows desktop.
+# Manual only. Needs the repository secret IGRIS_AI_API_KEY (the provider key);
+# provider and model are chosen when starting the run.
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "AI_PROVIDER (anthropic, openai, gemini)"
+        required: true
+        default: "gemini"
+      model:
+        description: "AI_MODEL"
+        required: true
+        default: "gemini-2.5-flash"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  live:
+    name: Live operator scenarios
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provider key present
+        shell: pwsh
+        env:
+          KEY: ${{ secrets.IGRIS_AI_API_KEY }}
+        run: |
+          if (-not $env:KEY) { Write-Error "Add the repository secret IGRIS_AI_API_KEY to run live scenarios."; exit 1 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npx vite build
+      - name: Live scenarios
+        working-directory: src-tauri
+        env:
+          IGRIS_LIVE: "1"
+          AI_PROVIDER: ${{ inputs.provider }}
+          AI_MODEL: ${{ inputs.model }}
+          AI_API_KEY: ${{ secrets.IGRIS_AI_API_KEY }}
+        run: cargo test --locked --test operator_live -- --ignored --nocapture --test-threads=1
+      - name: Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operator-live-report
+          path: src-tauri/target/operator-live-report.md
+          if-no-files-found: ignore
