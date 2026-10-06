@@ -12,7 +12,7 @@ pub mod openai;
 pub mod registry;
 pub mod router;
 pub mod sse;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod testutil;
 
 use std::time::Duration;

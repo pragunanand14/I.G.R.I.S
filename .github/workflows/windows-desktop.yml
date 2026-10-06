@@ -8,6 +8,7 @@ on:
   push:
     branches: ["claude/**"]
     paths:
+      - "igris-core/src/computer/**"
       - "src-tauri/src/computer/**"
       - "src-tauri/src/tools/computer.rs"
       - "src-tauri/src/tools/browser.rs"
@@ -39,7 +40,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: ". -> target"
       - run: npm ci
       - run: npx vite build
       - name: Desktop session

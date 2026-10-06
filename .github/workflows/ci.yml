@@ -58,19 +58,26 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: ". -> target"
       # tauri::generate_context! embeds the built frontend, so build it first.
       - run: npm ci
       - run: npx vite build
       - name: Format
-        working-directory: src-tauri
-        run: cargo fmt --check
+        run: cargo fmt --all --check
       - name: Clippy
-        working-directory: src-tauri
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Core stays platform-independent
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # igris-core must build without Tauri, a webview or OS APIs (and without the desktop crate).
+          deps=$(cargo tree -p igris-core -e normal --prefix none --locked | cut -d' ' -f1 | sort -u)
+          if echo "$deps" | grep -xE 'igris|tauri.*|wry|tao|webview2-com.*|windows|x11rb|xcap|sysinfo|trash|lnk'; then
+            echo "::error::igris-core depends on a desktop/platform crate"; exit 1
+          fi
+          cargo clippy -p igris-core --locked -- -D warnings
       - name: Tests
-        working-directory: src-tauri
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
   audit:
     name: Rust dependency audit
@@ -81,5 +88,4 @@ jobs:
         with:
           tool: cargo-audit
       # Fails on known vulnerabilities; "unmaintained"/"unsound" warnings are reported but allowed (see docs/SECURITY.md).
-      - working-directory: src-tauri
-        run: cargo audit
+      - run: cargo audit

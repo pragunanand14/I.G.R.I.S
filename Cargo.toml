@@ -1,0 +1,26 @@
+# IGRIS Rust workspace.
+#
+# - igris-core: the platform-independent IGRIS core (AI and model routing,
+#   context, conversations, memory, orchestrator and tasks, operator task
+#   engine, tool framework and permissions, neutral tools, productivity,
+#   projects, settings, voice backends, persistence).
+# - src-tauri: the Windows/Tauri desktop app (UI commands, overlay, Windows
+#   computer driver, browser control, desktop tools, system monitoring).
+[workspace]
+members = ["igris-core", "src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["IGRIS contributors"]
+edition = "2021"
+rust-version = "1.80"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+# Unwind (not abort): untrusted-input parsers (PDF) and background tasks rely on
+# catching panics; with `abort` one malformed file would crash the app.
+panic = "unwind"
+strip = true

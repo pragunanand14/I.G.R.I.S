@@ -42,7 +42,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: ". -> target"
       - run: npm ci
       - run: npx vite build
       - name: Live scenarios
@@ -58,5 +58,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: operator-live-report
-          path: src-tauri/target/operator-live-report.md
+          path: target/operator-live-report.md
           if-no-files-found: ignore

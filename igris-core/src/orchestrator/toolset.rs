@@ -53,6 +53,15 @@ impl Capability {
 
 /// The capability group of a tool. `None` for tools this table doesn't know
 /// (treated as always exposed and not an action; a test keeps the table complete).
+/// Tool names declared in a tool module's source (its non-test part), for
+/// tests that check every tool has a capability group.
+#[cfg(any(test, feature = "test-support"))]
+pub fn tool_names_in(src: &str) -> Vec<String> {
+    let re = regex::Regex::new(r#"(?:name:\s*|spec\(\s*)"([a-z_]+)""#).unwrap();
+    let code = src.split("#[cfg(test)]").next().unwrap_or_default();
+    re.captures_iter(code).map(|c| c[1].to_string()).collect()
+}
+
 pub fn capability(name: &str) -> Option<Capability> {
     use Capability::*;
     Some(match name {
@@ -394,33 +403,22 @@ mod tests {
     }
 
     #[test]
-    fn every_registered_tool_has_a_capability_group() {
+    fn every_core_tool_has_a_capability_group() {
+        // Platform apps check their own tools the same way (see `tool_names_in`).
         let sources = [
-            include_str!("../tools/apps.rs"),
-            include_str!("../tools/browser.rs"),
             include_str!("../tools/calculator.rs"),
-            include_str!("../tools/computer.rs"),
-            include_str!("../tools/files.rs"),
             include_str!("../tools/memory.rs"),
-            include_str!("../tools/processes.rs"),
             include_str!("../tools/productivity.rs"),
             include_str!("../tools/projects.rs"),
             include_str!("../tools/screen.rs"),
-            include_str!("../tools/system_info.rs"),
             include_str!("../tools/task.rs"),
-            include_str!("../tools/terminal.rs"),
             include_str!("../tools/web.rs"),
         ];
-        let re = regex::Regex::new(r#"(?:name:\s*|spec\(\s*)"([a-z_]+)""#).unwrap();
-        let mut found = 0;
-        for src in sources {
-            let code = src.split("#[cfg(test)]").next().unwrap();
-            for c in re.captures_iter(code) {
-                found += 1;
-                assert!(capability(&c[1]).is_some(), "tool {} has no capability group", &c[1]);
-            }
+        let names: Vec<String> = sources.iter().flat_map(|s| tool_names_in(s)).collect();
+        for n in &names {
+            assert!(capability(n).is_some(), "tool {n} has no capability group");
         }
-        assert!(found >= 49, "found only {found} tools");
+        assert!(names.len() >= 24, "found only {} tools", names.len());
     }
 
     #[test]

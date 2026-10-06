@@ -8,7 +8,56 @@
    with their roadmap phase.
 3. **Validate at the boundary.** Every command input is deserialized into a typed struct
    (`deny_unknown_fields` where applicable) and validated before it touches state.
-4. **Modular by layer.** UI → services (typed IPC) → commands (thin) → domain modules → storage/OS.
+4. **Modular by layer.** UI → services (typed IPC) → commands (thin) → domain modules (the shared core) → storage/OS
+   (through platform seams).
+
+## Workspace: shared core and platform apps
+
+IGRIS is a Cargo workspace (root `Cargo.toml`) with two crates:
+
+| Crate | Path | What it is |
+|---|---|---|
+| `igris-core` | `igris-core/` | The platform-independent IGRIS core. No Tauri, webview, window system or OS API. |
+| `igris` (lib `igris_lib`) | `src-tauri/` | The Windows/Tauri desktop app built on the core. |
+
+The desktop crate re-exports the core's modules under their usual paths (`crate::ai`, `crate::orchestrator`, …;
+`igris_lib::…` from its tests), and its `computer` and `tools` modules extend the core's with desktop parts, so
+desktop code reads the same as before the split.
+
+**In the core** (reusable by any IGRIS app): AI providers, capabilities and the ModelRouter; system prompt,
+context building, budgeting and compaction, and the chat turn pipeline (`core/`); conversations; memory and
+retrieval; attachments; the orchestrator (task model and state machine, agent loop, toolsets and focus,
+verification, recovery, crash-safe persistence); the operator's task engine (pause, stop, takeover, verdicts);
+the computer *abstraction* (the `Driver` trait, screen/UI types, state snapshots, expected outcomes, and the
+safety policy: consequential names, messaging apps, risky key combinations); the tool framework (registry,
+schema validation, permission levels, the executor with approvals and audit, redaction); the platform-neutral
+tools (calculator, memory, productivity, projects, task, web, and the screenshot tool given a capturer);
+productivity (tasks, reminders and their scheduler, events, time parsing); projects and allowed folders;
+settings; voice backends (cloud STT/TTS); config; the database and its migrations; errors.
+
+**In the desktop app**: Tauri setup and every IPC command; the overlay and global hotkeys; OS notifications;
+the Windows driver (SendInput, UI Automation, window management, OCR) and `native()`; Chromium DevTools
+browser control; desktop tools (applications, processes, terminal, files with the recycle bin, screen capture,
+system info, computer and browser control) and the app's full tool registry (`tools/standard.rs`); system and
+connectivity monitoring; logging; `AppState`.
+
+**Seams** — how a platform app plugs device-specific behaviour into the core:
+
+| Seam | Core side | Desktop supplies |
+|---|---|---|
+| Operating the screen | `computer::Driver` (`Operator::new(db, driver)`) | `computer::native()` → Windows driver (or `Unsupported`) |
+| Platform tools | `tools::ToolRegistry::register`, `Tool` trait | `tools::standard::registry(Deps)` |
+| Asking the user | `tools::executor::Approver` | approval round-trip through the UI |
+| UI updates | `Orchestrator::on_event`, operator listeners, chat event callbacks | Tauri `emit` |
+| Screen capture | `tools::screen::Capturer` | `tools::screen::screenshot_tool` (xcap / X11) |
+| Reminder delivery | `productivity::run_scheduler(db, on_fire)` (a future) | spawned on Tauri's runtime; OS notification + event |
+| Shortcut validity | `SettingsPatch::validate` checks the shape | `update_settings` checks the global-shortcut backend can register it |
+| Opening paths/URLs | `open_path` / `open_url` callbacks in `Deps` | `tauri-plugin-opener` |
+
+Rules: the core never depends on a platform crate (CI checks the core's dependency tree and lints it on its
+own); a platform adds behaviour by implementing a seam, never by copying core logic; permissions, approvals
+and the executor stay in the core so every platform gets the same security model. Test doubles (the fake
+driver, the scripted AI provider) are behind the core's `test-support` feature for platform tests.
 
 ## Runtime
 
@@ -24,7 +73,7 @@ React UI ──invoke──▶ commands/*  ──▶ settings / system / config 
 ## Persistence
 
 SQLite (bundled via `rusqlite`) with WAL. Schema changes are forward-only migrations in
-`src-tauri/src/db/migrations.rs`, tracked with `PRAGMA user_version`; each runs in its own transaction.
+`igris-core/src/db/migrations.rs`, tracked with `PRAGMA user_version`; each runs in its own transaction.
 Tables are added in the phase that needs them (Phase 1: `settings`).
 
 Settings are stored one JSON value per key, layered over typed defaults. Corrupt or obsolete values fall back to

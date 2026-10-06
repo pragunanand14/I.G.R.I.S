@@ -146,7 +146,7 @@ npm run lint        # ESLint
 npm run test        # Vitest (UI, stores, services)
 npm run test:rust   # cargo test (backend)
 npm run check       # all of the above
-cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
+cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of these on Linux and Windows, plus
@@ -161,14 +161,19 @@ src/                     React UI
   stores/ hooks/         zustand state and side-effect hooks
   services/              the only code that talks to the backend (typed IPC), voice pipeline
   types/ utils/ config/
-src-tauri/src/           Rust backend
-  commands/              thin IPC handlers — the entire UI-facing surface
-  ai/                    provider trait; Anthropic + OpenAI-compatible providers (tools, vision, streaming)
+igris-core/src/          shared IGRIS core (no Tauri, no OS APIs) — see docs/ARCHITECTURE.md
+  ai/                    provider trait, ModelRouter; Anthropic + OpenAI-compatible providers
   core/                  system prompt, context building, budgeting, compaction, the chat turn pipeline
   orchestrator/          tasks: state machine, agent loop, verification, recovery, persistence
-  tools/                 registry, schema validation, executor (permissions + audit) and every tool
-  memory/ files/ projects/ productivity/ attachments/ voice/ system/
-  conversations/ db/ settings/ config.rs logging.rs error.rs state.rs
+  operator/ computer/    operator task engine; the computer Driver abstraction and safety policy
+  tools/                 registry, schema validation, executor (permissions + audit), neutral tools
+  memory/ files/ projects/ productivity/ attachments/ voice/
+  conversations/ db/ settings/ config.rs error.rs
+src-tauri/src/           Windows/Tauri desktop app
+  commands/              thin IPC handlers — the entire UI-facing surface
+  computer/              Windows driver (input, windows, UI Automation, OCR), Chromium DevTools control
+  tools/                 desktop tools (apps, processes, terminal, files, screen capture, computer, browser)
+  overlay.rs system/ state.rs logging.rs lib.rs
 docs/ARCHITECTURE.md     design, per phase
 docs/SECURITY.md         threat model, controls, review findings
 ```

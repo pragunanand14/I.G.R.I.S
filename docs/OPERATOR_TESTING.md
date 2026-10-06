@@ -17,7 +17,7 @@ has not. Results below are copied from real runs; nothing here is projected.
 
 ```text
 # Real desktop suite (takes over mouse and keyboard; run on a machine you're not using)
-cd src-tauri
+cd src-tauri   # the desktop crate (the workspace root also works with -p igris)
 cargo test --test windows_desktop -- --ignored --test-threads=1 --nocapture
 
 # Live operator scenarios with a real provider

@@ -8,14 +8,14 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use super::task::{StepStatus, TaskKind, TaskState};
-use super::{store, Control, Orchestrator, TaskUpdate};
 use crate::ai::anthropic::AnthropicProvider;
 use crate::ai::testutil::{sse, MockServer};
 use crate::ai::{ModelRouter, ResponseDepth};
 use crate::conversations::{self, MessageStatus};
 use crate::core::chat::{generate, save_user_message, GenerationParams, Tooling};
 use crate::db::Database;
+use crate::orchestrator::task::{StepStatus, TaskKind, TaskState};
+use crate::orchestrator::{store, Control, Orchestrator, TaskUpdate};
 use crate::tools::executor::{Approval, Approver, Policy, ToolActivity};
 use crate::tools::{PermissionLevel, Tool, ToolCtx, ToolError, ToolErrorKind, ToolOutput, ToolRegistry, ToolResultT, ToolSpec};
 
@@ -88,7 +88,7 @@ struct Approve {
 #[async_trait::async_trait]
 impl Approver for Approve {
     async fn request(&self, a: &ToolActivity, _c: &CancellationToken) -> Approval {
-        let state = self.hub.lock().values().next().map(|l| l.task.state);
+        let state = self.hub.live_tasks().first().map(|t| t.state);
         self.asked.lock().unwrap().push((a.tool.clone(), state));
         self.answer
     }
@@ -176,7 +176,7 @@ impl Env {
         (c.id, m)
     }
 
-    fn tasks(&self, cid: &str) -> Vec<super::task::Task> {
+    fn tasks(&self, cid: &str) -> Vec<crate::orchestrator::task::Task> {
         store::for_conversation(&self.db.conn().unwrap(), cid, 10).unwrap()
     }
 
@@ -242,7 +242,7 @@ async fn an_action_becomes_a_task_that_is_approved_verified_and_completed() {
     assert_eq!((t.state, t.kind, t.steps, t.failures), (TaskState::Completed, TaskKind::General, 1, 0));
     assert_eq!(t.objective, "Put 'IGRIS was here.' into notes.txt");
     assert_eq!(t.project.as_ref().map(|p| p.id), Some(project.id), "the task is linked to the project it works in");
-    assert_eq!(t.context.actions[0].verification, super::task::Verification::Passed);
+    assert_eq!(t.context.actions[0].verification, crate::orchestrator::task::Verification::Passed);
     // The existing approval flow asked once, while the task waited for it.
     assert_eq!(*env.approve.asked.lock().unwrap(), vec![("write_file".to_string(), Some(TaskState::WaitingForApproval))]);
     // The check went through the executor (audited) and the model saw its result.
@@ -396,7 +396,7 @@ async fn the_failure_budget_stops_the_task() {
     let server = MockServer::start(responses).await;
     let (cid, m) = env.turn(&server, "Make folders").await;
     assert_eq!(m.status, MessageStatus::Complete, "the model still gets to explain");
-    assert_eq!(folder.calls(), super::recovery::MAX_TASK_FAILURES, "nothing runs after the budget is spent");
+    assert_eq!(folder.calls(), crate::orchestrator::recovery::MAX_TASK_FAILURES, "nothing runs after the budget is spent");
     let t = &env.tasks(&cid)[0];
     assert_eq!(t.state, TaskState::Failed);
     assert!(t.error.as_deref().unwrap().contains("actions failed"));

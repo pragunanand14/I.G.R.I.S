@@ -2277,14 +2277,10 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dirs 6.0.0",
- "dotenvy",
- "futures-util",
- "html2text",
+ "igris-core",
  "image",
  "lnk",
- "pdf-extract",
  "percent-encoding",
- "regex",
  "reqwest",
  "rusqlite",
  "serde",
@@ -2298,7 +2294,6 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tempfile",
- "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tracing",
@@ -2310,6 +2305,31 @@ dependencies = [
  "windows",
  "x11rb",
  "xcap",
+]
+
+[[package]]
+name = "igris-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "dotenvy",
+ "futures-util",
+ "html2text",
+ "image",
+ "pdf-extract",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -17,7 +17,6 @@ use super::productivity::{
     SetReminderTool, StartTimerTool, UpdateTaskTool,
 };
 use super::projects::{ListProjectsTool, ProjectContextTool};
-use super::screen::ScreenshotTool;
 use super::system_info::SystemInfoTool;
 use super::task::{RequestToolsTool, TaskPlanTool};
 use super::terminal::RunCommandTool;
@@ -90,7 +89,7 @@ pub fn registry(d: Deps) -> ToolRegistry {
     tools.register(Arc::new(AddEventTool::new(db.clone())));
     tools.register(Arc::new(ListEventsTool::new(db.clone())));
     tools.register(Arc::new(DeleteEventTool::new(db.clone())));
-    tools.register(Arc::new(ScreenshotTool::new(db.clone(), attachments.clone())));
+    tools.register(Arc::new(super::screen::screenshot_tool(db.clone(), attachments.clone())));
 
     {
         tools.register(Arc::new(OperatorStartTool::new(operator.clone())));

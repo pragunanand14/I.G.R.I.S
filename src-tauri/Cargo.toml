@@ -1,10 +1,10 @@
 [package]
 name = "igris"
-version = "0.1.0"
-description = "IGRIS — Intelligent General-purpose Responsive Intelligence System"
-authors = ["IGRIS contributors"]
-edition = "2021"
-rust-version = "1.80"
+description = "IGRIS — Intelligent General-purpose Responsive Intelligence System (Windows/Tauri desktop app)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 # `_lib` suffix avoids a name clash with the binary on Windows (rust-lang/cargo#8519).
@@ -15,28 +15,24 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+igris-core = { path = "../igris-core" }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = "2"
 rusqlite = { version = "0.40", features = ["bundled"] }
 sysinfo = "0.39"
 starship-battery = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 tracing-appender = "0.2"
-dotenvy = "0.15"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "system-proxy", "stream", "json", "multipart"] }
 tokio = { version = "1", features = ["sync", "time", "macros", "rt", "net", "io-util", "process"] }
 tokio-util = "0.7"
-futures-util = "0.3"
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
-regex = "1"
-html2text = "0.14"
 tauri-plugin-global-shortcut = "2"
 base64 = "0.22"
 trash = "5"
@@ -44,21 +40,12 @@ walkdir = "2"
 dirs = "6"
 tauri-plugin-notification = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-pdf-extract = "0.12.1"
 percent-encoding = "2"
 
 [dev-dependencies]
+igris-core = { path = "../igris-core", features = ["test-support"] }
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
-
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = "s"
-# Unwind (not abort): untrusted-input parsers (PDF) and background tasks rely on
-# catching panics; with `abort` one malformed file would crash the app.
-panic = "unwind"
-strip = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.13"

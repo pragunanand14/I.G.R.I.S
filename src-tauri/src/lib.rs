@@ -1,31 +1,24 @@
-//! IGRIS native backend.
+//! IGRIS desktop app (Windows/Tauri).
 //!
-//! The backend owns everything privileged: configuration and secrets,
-//! persistence, and OS access. The UI can only reach it through the
-//! commands registered in [`run`].
+//! The shared IGRIS brain lives in the `igris-core` crate; this crate is the
+//! desktop platform around it: the Tauri app and its commands (the only way
+//! the UI reaches the backend, registered in [`run`]), the overlay and global
+//! hotkeys, the Windows computer driver and browser control, desktop tools,
+//! system monitoring and logging. Core modules are re-exported under their
+//! usual paths.
 
-pub mod ai;
-pub mod attachments;
+pub use igris_core::{ai, attachments, config, conversations, core, db, error, files, memory, operator, orchestrator, productivity, projects, settings, voice};
+
 pub mod commands;
 pub mod computer;
-pub mod config;
-pub mod conversations;
-pub mod core;
-pub mod db;
-pub mod error;
-pub mod files;
 pub mod logging;
-pub mod memory;
-pub mod operator;
-pub mod orchestrator;
 pub mod overlay;
-pub mod productivity;
-pub mod projects;
-pub mod settings;
 pub mod state;
 pub mod system;
 pub mod tools;
-pub mod voice;
+
+#[cfg(test)]
+mod e2e;
 
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -114,7 +107,7 @@ pub fn run() {
             let stop_hotkey = settings::load(&*db.conn()?).map(|s| s.operator_stop_hotkey).unwrap_or_else(|_| settings::DEFAULT_STOP_HOTKEY.into());
             app.manage(overlay::Overlay::install(app.handle(), operator.clone(), &stop_hotkey));
 
-            productivity::spawn_scheduler(db.clone(), reminder_notifier(app.handle().clone()));
+            tauri::async_runtime::spawn(productivity::run_scheduler(db.clone(), reminder_notifier(app.handle().clone())));
 
             app.manage(AppState {
                 config,

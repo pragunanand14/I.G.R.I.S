@@ -18,8 +18,6 @@
 
 pub mod agent_loop;
 pub mod brief;
-#[cfg(test)]
-mod e2e;
 pub mod intent;
 pub mod recovery;
 pub mod session;
@@ -391,6 +389,11 @@ impl Orchestrator {
 
     pub fn is_live(&self, id: &str) -> bool {
         self.lock().contains_key(id)
+    }
+
+    /// The tasks running in this process right now.
+    pub fn live_tasks(&self) -> Vec<Task> {
+        self.lock().values().map(|l| l.task.clone()).collect()
     }
 
     /// Change a running task (not its state), persist it and announce `event`.

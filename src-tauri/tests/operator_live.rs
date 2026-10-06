@@ -10,7 +10,7 @@
 //!
 //! The approver here stands in for the user on an unattended machine: it
 //! approves ordinary approvals and denies every CRITICAL (consequential)
-//! action, and records each request. Results go to `target/operator-live-report.md`.
+//! action, and records each request. Results go to the workspace's `target/operator-live-report.md`.
 #![cfg(windows)]
 
 use std::sync::{Arc, Mutex, RwLock};
@@ -258,7 +258,7 @@ async fn live_operator_scenarios() {
     for r in &results {
         report.push_str(&format!("- **{}**: {}\n", r.name, r.reply.replace('\n', " ")));
     }
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("operator-live-report.md");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("target").join("operator-live-report.md");
     let _ = std::fs::write(&path, &report);
     eprintln!("{report}");
     let failed: Vec<&str> = results.iter().filter(|r| !r.pass).map(|r| r.name).collect();

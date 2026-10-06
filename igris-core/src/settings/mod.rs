@@ -15,6 +15,7 @@ pub const TELEMETRY_INTERVAL_MIN_MS: u32 = 1_000;
 pub const TELEMETRY_INTERVAL_MAX_MS: u32 = 10_000;
 pub const AI_MODEL_MAX_CHARS: usize = 100;
 pub const DEFAULT_STOP_HOTKEY: &str = "Escape";
+pub const INVALID_SHORTCUT: &str = "Invalid shortcut. Use e.g. Escape, Ctrl+Shift+X or Pause.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -139,12 +140,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.operator_stop_hotkey.take() {
             let v = v.trim().to_string();
-            let ok = !v.is_empty()
-                && v.len() <= 40
-                && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
-                && v.parse::<tauri_plugin_global_shortcut::Shortcut>().is_ok();
+            let ok = !v.is_empty() && v.len() <= 40 && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '+');
             if !ok {
-                return Err(AppError::validation("Invalid shortcut. Use e.g. Escape, Ctrl+Shift+X or Pause."));
+                return Err(AppError::validation(INVALID_SHORTCUT));
             }
             self.operator_stop_hotkey = Some(v);
         }

@@ -53,23 +53,22 @@ pub fn tick(db: &Database, on_fire: &OnFire) -> AppResult<Vec<FiredReminder>> {
     Ok(fired)
 }
 
-/// Check for due reminders every second for the life of the app. Reminders
-/// that came due while IGRIS was closed fire (marked late) on the first tick.
-pub fn spawn_scheduler(db: Arc<Database>, on_fire: OnFire) {
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-            let db = db.clone();
-            let on_fire = on_fire.clone();
-            match tokio::task::spawn_blocking(move || tick(&db, &on_fire)).await {
-                Ok(Ok(_)) => {}
-                Ok(Err(e)) => tracing::warn!(event = "SCHEDULER_TICK_FAILED", error = %e),
-                Err(e) => tracing::warn!(event = "SCHEDULER_TICK_PANICKED", error = %e),
-            }
+/// Check for due reminders every second for the life of the app (the platform
+/// spawns this on its runtime). Reminders that came due while IGRIS was closed
+/// fire (marked late) on the first tick.
+pub async fn run_scheduler(db: Arc<Database>, on_fire: OnFire) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        let db = db.clone();
+        let on_fire = on_fire.clone();
+        match tokio::task::spawn_blocking(move || tick(&db, &on_fire)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(event = "SCHEDULER_TICK_FAILED", error = %e),
+            Err(e) => tracing::warn!(event = "SCHEDULER_TICK_PANICKED", error = %e),
         }
-    });
+    }
 }
 
 #[cfg(test)]
