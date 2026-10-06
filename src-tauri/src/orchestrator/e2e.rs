@@ -519,7 +519,7 @@ async fn operator_tasks_run_through_the_orchestrator_and_its_tools_appear_when_n
     let env = Env::with(db, hub, tempfile::tempdir().unwrap(), Approval::Approved, Some(op.clone()));
     let server = MockServer::start(vec![
         (200, "text/event-stream", sse::tool("s1", "operator_start", json!({"objective": "Check Notepad", "plan": ["Look at the screen"]}))),
-        (200, "text/event-stream", sse::tool("o1", "computer_observe", json!({"screenshot": false, "list_windows": true, "find": ""}))),
+        (200, "text/event-stream", sse::tool("o1", "computer_observe", json!({"screenshot": false, "list_windows": true, "find": "", "ocr": false}))),
         (200, "text/event-stream", sse::tool("f1", "operator_finish", json!({"outcome": "completed", "summary": "Notepad is open."}))),
         (200, "text/event-stream", sse::text("Notepad is open.")),
     ])
