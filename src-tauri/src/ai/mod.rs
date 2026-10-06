@@ -6,9 +6,11 @@
 //! orchestrator persists.
 
 pub mod anthropic;
+pub mod capabilities;
 pub mod http;
 pub mod openai;
 pub mod registry;
+pub mod router;
 pub mod sse;
 #[cfg(test)]
 pub mod testutil;
@@ -19,12 +21,35 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 pub use registry::{AiRuntime, AiStatus};
+pub use router::{ModelRole, ModelRouter, Needs, Route};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     User,
     Assistant,
+}
+
+/// Opaque data one provider needs back verbatim on later requests — e.g.
+/// Anthropic's content blocks (thinking signatures) or Gemini's thought
+/// signatures. It is tagged with the provider that produced it: that adapter
+/// replays it, every other adapter ignores it. Canonical IGRIS history never
+/// depends on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderExtras {
+    pub provider: String,
+    pub data: serde_json::Value,
+}
+
+impl ProviderExtras {
+    pub fn new(provider: &str, data: serde_json::Value) -> Self {
+        Self { provider: provider.to_string(), data }
+    }
+}
+
+/// The extras' data if they belong to `provider`.
+pub fn extras_for<'a>(extras: &'a Option<ProviderExtras>, provider: &str) -> Option<&'a serde_json::Value> {
+    extras.as_ref().filter(|e| e.provider == provider).map(|e| &e.data)
 }
 
 /// A tool invocation requested by the model.
@@ -36,10 +61,9 @@ pub struct ToolCall {
     /// Set when the provider sent arguments that weren't valid JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invalid_input: Option<String>,
-    /// Opaque data the provider requires back with this call on later turns
-    /// (Gemini's `extra_content` thought signature). Persisted with the turn.
+    /// Provider-specific data for this call (Gemini's thought signature).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_data: Option<serde_json::Value>,
+    pub extras: Option<ProviderExtras>,
 }
 
 /// The result of a tool call, sent back to the model.
@@ -118,16 +142,18 @@ impl Media {
     }
 }
 
-/// One turn of conversation context sent to a provider.
+/// One turn of IGRIS's canonical, provider-neutral conversation history:
+/// text, tool calls, tool results and media. Provider adapters translate it
+/// into their own request formats.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatTurn {
     pub role: Role,
     #[serde(default)]
     pub text: String,
-    /// Provider-native content (e.g. Anthropic content blocks) to replay
-    /// unchanged. Only set when produced by the same provider.
+    /// The producing provider's native form of this turn (e.g. Anthropic
+    /// content blocks with thinking signatures), replayed only to that provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw: Option<serde_json::Value>,
+    pub extras: Option<ProviderExtras>,
     /// Assistant turns: tools the model asked to run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<ToolCall>,
@@ -141,7 +167,7 @@ pub struct ChatTurn {
 
 impl ChatTurn {
     pub fn user(text: impl Into<String>) -> Self {
-        Self { role: Role::User, text: text.into(), raw: None, tool_calls: Vec::new(), tool_results: Vec::new(), media: Vec::new() }
+        Self { role: Role::User, text: text.into(), extras: None, tool_calls: Vec::new(), tool_results: Vec::new(), media: Vec::new() }
     }
 
     pub fn assistant(text: impl Into<String>) -> Self {
@@ -149,20 +175,24 @@ impl ChatTurn {
     }
 }
 
+/// How much the model should think before answering — an IGRIS concept.
+/// Each adapter translates it to its provider (Anthropic `output_config.effort`,
+/// OpenAI/Gemini `reasoning_effort`); `Medium` means the provider's default.
+/// Stored settings use the same values ("low" / "medium" / "high").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Effort {
+pub enum ResponseDepth {
     Low,
     Medium,
     High,
 }
 
-impl Effort {
+impl ResponseDepth {
     pub fn as_str(self) -> &'static str {
         match self {
-            Effort::Low => "low",
-            Effort::Medium => "medium",
-            Effort::High => "high",
+            ResponseDepth::Low => "low",
+            ResponseDepth::Medium => "medium",
+            ResponseDepth::High => "high",
         }
     }
 }
@@ -173,7 +203,7 @@ pub struct ChatRequest {
     pub system: String,
     pub turns: Vec<ChatTurn>,
     pub max_tokens: u32,
-    pub effort: Option<Effort>,
+    pub depth: Option<ResponseDepth>,
     pub tools: Vec<ToolDef>,
 }
 
@@ -212,7 +242,8 @@ pub struct Usage {
 #[derive(Debug, Clone)]
 pub struct Completion {
     pub text: String,
-    pub raw: Option<serde_json::Value>,
+    /// The provider's native form of the turn, if it needs it replayed.
+    pub extras: Option<ProviderExtras>,
     /// The model that actually served the response (may differ on fallback).
     pub model: String,
     pub stop_reason: StopReason,

@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::ai::{AiRuntime, AiStatus, Effort};
+use crate::ai::{AiRuntime, AiStatus, ResponseDepth};
 use crate::config::{AppConfig, PublicConfig};
 use crate::error::{AppError, AppResult};
 use crate::settings;
@@ -14,7 +14,7 @@ pub struct AiStatusView {
     pub status: AiStatus,
     /// Model a new message would use (settings override > AI_MODEL > default).
     pub effective_model: Option<String>,
-    pub effort: Effort,
+    pub effort: ResponseDepth,
 }
 
 fn view(state: &AppState) -> AppResult<AiStatusView> {

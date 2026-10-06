@@ -7,7 +7,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use crate::ai::Effort;
+use crate::ai::ResponseDepth;
 use crate::error::{AppError, AppResult};
 
 pub const USER_NAME_MAX_CHARS: usize = 48;
@@ -45,8 +45,8 @@ pub struct Settings {
     pub telemetry_interval_ms: u32,
     /// Model override. Empty means "use AI_MODEL or the provider default".
     pub ai_model: String,
-    /// Reasoning effort for providers that support it.
-    pub ai_effort: Effort,
+    /// Response depth (how much the model reasons first). Medium = the provider default.
+    pub ai_effort: ResponseDepth,
     /// Ask before LOW-risk tool actions (SENSITIVE/CRITICAL always ask).
     pub confirm_low_risk: bool,
     /// Use and update persistent memory. When off, nothing is attached or saved.
@@ -70,7 +70,7 @@ impl Default for Settings {
             reduced_motion: false,
             telemetry_interval_ms: 2_000,
             ai_model: String::new(),
-            ai_effort: Effort::Medium,
+            ai_effort: ResponseDepth::Medium,
             confirm_low_risk: false,
             memory_enabled: true,
             voice_auto_speak: true,
@@ -91,7 +91,7 @@ pub struct SettingsPatch {
     pub reduced_motion: Option<bool>,
     pub telemetry_interval_ms: Option<u32>,
     pub ai_model: Option<String>,
-    pub ai_effort: Option<Effort>,
+    pub ai_effort: Option<ResponseDepth>,
     pub confirm_low_risk: Option<bool>,
     pub memory_enabled: Option<bool>,
     pub voice_auto_speak: Option<bool>,
@@ -394,7 +394,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let mut conn = db.conn().unwrap();
         let s = update(&mut conn, patch(r#"{"aiEffort":"high","aiModel":" x "}"#).unwrap()).unwrap();
-        assert_eq!(s.ai_effort, Effort::High);
+        assert_eq!(s.ai_effort, ResponseDepth::High);
         assert_eq!(s.ai_model, "x");
     }
 

@@ -7,12 +7,14 @@ use tokio_util::sync::CancellationToken;
 use super::http::{self, cancelled};
 use super::sse::SseParser;
 use super::{
-    AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Media, MediaKind, Role, ServerToolEvent, Source, StopReason,
-    StreamEvent, ToolCall, Usage,
+    extras_for, AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, ChatTurn, Completion, EventSink, Media, MediaKind, ProviderExtras, Role,
+    ServerToolEvent, Source, StopReason, StreamEvent, ToolCall, Usage,
 };
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
+/// Provider id; tags the content blocks this adapter needs replayed.
+pub const PROVIDER_ID: &str = "anthropic";
 const API_VERSION: &str = "2023-06-01";
 const FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
 
@@ -63,7 +65,38 @@ fn media_block(m: &Media) -> Value {
     }
 }
 
-fn tool_result_blocks(turn: &ChatTurn) -> Vec<Value> {
+/// Tool-use ids must match `^[a-zA-Z0-9_-]+$` and be unique in a request.
+/// Ids from other providers (or repeated ones like Gemini's `call_0`) are
+/// renamed consistently for both the call and its result.
+#[derive(Default)]
+struct IdMap {
+    seen: std::collections::HashSet<String>,
+    /// Ids of the most recent assistant turn's calls → ids sent.
+    current: std::collections::HashMap<String, String>,
+    next: usize,
+}
+
+impl IdMap {
+    fn assistant_turn(&mut self, turn: &ChatTurn, native: bool) {
+        self.current.clear();
+        for c in &turn.tool_calls {
+            let valid = !c.id.is_empty() && c.id.len() <= 64 && c.id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+            let id = if native || (valid && !self.seen.contains(&c.id)) {
+                c.id.clone()
+            } else {
+                self.next += 1;
+                format!("igris_call_{}", self.next)
+            };
+            self.seen.insert(id.clone());
+            self.current.insert(c.id.clone(), id);
+        }
+    }
+    fn id(&self, original: &str) -> String {
+        self.current.get(original).cloned().unwrap_or_else(|| original.to_string())
+    }
+}
+
+fn tool_result_blocks(turn: &ChatTurn, ids: &IdMap) -> Vec<Value> {
     let mut blocks: Vec<Value> = turn
         .tool_results
         .iter()
@@ -75,7 +108,7 @@ fn tool_result_blocks(turn: &ChatTurn) -> Vec<Value> {
                 parts.extend(r.media.iter().map(media_block));
                 Value::Array(parts)
             };
-            json!({ "type": "tool_result", "tool_use_id": r.call_id, "content": content, "is_error": r.is_error })
+            json!({ "type": "tool_result", "tool_use_id": ids.id(&r.call_id), "content": content, "is_error": r.is_error })
         })
         .collect();
     if !turn.text.is_empty() {
@@ -84,9 +117,12 @@ fn tool_result_blocks(turn: &ChatTurn) -> Vec<Value> {
     blocks
 }
 
-fn message_for(turn: &ChatTurn) -> Value {
+/// Translate one canonical turn. Anthropic's own content blocks (with thinking
+/// signatures) are replayed when present; turns from other providers are
+/// rebuilt from the canonical text and tool calls.
+fn message_for(turn: &ChatTurn, ids: &mut IdMap) -> Value {
     match turn.role {
-        Role::User if !turn.tool_results.is_empty() => json!({ "role": "user", "content": tool_result_blocks(turn) }),
+        Role::User if !turn.tool_results.is_empty() => json!({ "role": "user", "content": tool_result_blocks(turn, ids) }),
         Role::User if !turn.media.is_empty() => {
             let mut blocks: Vec<Value> = turn.media.iter().map(media_block).collect();
             if !turn.text.is_empty() {
@@ -95,14 +131,18 @@ fn message_for(turn: &ChatTurn) -> Value {
             json!({ "role": "user", "content": blocks })
         }
         Role::User => json!({ "role": "user", "content": turn.text }),
-        Role::Assistant => match &turn.raw {
-            Some(Value::Array(blocks)) if !blocks.is_empty() => json!({ "role": "assistant", "content": sanitize_replay_blocks(blocks) }),
+        Role::Assistant => match extras_for(&turn.extras, PROVIDER_ID) {
+            Some(Value::Array(blocks)) if !blocks.is_empty() => {
+                ids.assistant_turn(turn, true);
+                json!({ "role": "assistant", "content": sanitize_replay_blocks(blocks) })
+            }
             _ if !turn.tool_calls.is_empty() => {
+                ids.assistant_turn(turn, false);
                 let mut blocks = Vec::new();
                 if !turn.text.is_empty() {
                     blocks.push(json!({ "type": "text", "text": turn.text }));
                 }
-                blocks.extend(turn.tool_calls.iter().map(|c| json!({ "type": "tool_use", "id": c.id, "name": c.name, "input": c.input })));
+                blocks.extend(turn.tool_calls.iter().map(|c| json!({ "type": "tool_use", "id": ids.id(&c.id), "name": c.name, "input": c.input })));
                 json!({ "role": "assistant", "content": blocks })
             }
             _ => json!({ "role": "assistant", "content": turn.text }),
@@ -111,7 +151,8 @@ fn message_for(turn: &ChatTurn) -> Value {
 }
 
 pub fn build_body(req: &ChatRequest, first_party: bool) -> Value {
-    let messages: Vec<Value> = req.turns.iter().map(message_for).collect();
+    let mut ids = IdMap::default();
+    let messages: Vec<Value> = req.turns.iter().map(|t| message_for(t, &mut ids)).collect();
 
     let mut body = json!({
         "model": req.model,
@@ -122,8 +163,9 @@ pub fn build_body(req: &ChatRequest, first_party: bool) -> Value {
         "cache_control": { "type": "ephemeral" },
         "messages": messages,
     });
-    if let Some(effort) = req.effort.filter(|_| supports_effort(&req.model)) {
-        body["output_config"] = json!({ "effort": effort.as_str() });
+    // Response depth → Anthropic's effort setting, on models that accept it.
+    if let Some(depth) = req.depth.filter(|_| supports_effort(&req.model)) {
+        body["output_config"] = json!({ "effort": depth.as_str() });
     }
     if first_party && supports_default_fallback(&req.model) {
         body["fallbacks"] = json!("default");
@@ -278,7 +320,7 @@ impl BlockAccumulator {
                 name: b["name"].as_str().unwrap_or_default().to_string(),
                 input: b["input"].clone(),
                 invalid_input: self.invalid_inputs.get(i).cloned().flatten(),
-                provider_data: None,
+                extras: None,
             })
             .collect()
     }
@@ -368,7 +410,7 @@ impl StreamState {
 #[async_trait::async_trait]
 impl AiProvider for AnthropicProvider {
     fn id(&self) -> &'static str {
-        "anthropic"
+        PROVIDER_ID
     }
 
     async fn stream(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>) -> AiResult<Completion> {
@@ -426,7 +468,7 @@ impl AiProvider for AnthropicProvider {
         Ok(Completion {
             text: state.acc.text(),
             tool_calls: state.acc.tool_calls(),
-            raw: state.acc.raw(),
+            extras: state.acc.raw().map(|blocks| ProviderExtras::new(PROVIDER_ID, blocks)),
             model: state.model,
             stop_reason: state.stop_reason.unwrap_or(StopReason::EndTurn),
             usage: state.usage,
@@ -438,7 +480,7 @@ impl AiProvider for AnthropicProvider {
 mod tests {
     use super::*;
     use crate::ai::testutil::MockServer;
-    use crate::ai::{Effort, ToolDef, ToolResult};
+    use crate::ai::{ResponseDepth, ToolDef, ToolResult};
 
     fn req(model: &str) -> ChatRequest {
         ChatRequest {
@@ -446,7 +488,7 @@ mod tests {
             system: "sys".into(),
             turns: vec![ChatTurn::user("hi")],
             max_tokens: 1000,
-            effort: Some(Effort::Medium),
+            depth: Some(ResponseDepth::Medium),
             tools: vec![],
         }
     }
@@ -495,11 +537,45 @@ mod tests {
     fn assistant_turns_replay_raw_blocks_unchanged() {
         let mut r = req("claude-opus-5-5");
         let blocks = json!([{"type":"thinking","thinking":"","signature":"s"},{"type":"text","text":"Hi"}]);
-        r.turns.push(ChatTurn { raw: Some(blocks.clone()), ..ChatTurn::assistant("Hi") });
+        r.turns.push(ChatTurn { extras: Some(ProviderExtras::new(PROVIDER_ID, blocks.clone())), ..ChatTurn::assistant("Hi") });
         r.turns.push(ChatTurn::user("again"));
         let b = build_body(&r, true);
         assert_eq!(b["messages"][1]["content"], blocks);
         assert_eq!(b["messages"][2]["content"], "again");
+    }
+
+    #[test]
+    fn history_from_other_providers_is_rebuilt_from_canonical_turns() {
+        use crate::ai::ToolResult;
+        let mut r = req("claude-opus-5-5");
+        // Two Gemini turns that both used the id "call_0", with Gemini-only extras.
+        for (n, expr) in [(0, "1+1"), (1, "2+2")] {
+            r.turns.push(ChatTurn {
+                tool_calls: vec![ToolCall {
+                    id: "call_0".into(),
+                    name: "calculator".into(),
+                    input: json!({ "expression": expr }),
+                    invalid_input: None,
+                    extras: Some(ProviderExtras::new("gemini", json!({"google": {"thought_signature": "g"}}))),
+                }],
+                extras: Some(ProviderExtras::new("gemini", json!(["not anthropic blocks"]))),
+                ..ChatTurn::assistant(if n == 0 { "Checking." } else { "" })
+            });
+            r.turns.push(ChatTurn {
+                tool_results: vec![ToolResult { call_id: "call_0".into(), content: format!("= {}", n * 2 + 2), is_error: false, media: vec![] }],
+                ..ChatTurn::user("")
+            });
+        }
+        r.turns.push(ChatTurn::assistant("Both done."));
+        let b = build_body(&r, true);
+        let m = &b["messages"];
+        assert_eq!(m[1]["content"][0], json!({"type": "text", "text": "Checking."}), "foreign extras are ignored");
+        let first = m[1]["content"][1]["id"].as_str().unwrap().to_string();
+        let second = m[3]["content"][0]["id"].as_str().unwrap().to_string();
+        assert_ne!(first, second, "duplicate foreign ids are made unique");
+        assert_eq!(m[2]["content"][0]["tool_use_id"], json!(first));
+        assert_eq!(m[4]["content"][0]["tool_use_id"], json!(second));
+        assert!(!b.to_string().contains("thought_signature"));
     }
 
     #[test]
@@ -533,7 +609,7 @@ mod tests {
         assert_eq!(c.text, "Hello, Ada.");
         assert_eq!(c.stop_reason, StopReason::EndTurn);
         assert_eq!(c.usage, Usage { input_tokens: Some(12), output_tokens: Some(7) });
-        let raw = c.raw.unwrap();
+        let raw = c.extras.unwrap().data;
         assert_eq!(raw[0]["signature"], "sig123");
         assert_eq!(raw[1]["text"], "Hello, Ada.");
 
@@ -583,7 +659,7 @@ mod tests {
                 name: "calculator".into(),
                 input: json!({"expression":"1+1"}),
                 invalid_input: None,
-                provider_data: None,
+                extras: None,
             }],
             ..ChatTurn::assistant("Let me check.")
         });
@@ -636,7 +712,7 @@ mod tests {
         assert_eq!(c.tool_calls[0].input, json!({"expression":"2*21"}));
         assert!(c.tool_calls[0].invalid_input.is_none());
         assert!(c.tool_calls[1].invalid_input.as_deref().unwrap().contains("oops"));
-        let raw = c.raw.expect("raw stays replayable");
+        let raw = c.extras.expect("raw stays replayable").data;
         assert_eq!(raw[1]["input"]["expression"], "2*21");
         assert_eq!(raw[2]["input"], json!({}));
     }
@@ -709,7 +785,7 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(matches!(&evs[3], ServerToolEvent::Finished { ok: false, summary, .. } if summary.contains("max_uses_exceeded")));
-        assert!(c.raw.is_some(), "server blocks stay replayable");
+        assert!(c.extras.is_some(), "server blocks stay replayable");
     }
 
     #[tokio::test]

@@ -45,6 +45,8 @@ export type ChatEvent =
   | { type: "generating"; conversationId: string; model: string }
   | { type: "delta"; text: string }
   | { type: "reasoning"; chars: number }
+  /** Older messages are being summarized to fit the model's context. */
+  | { type: "compacting"; messages: number }
   | { type: "tool"; activity: ToolActivity }
   | { type: "finished"; message: Message };
 

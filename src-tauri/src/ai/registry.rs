@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use super::anthropic::{self, AnthropicProvider};
 use super::openai::OpenAiCompatibleProvider;
+use super::router::{ModelRole, ModelRouter};
 use super::AiProvider;
 use crate::config::AppConfig;
 
@@ -24,7 +25,8 @@ pub struct AiStatus {
 }
 
 pub struct AiRuntime {
-    pub provider: Option<Arc<dyn AiProvider>>,
+    /// Picks the model for each request (chat / vision / fast).
+    pub router: Option<Arc<ModelRouter>>,
     pub status: AiStatus,
 }
 
@@ -41,7 +43,7 @@ impl AiRuntime {
         let provider_id = cfg.ai_provider.clone();
         let configured_model = cfg.ai_model.clone().or_else(|| provider_id.as_deref().and_then(default_model).map(str::to_string));
         let fail = |problem: String| AiRuntime {
-            provider: None,
+            router: None,
             status: AiStatus { provider: provider_id.clone(), configured_model: configured_model.clone(), ready: false, problem: Some(problem) },
         };
 
@@ -66,13 +68,19 @@ impl AiRuntime {
         };
         match built {
             Err(problem) => fail(problem),
-            Ok(provider) if configured_model.is_none() => {
-                let _ = provider;
-                fail(format!("AI_MODEL must be set for the {id} provider."))
-            }
-            Ok(provider) => {
-                AiRuntime { provider: Some(provider), status: AiStatus { provider: provider_id.clone(), configured_model, ready: true, problem: None } }
-            }
+            Ok(provider) => match configured_model.clone() {
+                None => fail(format!("AI_MODEL must be set for the {id} provider.")),
+                Some(model) => {
+                    let router = ModelRouter::new(provider, model)
+                        .with_role_model(ModelRole::Vision, cfg.ai_vision_model.clone())
+                        .with_role_model(ModelRole::Fast, cfg.ai_fast_model.clone())
+                        .with_context_window(cfg.ai_context_window);
+                    AiRuntime {
+                        router: Some(Arc::new(router)),
+                        status: AiStatus { provider: provider_id.clone(), configured_model, ready: true, problem: None },
+                    }
+                }
+            },
         }
     }
 }
@@ -91,7 +99,7 @@ mod tests {
     fn not_ready_without_provider() {
         let rt = AiRuntime::from_config(&cfg(&[]));
         assert!(!rt.status.ready);
-        assert!(rt.provider.is_none());
+        assert!(rt.router.is_none());
         assert!(rt.status.problem.unwrap().contains("AI_PROVIDER"));
     }
 
@@ -118,7 +126,25 @@ mod tests {
         assert!(AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "gemini"), ("AI_API_KEY", "k")])).status.problem.unwrap().contains("AI_MODEL"));
         let rt = AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "gemini"), ("AI_API_KEY", "k"), ("AI_MODEL", "gemini-2.5-flash")]));
         assert!(rt.status.ready);
-        assert_eq!(rt.provider.unwrap().id(), "gemini");
+        assert_eq!(rt.router.unwrap().provider_id(), "gemini");
+    }
+
+    #[test]
+    fn router_roles_come_from_configuration() {
+        let rt = AiRuntime::from_config(&cfg(&[("AI_PROVIDER", "gemini"), ("AI_API_KEY", "k"), ("AI_MODEL", "gemini-3.5-flash-lite")]));
+        let r = rt.router.unwrap();
+        assert_eq!(r.route(ModelRole::Fast, None).model, "gemini-3.5-flash-lite", "defaults: unchanged behaviour");
+        let rt = AiRuntime::from_config(&cfg(&[
+            ("AI_PROVIDER", "local"),
+            ("AI_MODEL", "qwen2.5:7b"),
+            ("AI_VISION_MODEL", "llava"),
+            ("AI_FAST_MODEL", "qwen2.5:1.5b"),
+            ("AI_CONTEXT_WINDOW", "8_192"),
+        ]));
+        let r = rt.router.unwrap();
+        assert_eq!(r.route(ModelRole::Vision, None).model, "llava");
+        assert_eq!(r.route(ModelRole::Fast, None).model, "qwen2.5:1.5b");
+        assert_eq!(r.route(ModelRole::Chat, None).caps.context_window, 8_192);
     }
 
     #[test]

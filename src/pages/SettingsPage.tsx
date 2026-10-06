@@ -271,7 +271,7 @@ function AiPanel({ disabled, configDir }: { disabled: boolean; configDir: string
           <Field label="Model override" description={`Leave empty to use ${aiStatus.configuredModel ? `the configured model (${aiStatus.configuredModel})` : "AI_MODEL"}.`}>
             <ModelField key={`${status}-${settings.aiModel}`} saved={settings.aiModel} disabled={disabled} onCommit={commitModel} placeholder={aiStatus.configuredModel ?? "model id"} />
           </Field>
-          <Field label="Response depth" description="How much the model reasons before answering (Anthropic models). Higher is slower and costs more.">
+          <Field label="Response depth" description="How much the model reasons before answering, on models that support it (Claude, Gemini 2.5+, OpenAI reasoning models). Medium uses each provider's default; higher is slower and costs more.">
             <Segmented<Effort>
               label="Response depth"
               value={settings.aiEffort}

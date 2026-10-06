@@ -96,13 +96,18 @@ AI_API_KEY=sk-ant-...        # not needed for local
 
 After editing `.env`, use **Settings → AI → Reload configuration** (no restart needed).
 
+Optional: `AI_VISION_MODEL` (a model for messages with images, when the chat model can't see them), `AI_FAST_MODEL`
+(a cheaper model for condensing long conversations) and `AI_CONTEXT_WINDOW` (the context size of your model, mainly
+for local servers). All use the same provider as `AI_MODEL`; when unset, the chat model does everything.
+
 **Gemini (free tier):** create a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey), then set
 `AI_PROVIDER=gemini`, `AI_API_KEY=<key>` and `AI_MODEL=` a model listed in AI Studio (e.g. `gemini-2.5-flash`). The
 free tier is rate-limited, and Google may use free-tier prompts to improve its products.
 
 **Ollama:** `AI_PROVIDER=local` and `AI_MODEL=<name from ollama list>` are enough. Also set the environment variable
 `OLLAMA_CONTEXT_LENGTH=16384` and restart Ollama — IGRIS's instructions and tool list (~7k tokens) don't fit Ollama's
-default 4096-token context, and Ollama silently drops what doesn't fit. Use a model with tool support; on a CPU,
+default 4096-token context, and Ollama silently drops what doesn't fit. If you use a different context size, set
+`AI_CONTEXT_WINDOW` to match so IGRIS budgets for it. Use a model with tool support; on a CPU,
 small non-reasoning models answer much faster than reasoning ones (qwen3, deepseek-r1), whose thinking shows as
 "Reasoning…" while they work. Secrets are read only by the
 Rust backend and are never sent to the UI — the UI only learns whether a key is configured.

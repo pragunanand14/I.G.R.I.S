@@ -288,9 +288,39 @@ pub fn edit_user_message(conn: &mut Connection, message_id: &str, content: &str,
         params![message_id, content, memory_context.map(serde_json::to_string).transpose()?],
     )?;
     tx.execute("DELETE FROM messages WHERE conversation_id = ?1 AND seq > ?2", params![msg.conversation_id, msg.seq])?;
+    // Summaries that covered the edited message no longer match the history.
+    tx.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?1 AND through_seq >= ?2", params![msg.conversation_id, msg.seq])?;
     touch(&tx, &msg.conversation_id)?;
     tx.commit()?;
     get_message(conn, message_id)?.ok_or_else(|| AppError::internal("message vanished after edit"))
+}
+
+/// A stored summary of a conversation's older messages (see `core::compaction`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredSummary {
+    pub through_seq: i64,
+    pub summary: String,
+    pub memory: Vec<crate::memory::retrieval::AttachedMemory>,
+}
+
+/// The newest summary of a conversation, if it has been compacted.
+pub fn latest_summary(conn: &Connection, conversation_id: &str) -> AppResult<Option<StoredSummary>> {
+    let row = conn
+        .query_row(
+            "SELECT through_seq, summary, memory FROM conversation_summaries WHERE conversation_id = ?1 ORDER BY through_seq DESC, id DESC LIMIT 1",
+            [conversation_id],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+        )
+        .optional()?;
+    Ok(row.map(|(through_seq, summary, memory)| StoredSummary { through_seq, summary, memory: serde_json::from_str(&memory).unwrap_or_default() }))
+}
+
+pub fn save_summary(conn: &Connection, conversation_id: &str, s: &StoredSummary, provider: &str, model: &str) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO conversation_summaries (conversation_id, through_seq, summary, memory, provider, model) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![conversation_id, s.through_seq, s.summary, serde_json::to_string(&s.memory)?, provider, model],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -300,6 +330,27 @@ mod tests {
 
     fn assistant(text: &str) -> NewMessage {
         NewMessage { role: Role::Assistant, provider: Some("anthropic".into()), raw: Some("[]".into()), ..NewMessage::user(text) }
+    }
+
+    #[test]
+    fn summaries_are_stored_and_invalidated_by_edits() {
+        let db = Database::open_in_memory().unwrap();
+        let mut conn = db.conn().unwrap();
+        let c = create(&conn, "Hello", "sys", &[]).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..4 {
+            ids.push(append(&mut conn, &c.id, NewMessage::user(format!("q{i}"))).unwrap());
+            append(&mut conn, &c.id, assistant(&format!("a{i}"))).unwrap();
+        }
+        assert!(latest_summary(&conn, &c.id).unwrap().is_none());
+        let s = StoredSummary { through_seq: ids[2].seq - 1, summary: "Goals: …".into(), memory: vec![] };
+        save_summary(&conn, &c.id, &s, "gemini", "flash").unwrap();
+        assert_eq!(latest_summary(&conn, &c.id).unwrap().unwrap(), s);
+        // Editing a message after the summary keeps it; editing one it covers drops it.
+        edit_user_message(&mut conn, &ids[3].id, "q3 edited", None).unwrap();
+        assert!(latest_summary(&conn, &c.id).unwrap().is_some());
+        edit_user_message(&mut conn, &ids[1].id, "q1 edited", None).unwrap();
+        assert!(latest_summary(&conn, &c.id).unwrap().is_none());
     }
 
     #[test]

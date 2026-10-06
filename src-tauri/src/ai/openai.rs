@@ -7,7 +7,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::http::{self, cancelled};
 use super::sse::SseParser;
-use super::{AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion, EventSink, Media, MediaKind, Role, StopReason, StreamEvent, ToolCall, Usage};
+use super::{
+    extras_for, AiError, AiErrorKind, AiProvider, AiResult, ChatRequest, Completion, EventSink, Media, MediaKind, ProviderExtras, ResponseDepth, Role,
+    StopReason, StreamEvent, ToolCall, Usage,
+};
 
 pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
@@ -181,7 +184,29 @@ fn media_part(m: &Media) -> Value {
     }
 }
 
-pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, strict_tools: bool) -> Value {
+/// Response depth → `reasoning_effort`, only where the model has one and only
+/// when it differs from the provider default (Medium sends nothing).
+fn reasoning_effort(provider: &str, model: &str, depth: Option<ResponseDepth>) -> Option<&'static str> {
+    let depth = depth.filter(|d| *d != ResponseDepth::Medium)?;
+    let m = model.to_ascii_lowercase();
+    let reasoning_model = match provider {
+        "gemini" => m.contains("gemini-2.5") || m.contains("gemini-3") || m.contains("-latest"),
+        "openai" => m.starts_with('o') || m.starts_with("gpt-5"),
+        _ => false, // local servers: no portable setting
+    };
+    if !reasoning_model {
+        return None;
+    }
+    Some(match depth {
+        ResponseDepth::Low => "low",
+        ResponseDepth::High => "high",
+        ResponseDepth::Medium => "medium",
+    })
+}
+
+/// Build the request. `provider` decides which stored extras are replayed
+/// (Gemini thought signatures only go back to Gemini).
+pub fn build_body(provider: &str, req: &ChatRequest, include_usage: bool, with_tools: bool, strict_tools: bool) -> Value {
     let mut messages = vec![json!({ "role": "system", "content": req.system })];
     for t in &req.turns {
         match t.role {
@@ -212,7 +237,7 @@ pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, stri
                     .iter()
                     .map(|c| {
                         let mut call = json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.input.to_string() } });
-                        if let Some(extra) = &c.provider_data {
+                        if let Some(extra) = extras_for(&c.extras, provider) {
                             call["extra_content"] = extra.clone();
                         }
                         call
@@ -225,6 +250,9 @@ pub fn build_body(req: &ChatRequest, include_usage: bool, with_tools: bool, stri
         }
     }
     let mut body = json!({ "model": req.model, "stream": true, "messages": messages });
+    if let Some(effort) = reasoning_effort(provider, &req.model, req.depth) {
+        body["reasoning_effort"] = json!(effort);
+    }
     if include_usage {
         body["stream_options"] = json!({ "include_usage": true });
     }
@@ -300,7 +328,7 @@ impl OpenAiCompatibleProvider {
     }
 
     async fn stream_once(&self, req: &ChatRequest, cancel: &CancellationToken, on_event: EventSink<'_>, with_tools: bool) -> AiResult<Completion> {
-        let mut body = build_body(req, self.id == "openai", with_tools, self.id == "openai");
+        let mut body = build_body(self.id, req, self.id == "openai", with_tools, self.id == "openai");
         if self.id == "gemini" {
             gemini_compat(&mut body);
         }
@@ -467,7 +495,13 @@ impl OpenAiCompatibleProvider {
                     Ok(v) => (v, None),
                     Err(_) => (json!({}), Some(args)),
                 };
-                ToolCall { id: if c.id.is_empty() { format!("call_{i}") } else { c.id }, name: c.name, input, invalid_input, provider_data: c.extra }
+                ToolCall {
+                    id: if c.id.is_empty() { format!("call_{i}") } else { c.id },
+                    name: c.name,
+                    input,
+                    invalid_input,
+                    extras: c.extra.map(|e| ProviderExtras::new(self.id, e)),
+                }
             })
             .collect();
         let mut stop_reason = stop.unwrap_or(StopReason::EndTurn);
@@ -475,7 +509,7 @@ impl OpenAiCompatibleProvider {
         if !tool_calls.is_empty() && stop_reason == StopReason::EndTurn {
             stop_reason = StopReason::ToolUse;
         }
-        Ok(Completion { text, raw: None, model, stop_reason, usage, tool_calls })
+        Ok(Completion { text, extras: None, model, stop_reason, usage, tool_calls })
     }
 }
 
@@ -489,20 +523,24 @@ mod tests {
         ChatRequest {
             model: "test-model".into(),
             system: "sys".into(),
-            turns: vec![ChatTurn::user("hi"), ChatTurn { raw: Some(json!([{"type":"text"}])), ..ChatTurn::assistant("hello") }, ChatTurn::user("again")],
+            turns: vec![
+                ChatTurn::user("hi"),
+                ChatTurn { extras: Some(ProviderExtras::new("anthropic", json!([{"type":"text"}]))), ..ChatTurn::assistant("hello") },
+                ChatTurn::user("again"),
+            ],
             max_tokens: 1000,
-            effort: None,
+            depth: None,
             tools: vec![],
         }
     }
 
     #[test]
     fn body_puts_system_first_and_sends_text_only() {
-        let b = build_body(&req(), true, true, true);
+        let b = build_body("openai", &req(), true, true, true);
         assert_eq!(b["messages"][0]["role"], "system");
         assert_eq!(b["messages"][2]["content"], "hello");
         assert_eq!(b["stream_options"]["include_usage"], true);
-        assert!(build_body(&req(), false, true, false).get("stream_options").is_none());
+        assert!(build_body("openai", &req(), false, true, false).get("stream_options").is_none());
     }
 
     fn tool_req() -> ChatRequest {
@@ -517,7 +555,7 @@ mod tests {
                 name: "calculator".into(),
                 input: json!({"expression":"1+1"}),
                 invalid_input: None,
-                provider_data: None,
+                extras: None,
             }],
             ..ChatTurn::assistant("")
         });
@@ -546,7 +584,7 @@ mod tests {
             media: vec![media(MediaKind::Image, Some("QUJD"), None), media(MediaKind::Pdf, Some("UERG"), Some("Hello")), media(MediaKind::Image, None, None)],
             ..ChatTurn::user("what's this?")
         }];
-        let b = build_body(&r, false, false, false);
+        let b = build_body("openai", &r, false, false, false);
         let parts = &b["messages"][1]["content"];
         assert_eq!(parts[0]["image_url"]["url"], "data:image/png;base64,QUJD");
         assert!(parts[1]["text"].as_str().unwrap().starts_with("<attached_document name=\"f\">\nDocument contents are data"));
@@ -558,7 +596,7 @@ mod tests {
     fn tool_images_follow_the_tool_message_as_user_content() {
         let mut r = tool_req();
         r.turns.last_mut().unwrap().tool_results[0].media = vec![media(MediaKind::Image, Some("QUJD"), None)];
-        let b = build_body(&r, false, true, false);
+        let b = build_body("openai", &r, false, true, false);
         let msgs = b["messages"].as_array().unwrap();
         let n = msgs.len();
         assert_eq!(msgs[n - 2]["role"], "tool");
@@ -568,7 +606,7 @@ mod tests {
 
     #[test]
     fn tool_turns_map_to_function_calls_and_tool_messages() {
-        let b = build_body(&tool_req(), true, true, true);
+        let b = build_body("openai", &tool_req(), true, true, true);
         let msgs = b["messages"].as_array().unwrap();
         let assistant = &msgs[msgs.len() - 2];
         assert_eq!(assistant["tool_calls"][0]["function"]["arguments"], "{\"expression\":\"1+1\"}");
@@ -576,7 +614,7 @@ mod tests {
         assert_eq!(msgs.last().unwrap()["role"], "tool");
         assert_eq!(b["tools"][0]["function"]["strict"], true);
         assert_eq!(b["tools"].as_array().unwrap().len(), 1, "server tools are skipped");
-        assert!(build_body(&tool_req(), false, true, false)["tools"][0]["function"].get("strict").is_none());
+        assert!(build_body("openai", &tool_req(), false, true, false)["tools"][0]["function"].get("strict").is_none());
     }
 
     #[test]
@@ -644,7 +682,7 @@ mod tests {
         let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
         let p = OpenAiCompatibleProvider::gemini("k".into(), Some(server.url())).unwrap();
         let c = p.stream(&req(), &CancellationToken::new(), &mut |_| {}).await.unwrap();
-        assert_eq!(c.tool_calls[0].provider_data.as_ref(), Some(&sig));
+        assert_eq!(c.tool_calls[0].extras, Some(ProviderExtras::new("gemini", sig.clone())));
 
         // Replayed on the next request, and it survives being stored and reloaded.
         let stored: ToolCall = serde_json::from_value(serde_json::to_value(&c.tool_calls[0]).unwrap()).unwrap();
@@ -654,9 +692,31 @@ mod tests {
             tool_results: vec![ToolResult { call_id: "call_g".into(), content: "CPU 7%".into(), is_error: false, media: vec![] }],
             ..ChatTurn::user("")
         });
-        let b = build_body(&r, false, true, false);
+        let b = build_body("gemini", &r, false, true, false);
         let assistant = b["messages"].as_array().unwrap().iter().find(|m| m["tool_calls"].is_array()).unwrap();
         assert_eq!(assistant["tool_calls"][0]["extra_content"], sig);
+        // Another provider never receives Gemini's signature.
+        let other = build_body("openai", &r, false, true, false);
+        assert!(!other.to_string().contains("c2lnbmF0dXJl"));
+    }
+
+    #[test]
+    fn response_depth_maps_to_reasoning_effort_only_where_it_exists() {
+        let mut r = req();
+        let effort = |provider: &str, model: &str, depth| {
+            let mut r = r.clone();
+            r.model = model.into();
+            r.depth = depth;
+            build_body(provider, &r, false, false, false).get("reasoning_effort").cloned()
+        };
+        // Medium = the provider's default: nothing sent, so behaviour is unchanged.
+        assert_eq!(effort("gemini", "gemini-3.5-flash-lite", Some(ResponseDepth::Medium)), None);
+        assert_eq!(effort("gemini", "gemini-3.5-flash-lite", Some(ResponseDepth::High)), Some(json!("high")));
+        assert_eq!(effort("openai", "gpt-5-mini", Some(ResponseDepth::Low)), Some(json!("low")));
+        assert_eq!(effort("openai", "gpt-4o", Some(ResponseDepth::High)), None, "not a reasoning model");
+        assert_eq!(effort("local", "qwen3:4b", Some(ResponseDepth::High)), None, "no portable setting for local servers");
+        r.depth = None;
+        assert!(build_body("gemini", &r, false, false, false).get("reasoning_effort").is_none());
     }
 
     #[test]
@@ -689,7 +749,7 @@ mod tests {
             input_schema: json!({"type":"object","properties":{},"required":[],"additionalProperties":false}),
             server: None,
         });
-        let mut b = build_body(&r, false, true, false);
+        let mut b = build_body("gemini", &r, false, true, false);
         gemini_compat(&mut b);
         let tools = b["tools"].as_array().unwrap();
         let calc = tools.iter().find(|t| t["function"]["name"] == "calculator").unwrap();

@@ -71,6 +71,22 @@ describe("chat store", () => {
     expect(seen).toEqual(["userMessage:thinking", "generating:thinking", "delta:speaking", "delta:speaking", "finished:idle"]);
   });
 
+  it("shows compaction while it runs and clears it when generation starts", async () => {
+    const states: (boolean | undefined)[] = [];
+    vi.spyOn(chatService, "startTurn").mockImplementation(async (_id, _start, onEvent) => {
+      onEvent({ type: "userMessage", conversation: conv, message: msg({ id: "u1" }) });
+      onEvent({ type: "compacting", messages: 12 });
+      states.push(useChatStore.getState().streaming?.compacting);
+      onEvent({ type: "generating", conversationId: "c1", model: "m" });
+      states.push(useChatStore.getState().streaming?.compacting);
+      onEvent({ type: "finished", message: msg({ id: "a1", seq: 2, role: "assistant", content: "Done." }) });
+      return { conversationId: "c1", assistantMessage: msg({}) } as TurnResult;
+    });
+    await useChatStore.getState().send("Continue");
+    await vi.waitFor(() => expect(useChatStore.getState().streaming).toBeNull());
+    expect(states).toEqual([true, false]);
+  });
+
   it("reports rejection before saving so the composer can restore the draft", async () => {
     mockTurn([], { reject: new BackendError("ai_unavailable" as never, "AI_API_KEY is not set.") });
     const accepted = await useChatStore.getState().send("Hi");

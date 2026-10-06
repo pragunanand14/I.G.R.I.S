@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
-use crate::ai::{AiProvider, AiRuntime, AiStatus};
+use crate::ai::{AiRuntime, AiStatus, ModelRouter};
 use crate::config::AppConfig;
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
@@ -42,10 +42,10 @@ pub struct AppPaths {
 }
 
 impl AppState {
-    pub fn ai_provider(&self) -> AppResult<(Arc<dyn AiProvider>, AiStatus)> {
+    pub fn ai_router(&self) -> AppResult<(Arc<ModelRouter>, AiStatus)> {
         let rt = self.ai.read().map_err(|_| AppError::internal("AI runtime lock poisoned"))?;
-        match &rt.provider {
-            Some(p) => Ok((Arc::clone(p), rt.status.clone())),
+        match &rt.router {
+            Some(r) => Ok((Arc::clone(r), rt.status.clone())),
             None => Err(AppError::AiUnavailable(rt.status.problem.clone().unwrap_or_else(|| "AI is not configured.".into()))),
         }
     }

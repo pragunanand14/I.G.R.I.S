@@ -15,6 +15,9 @@ const KEYS: &[&str] = &[
     "AI_API_KEY",
     "AI_MODEL",
     "AI_BASE_URL",
+    "AI_VISION_MODEL",
+    "AI_FAST_MODEL",
+    "AI_CONTEXT_WINDOW",
     "DATABASE_URL",
     "SEARCH_PROVIDER",
     "SEARCH_API_KEY",
@@ -35,6 +38,12 @@ pub struct AppConfig {
     pub ai_api_key: Option<String>,
     pub ai_model: Option<String>,
     pub ai_base_url: Option<String>,
+    /// Model for requests with images (defaults to the chat model).
+    pub ai_vision_model: Option<String>,
+    /// Model for cheap background work like history compaction (defaults to the chat model).
+    pub ai_fast_model: Option<String>,
+    /// Context window of the configured models, in tokens (for local servers).
+    pub ai_context_window: Option<u32>,
     pub database_url: Option<PathBuf>,
     pub search_provider: Option<String>,
     pub search_api_key: Option<String>,
@@ -135,6 +144,9 @@ impl AppConfig {
             ai_api_key: read("AI_API_KEY"),
             ai_model: read("AI_MODEL"),
             ai_base_url: read("AI_BASE_URL"),
+            ai_vision_model: read("AI_VISION_MODEL"),
+            ai_fast_model: read("AI_FAST_MODEL"),
+            ai_context_window: read("AI_CONTEXT_WINDOW").and_then(|v| v.replace(['_', ','], "").parse().ok()),
             database_url: read("DATABASE_URL").map(PathBuf::from),
             search_provider: read("SEARCH_PROVIDER").map(|v| v.to_lowercase()),
             search_api_key: read("SEARCH_API_KEY"),

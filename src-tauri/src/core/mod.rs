@@ -1,9 +1,12 @@
 //! IGRIS core: orchestration of a conversation turn.
 //!
-//! Current pipeline (Phase 2): receive input → load context → call the model →
-//! stream → persist. Intent analysis, memory retrieval, planning, permission
-//! checks and tool execution slot in here in later phases.
+//! Pipeline: receive input → recall memory → build provider-neutral history →
+//! budget it for the routed model (compacting older messages when needed) →
+//! call the model → run requested tools through the executor → stream →
+//! persist.
 
+pub mod budget;
 pub mod chat;
+pub mod compaction;
 pub mod context;
 pub mod prompt;

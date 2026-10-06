@@ -13,10 +13,16 @@ use std::time::Instant;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use super::context::{build_turns, encode_turns};
+use super::budget::{self, estimate_text, estimate_turns, shorten_old_tool_results, Budget};
+use super::compaction::{self, Group};
+use super::context::encode_turns;
 use super::prompt::{self, PromptContext};
-use crate::ai::{AiError, AiErrorKind, AiProvider, ChatRequest, ChatTurn, Effort, Role, ServerToolEvent, StopReason, StreamEvent, ToolDef, Usage};
+use crate::ai::{
+    AiError, AiErrorKind, ChatRequest, ChatTurn, MediaKind, ModelRole, ModelRouter, Needs, ResponseDepth, Role, ServerToolEvent, StopReason, StreamEvent,
+    ToolDef, Usage,
+};
 use crate::attachments::AttachmentStore;
+use crate::conversations::StoredSummary;
 use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
@@ -42,6 +48,8 @@ pub enum ChatEvent {
     UserMessage { conversation: Conversation, message: Message },
     /// The provider request is starting.
     Generating { conversation_id: String, model: String },
+    /// Older messages are being summarized to fit the model's context (`messages` of them).
+    Compacting { messages: usize },
     /// Streamed response text.
     Delta { text: String },
     /// The model is reasoning before it answers; `chars` is the total so far (text not shown).
@@ -65,9 +73,11 @@ pub struct Tooling {
 }
 
 pub struct GenerationParams {
-    pub provider: Arc<dyn AiProvider>,
-    pub model: String,
-    pub effort: Option<Effort>,
+    /// Picks the model per request (chat, vision for images, fast for compaction).
+    pub router: Arc<ModelRouter>,
+    /// The user's model choice from Settings (applies to the chat role).
+    pub chat_model: Option<String>,
+    pub depth: Option<ResponseDepth>,
     pub tooling: Tooling,
     /// Where attachment bytes are loaded from (None in tests without files).
     pub attachments: Option<Arc<AttachmentStore>>,
@@ -185,8 +195,55 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         return Err(AppError::validation("There is no message to respond to."));
     }
 
-    let provider_id = params.provider.id();
-    let mut base_turns = build_turns(&history, provider_id);
+    // Intelligence interface: pick the model, then fit the context to it.
+    let chat_override = params.chat_model.as_deref();
+    let mut summary = {
+        let conn = db.conn()?;
+        conversations::latest_summary(&conn, conversation_id)?
+    };
+    let mut groups: Vec<Group> = history.iter().filter(|m| summary.as_ref().map(|s| m.seq > s.through_seq).unwrap_or(true)).map(Group::from_message).collect();
+    if !groups.iter().any(|g| g.role == Role::User) {
+        // A summary that leaves no request (shouldn't happen): use the full history.
+        summary = None;
+        groups = history.iter().map(Group::from_message).collect();
+    }
+    let has_image = |t: &ChatTurn| t.media.iter().chain(t.tool_results.iter().flat_map(|r| &r.media)).any(|m| m.kind == MediaKind::Image);
+    let needs = Needs { vision: groups.iter().flat_map(|g| &g.turns).any(has_image), tools: !offered.is_empty() };
+    let route = params.router.route_for(ModelRole::Chat, needs, chat_override).unwrap_or_else(|why| {
+        // Keep today's behaviour: the chat model (its adapter reports images it can't read).
+        tracing::warn!(event = "MODEL_ROUTE_FALLBACK", reason = %why);
+        params.router.route(ModelRole::Chat, chat_override)
+    });
+    let budget = Budget::for_model(&route.caps, MAX_OUTPUT_TOKENS);
+    let fixed = budget::estimate_fixed(&system, &offered);
+    let prefix_tokens = summary.as_ref().map(|s| estimate_text(&compaction::render_prefix(s))).unwrap_or(0);
+    if let Some(split) = compaction::plan_split(&groups, fixed, prefix_tokens, &budget) {
+        emit(ChatEvent::Compacting { messages: split });
+        let fast = params.router.route(ModelRole::Fast, chat_override);
+        let previous = summary.as_ref().map(|s| s.summary.clone());
+        let memory = compaction::merge_memory(summary.as_ref().map(|s| s.memory.as_slice()).unwrap_or(&[]), &groups[..split]);
+        let through_seq = groups[split - 1].seq;
+        match compaction::summarize(&fast, previous.as_deref(), &groups[..split], cancel).await {
+            Ok(text) => {
+                let s = StoredSummary { through_seq, summary: text, memory };
+                if let Err(e) = db.conn().and_then(|c| conversations::save_summary(&c, conversation_id, &s, fast.provider_id(), &fast.model)) {
+                    tracing::warn!(event = "CONTEXT_SUMMARY_SAVE_FAILED", error = %e);
+                }
+                tracing::info!(event = "CONTEXT_COMPACTED", messages = split, through_seq, model = %fast.model);
+                summary = Some(s);
+                groups.drain(..split);
+            }
+            Err(e) if e.kind == AiErrorKind::Cancelled => {} // the request below ends as cancelled
+            Err(e) => {
+                // Not stored: the next request tries again. The conversation is untouched.
+                tracing::warn!(event = "CONTEXT_COMPACTION_FAILED", kind = ?e.kind);
+                let digest = compaction::fallback_digest(previous.as_deref(), &groups[..split]);
+                summary = Some(StoredSummary { through_seq, summary: digest, memory });
+                groups.drain(..split);
+            }
+        }
+    }
+    let mut base_turns = compaction::assemble(summary.as_ref(), &groups);
     if let Some(store) = &params.attachments {
         let conn = db.conn()?;
         for t in &mut base_turns {
@@ -196,9 +253,19 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         }
     }
     let allowed: Vec<String> = offered.iter().map(|t| t.name.clone()).collect();
+    let provider_id = route.provider_id();
 
-    emit(ChatEvent::Generating { conversation_id: conversation_id.to_string(), model: params.model.clone() });
-    tracing::info!(event = "CHAT_REQUEST_STARTED", provider = provider_id, model = %params.model, turns = base_turns.len(), tools = offered.len());
+    emit(ChatEvent::Generating { conversation_id: conversation_id.to_string(), model: route.model.clone() });
+    tracing::info!(
+        event = "CHAT_REQUEST_STARTED",
+        provider = provider_id,
+        model = %route.model,
+        role = ?route.role,
+        turns = base_turns.len(),
+        tools = offered.len(),
+        context_tokens = fixed + estimate_turns(&base_turns),
+        input_limit = budget.input_limit,
+    );
 
     let started = Instant::now();
     let mut first_token_ms: Option<u128> = None;
@@ -207,7 +274,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
     let mut new_turns: Vec<ChatTurn> = Vec::new();
     let mut activities: Vec<ToolActivity> = Vec::new();
     let mut usage = Usage::default();
-    let mut served_model = params.model.clone();
+    let mut served_model = route.model.clone();
     let mut outcome = Outcome::StepLimit;
 
     let operator_running = || params.tooling.operator.as_ref().is_some_and(|o| o.covers(Some(conversation_id)));
@@ -220,18 +287,19 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         let mut turns = base_turns.clone();
         turns.extend(new_turns.iter().cloned());
         drop_old_tool_images(&mut turns, KEEP_RECENT_TOOL_IMAGES);
+        fit_tool_output(&mut turns, fixed, &budget);
         let request = ChatRequest {
-            model: params.model.clone(),
+            model: route.model.clone(),
             system: system.clone(),
             turns,
             max_tokens: MAX_OUTPUT_TOKENS,
-            effort: params.effort,
+            depth: params.depth,
             tools: offered.clone(),
         };
 
         let mut round_has_text = false;
         let mut server_running: Vec<ToolActivity> = Vec::new();
-        let result = params
+        let result = route
             .provider
             .stream(&request, cancel, &mut |ev| match ev {
                 StreamEvent::ServerTool(ServerToolEvent::Started { id, name, input }) => {
@@ -323,7 +391,11 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         // Only act on tool calls when the model actually stopped to use them —
         // a refusal or max_tokens stop can leave a call cut off mid-input.
         let wants_tools = completion.stop_reason == StopReason::ToolUse && !completion.tool_calls.is_empty();
-        new_turns.push(ChatTurn { raw: completion.raw.clone(), tool_calls: completion.tool_calls.clone(), ..ChatTurn::assistant(completion.text.clone()) });
+        new_turns.push(ChatTurn {
+            extras: completion.extras.clone(),
+            tool_calls: completion.tool_calls.clone(),
+            ..ChatTurn::assistant(completion.text.clone())
+        });
         if completion.stop_reason == StopReason::PauseTurn {
             // A provider-side tool loop paused: re-send as-is and it resumes.
             if round >= limit {
@@ -430,6 +502,25 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
     Ok(message)
 }
 
+/// Long tool loops (operator tasks, build-fix cycles) grow the request every
+/// round. Over budget, older tool output in this request is shortened — more
+/// aggressively if needed — while calls, the newest results and the
+/// conversation stay intact. Only the request copy changes; nothing stored does.
+fn fit_tool_output(turns: &mut [ChatTurn], fixed: u32, budget: &Budget) {
+    for (keep, max_chars) in [(6, 1_200), (3, 400), (1, 160)] {
+        if fixed + estimate_turns(turns) <= budget.input_limit {
+            return;
+        }
+        shorten_old_tool_results(turns, keep, max_chars);
+    }
+    let size = fixed + estimate_turns(turns);
+    if size > budget.input_limit {
+        // Still too big (e.g. one huge message): send it and let the provider
+        // report a real context error rather than silently dropping content.
+        tracing::warn!(event = "CONTEXT_OVER_BUDGET", estimated = size, limit = budget.input_limit);
+    }
+}
+
 /// Keep only the `keep` most recent tool results that carry images; older
 /// ones get a short note instead (the model has already acted on them).
 fn drop_old_tool_images(turns: &mut [ChatTurn], keep: usize) {
@@ -462,6 +553,7 @@ mod tests {
     use super::*;
     use crate::ai::anthropic::AnthropicProvider;
     use crate::ai::testutil::MockServer;
+    use crate::conversations::NewMessage;
     use crate::tools::calculator::CalculatorTool;
     use crate::tools::executor::{ActivityStatus, Approval};
     use crate::tools::{PermissionLevel, Tool, ToolOutput, ToolResultT, ToolSpec};
@@ -538,15 +630,221 @@ mod tests {
     fn params(url: String, registry: Arc<ToolRegistry>, policy: Policy, approval: Approval) -> GenerationParams {
         GenerationParams {
             attachments: None,
-            provider: Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()),
-            model: "claude-opus-5-5".into(),
-            effort: Some(Effort::Medium),
+            router: Arc::new(ModelRouter::new(Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()), "claude-opus-5-5")),
+            chat_model: None,
+            depth: Some(ResponseDepth::Medium),
             tooling: Tooling { registry, policy, approver: Arc::new(FixedApprover(approval)), trust: None, operator: None },
         }
     }
 
     fn db() -> Arc<Database> {
         Arc::new(Database::open_in_memory().unwrap())
+    }
+
+    // --- Intelligence interface: budgeting, compaction, provider-neutral history ---
+
+    fn long_conversation(db: &Arc<Database>, reg: &Arc<ToolRegistry>, exchanges: usize) -> String {
+        let filler = "The itinerary needs flights, a hotel near the beach and a budget under thirty thousand rupees. ".repeat(8);
+        let (conv, _) = save_user_message(db, None, &format!("question 0: plan a trip to Goa. {filler}"), "Ada", &reg.defs(), false).unwrap();
+        let mut conn = db.conn().unwrap();
+        conversations::append(
+            &mut conn,
+            &conv.id,
+            NewMessage { role: Role::Assistant, provider: Some("anthropic".into()), ..NewMessage::user(format!("answer 0. {filler}")) },
+        )
+        .unwrap();
+        for i in 1..exchanges {
+            conversations::append(&mut conn, &conv.id, NewMessage::user(format!("question {i}. {filler}"))).unwrap();
+            conversations::append(
+                &mut conn,
+                &conv.id,
+                NewMessage { role: Role::Assistant, provider: Some("anthropic".into()), ..NewMessage::user(format!("answer {i}. {filler}")) },
+            )
+            .unwrap();
+        }
+        drop(conn);
+        save_user_message(db, Some(&conv.id), "What did we decide?", "Ada", &reg.defs(), false).unwrap();
+        conv.id
+    }
+
+    fn small_window(url: String, reg: Arc<ToolRegistry>) -> GenerationParams {
+        let mut p = params(url.clone(), reg, Policy::default(), Approval::Approved);
+        p.router =
+            Arc::new(ModelRouter::new(Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()), "claude-opus-5-5").with_context_window(Some(8_000)));
+        p
+    }
+
+    #[tokio::test]
+    async fn short_conversations_send_everything_without_extra_calls() {
+        let db = db();
+        let server = MockServer::start(vec![(200, "text/event-stream", sse_reply("Hi."))]).await;
+        let reg = registry_with(None);
+        let (conv, _) = save_user_message(&db, None, "Hello", "Ada", &reg.defs(), false).unwrap();
+        let mut evs = Vec::new();
+        generate(&db, &conv.id, &small_window(server.url(), reg), &CancellationToken::new(), &mut |e| evs.push(e)).await.unwrap();
+        assert_eq!(server.requests().await.len(), 1, "no summary call");
+        assert!(!evs.iter().any(|e| matches!(e, ChatEvent::Compacting { .. })));
+        assert!(conversations::latest_summary(&db.conn().unwrap(), &conv.id).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn long_conversations_are_compacted_once_and_the_summary_is_reused() {
+        let db = db();
+        let notes = "- Goal: plan a trip to Goa under 30k rupees\n- Decided: beach hotel";
+        // The old part is larger than one summarizer call may carry, so it is summarized in two chunks.
+        let server = MockServer::start(vec![
+            (200, "text/event-stream", sse_reply("- Goal: plan a trip to Goa")),
+            (200, "text/event-stream", sse_reply(notes)),
+            (200, "text/event-stream", sse_reply("We chose a beach hotel.")),
+            (200, "text/event-stream", sse_reply("Flights next.")),
+        ])
+        .await;
+        let reg = registry_with(None);
+        let conv = long_conversation(&db, &reg, 14);
+        let before = conversations::messages(&db.conn().unwrap(), &conv).unwrap().len();
+        let p = small_window(server.url(), reg.clone());
+        let mut evs = Vec::new();
+        let m = generate(&db, &conv, &p, &CancellationToken::new(), &mut |e| evs.push(e)).await.unwrap();
+        assert_eq!(m.content, "We chose a beach hotel.");
+        assert!(evs.iter().any(|e| matches!(e, ChatEvent::Compacting { messages } if *messages > 0)));
+
+        let reqs = server.requests().await;
+        let (summary_req, merge_req, chat_req) = (reqs[0].json(), reqs[1].json(), reqs[2].json());
+        assert!(summary_req["system"].as_str().unwrap().starts_with("You condense"));
+        assert!(summary_req["messages"][0]["content"].as_str().unwrap().contains("question 0: plan a trip to Goa"));
+        assert!(summary_req.get("tools").is_none(), "the summarizer gets no tools");
+        assert!(merge_req["messages"][0]["content"].as_str().unwrap().starts_with("Existing notes"), "chunks build on the notes so far");
+
+        let sent = chat_req["messages"].to_string();
+        assert!(sent.contains("<conversation_summary>") && sent.contains("plan a trip to Goa under 30k"));
+        assert!(!sent.contains("question 0:"), "old messages are replaced by the summary");
+        assert!(sent.contains("What did we decide?"), "the latest request is always sent");
+        let size = budget::estimate_fixed(chat_req["system"].as_str().unwrap(), &reg.defs()) + estimate_text(&sent);
+        assert!(size <= Budget::for_model(&p.router.route(ModelRole::Chat, None).caps, MAX_OUTPUT_TOKENS).input_limit, "{size}");
+
+        // Stored provider-neutrally; nothing deleted.
+        {
+            let conn = db.conn().unwrap();
+            let stored = conversations::latest_summary(&conn, &conv).unwrap().unwrap();
+            assert!(stored.summary.contains("beach hotel"));
+            assert_eq!(conversations::messages(&conn, &conv).unwrap().len(), before + 1);
+        }
+
+        // The next message reuses the summary: one request, no new compaction.
+        save_user_message(&db, Some(&conv), "And flights?", "Ada", &reg.defs(), false).unwrap();
+        generate(&db, &conv, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        let reqs = server.requests().await;
+        assert_eq!(reqs.len(), 4);
+        let third = reqs[3].json()["messages"].to_string();
+        assert!(third.contains("<conversation_summary>") && third.contains("And flights?") && !third.contains("question 0:"));
+    }
+
+    #[tokio::test]
+    async fn failed_compaction_falls_back_without_losing_anything() {
+        let db = db();
+        let err = json!({"type":"error","error":{"type":"invalid_request_error","message":"summary refused"}}).to_string();
+        let server = MockServer::start(vec![(400, "application/json", err), (200, "text/event-stream", sse_reply("Answer."))]).await;
+        let reg = registry_with(None);
+        let conv = long_conversation(&db, &reg, 14);
+        let before = conversations::messages(&db.conn().unwrap(), &conv).unwrap().len();
+        let m = generate(&db, &conv, &small_window(server.url(), reg), &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!((m.status, m.content.as_str()), (MessageStatus::Complete, "Answer."));
+        let sent = server.requests().await[1].json()["messages"].to_string();
+        assert!(sent.contains("A full summary couldn't be made") && sent.contains("question 0: plan a trip"), "extractive digest stands in");
+        let conn = db.conn().unwrap();
+        assert!(conversations::latest_summary(&conn, &conv).unwrap().is_none(), "a fallback is never stored");
+        assert_eq!(conversations::messages(&conn, &conv).unwrap().len(), before + 1);
+    }
+
+    #[tokio::test]
+    async fn switching_provider_keeps_the_tool_history() {
+        use crate::ai::openai::OpenAiCompatibleProvider;
+        use crate::ai::{ProviderExtras, ToolCall, ToolResult};
+        let db = db();
+        let reg = registry_with(None);
+        let (conv, _) = save_user_message(&db, None, "What's 2+2?", "Ada", &reg.defs(), false).unwrap();
+        // A turn produced by Anthropic, with its native blocks.
+        let turns = vec![
+            ChatTurn {
+                tool_calls: vec![ToolCall {
+                    id: "toolu_1".into(),
+                    name: "calculator".into(),
+                    input: json!({"expression": "2+2"}),
+                    invalid_input: None,
+                    extras: None,
+                }],
+                extras: Some(ProviderExtras::new(
+                    "anthropic",
+                    json!([{"type": "thinking", "thinking": "", "signature": "sig"}, {"type": "tool_use", "id": "toolu_1", "name": "calculator", "input": {"expression": "2+2"}}]),
+                )),
+                ..ChatTurn::assistant("")
+            },
+            ChatTurn {
+                tool_results: vec![ToolResult { call_id: "toolu_1".into(), content: "2+2 = 4".into(), is_error: false, media: vec![] }],
+                ..ChatTurn::user("")
+            },
+            ChatTurn::assistant("It's 4."),
+        ];
+        conversations::append(
+            &mut db.conn().unwrap(),
+            &conv.id,
+            NewMessage {
+                role: Role::Assistant,
+                provider: Some("anthropic".into()),
+                raw: Some(encode_turns(&turns).to_string()),
+                ..NewMessage::user("It's 4.")
+            },
+        )
+        .unwrap();
+        save_user_message(&db, Some(&conv.id), "Times 3?", "Ada", &reg.defs(), false).unwrap();
+
+        let body = format!("data: {}\n\ndata: [DONE]\n\n", json!({"choices":[{"delta":{"content":"12."},"finish_reason":"stop"}]}));
+        let server = MockServer::start(vec![(200, "text/event-stream", body)]).await;
+        let mut p = params(server.url(), reg, Policy::default(), Approval::Approved);
+        p.router = Arc::new(ModelRouter::new(Arc::new(OpenAiCompatibleProvider::openai("k".into(), Some(server.url())).unwrap()), "gpt-4o"));
+        let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |_| {}).await.unwrap();
+        assert_eq!(m.content, "12.");
+        let sent = server.requests().await[0].json();
+        let msgs = sent["messages"].as_array().unwrap();
+        let call = msgs.iter().find(|m| m["tool_calls"].is_array()).expect("the tool call crossed providers");
+        assert_eq!(call["tool_calls"][0]["function"]["name"], "calculator");
+        assert!(msgs.iter().any(|m| m["role"] == "tool" && m["content"] == "2+2 = 4"));
+        assert!(!sent.to_string().contains("signature"), "Anthropic-only data stays with Anthropic");
+    }
+
+    #[test]
+    fn long_tool_loops_stay_within_budget_without_touching_recent_work() {
+        use crate::ai::{ToolCall, ToolResult};
+        let budget = Budget::for_model(&crate::ai::capabilities::capabilities_for("local", "m", Some(16_000)), MAX_OUTPUT_TOKENS);
+        let mut turns = vec![ChatTurn::user("Fix the failing build")];
+        for i in 0..40 {
+            turns.push(ChatTurn {
+                tool_calls: vec![ToolCall {
+                    id: format!("c{i}"),
+                    name: "run_command".into(),
+                    input: json!({"program": "npm"}),
+                    invalid_input: None,
+                    extras: None,
+                }],
+                ..ChatTurn::assistant("")
+            });
+            turns.push(ChatTurn {
+                tool_results: vec![ToolResult {
+                    call_id: format!("c{i}"),
+                    content: format!("build log {i}\n{}", "error TS2345 at src/app.ts ".repeat(120)),
+                    is_error: false,
+                    media: vec![],
+                }],
+                ..ChatTurn::user("")
+            });
+        }
+        let latest = turns.last().unwrap().tool_results[0].content.clone();
+        assert!(estimate_turns(&turns) > budget.input_limit);
+        fit_tool_output(&mut turns, 3_000, &budget);
+        assert!(3_000 + estimate_turns(&turns) <= budget.input_limit);
+        assert_eq!(turns.last().unwrap().tool_results[0].content, latest, "the newest result is intact");
+        assert_eq!(turns.iter().filter(|t| !t.tool_calls.is_empty()).count(), 40, "every call is still there");
+        assert_eq!(turns[0].text, "Fix the failing build");
     }
 
     #[tokio::test]

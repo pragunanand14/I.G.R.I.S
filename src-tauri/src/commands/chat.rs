@@ -16,19 +16,15 @@ fn validate_request_id(id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Resolve provider + model + effort for a new generation.
+/// Router, model choice and response depth for a new generation.
 fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
-    let (provider, status) = state.ai_provider()?;
+    let (router, _status) = state.ai_router()?;
     let settings = settings::load(&*state.db.conn()?)?;
-    let model = Some(settings.ai_model.clone())
-        .filter(|m| !m.is_empty())
-        .or(status.configured_model)
-        .ok_or_else(|| AppError::AiUnavailable("No model configured. Set AI_MODEL or choose a model in Settings.".into()))?;
     Ok(GenerationParams {
         attachments: Some(state.attachments.clone()),
-        provider,
-        model,
-        effort: Some(settings.ai_effort),
+        router,
+        chat_model: Some(settings.ai_model.clone()).filter(|m| !m.trim().is_empty()),
+        depth: Some(settings.ai_effort),
         tooling: Tooling {
             registry: state.tools.clone(),
             policy: Policy { confirm_low: settings.confirm_low_risk },

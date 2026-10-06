@@ -65,7 +65,7 @@ pub async fn launch_application(state: State<'_, AppState>, id: String) -> AppRe
         name: "launch_application".into(),
         input: json!({ "name": entry.name }),
         invalid_input: None,
-        provider_data: None,
+        extras: None,
     };
     let cancel = CancellationToken::new();
     let ctx = ExecContext {

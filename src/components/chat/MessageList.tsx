@@ -86,6 +86,7 @@ function streamingLabel(s: StreamingState, now: number): string {
   if (last?.status === "awaitingApproval") return "Waiting for approval…";
   if (last?.status === "running") return `${last.title}…`;
   let label = s.phase === "waiting" ? "Thinking…" : "Responding…";
+  if (s.phase === "waiting" && s.compacting) label = "Condensing earlier messages…";
   if (s.phase === "waiting" && s.reasoningChars) label = `Reasoning… (~${Math.max(1, Math.round(s.reasoningChars / 5))} words)`;
   // Slow (e.g. local) models: show that it's still working.
   const elapsed = s.startedAt ? Math.floor((now - s.startedAt) / 1000) : 0;

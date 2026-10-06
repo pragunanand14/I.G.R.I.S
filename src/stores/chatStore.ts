@@ -18,6 +18,8 @@ export interface StreamingState {
   activities: ToolActivity[];
   /** Characters the model has spent reasoning before answering (reasoning models). */
   reasoningChars?: number;
+  /** Earlier messages are being summarized to fit the model's context. */
+  compacting?: boolean;
   /** When the request started (ms epoch), for the elapsed-time display. */
   startedAt?: number;
 }
@@ -80,11 +82,15 @@ export const useChatStore = create<ChatStore>((set, get) => {
         break;
       }
       case "generating":
-        set({ streaming: { ...s.streaming, conversationId: ev.conversationId, model: ev.model } });
+        // Sent after any compaction finished.
+        set({ streaming: { ...s.streaming, conversationId: ev.conversationId, model: ev.model, compacting: false } });
         setActivity("thinking");
         break;
       case "reasoning":
         set({ streaming: { ...s.streaming, reasoningChars: ev.chars } });
+        break;
+      case "compacting":
+        set({ streaming: { ...s.streaming, compacting: true } });
         break;
       case "delta":
         if (useAssistantStore.getState().activity !== "speaking") setActivity("speaking");

@@ -56,16 +56,16 @@ Composer ─chat_send(requestId, content, Channel)─▶ commands/chat
 ```
 
 * **Providers** implement `AiProvider` (`ai/mod.rs`): `AnthropicProvider` (Messages API over raw HTTP + SSE —
-  there is no official Rust SDK) and `OpenAiCompatibleProvider` (OpenAI, or local servers such as Ollama).
-  Gemini is not implemented and is reported as such. The provider is built from config at startup and can be
+  there is no official Rust SDK) and `OpenAiCompatibleProvider` (OpenAI, Gemini's OpenAI-compatible
+  endpoint, or local servers such as Ollama). The provider is built from config at startup and can be
   rebuilt with `reload_config`.
 * **Anthropic specifics**: default model `claude-opus-5-5`; thinking parameter omitted (adaptive by default);
   `output_config.effort` from Settings; automatic prompt caching; `fallbacks: "default"` (refusal fallback, beta
   `server-side-fallback-2026-07-01`) on the first-party endpoint for models that support it.
 * **History integrity**: each conversation stores its system prompt at creation and never re-renders it;
-  assistant turns store the provider's raw content blocks and replay them unchanged (thinking-block signatures
-  bind to the exact prefix). Editing and regenerating only truncate from the tail. Failed / cancelled / refused
-  turns are excluded from context, and raw blocks are never replayed to a different provider.
+  history is stored provider-neutrally (see *Intelligence interface* below), and a provider's own data (e.g.
+  thinking-block signatures) is replayed unchanged only to that provider. Editing and regenerating only truncate
+  from the tail. Failed / cancelled / refused turns are excluded from context.
 * **Outcomes are explicit**: every turn is persisted with a status — `complete`, `truncated`, `refused`,
   `cancelled` or `error` (with an actionable message). Nothing is shown as success unless the provider finished.
 * **Cancellation**: each request has a client-generated id; `chat_cancel` trips a `CancellationToken` that aborts
@@ -74,8 +74,53 @@ Composer ─chat_send(requestId, content, Channel)─▶ commands/chat
   any output has streamed.
 * **Rendering**: Markdown via `react-markdown` without raw HTML (model output can't inject markup); links open in
   the system browser through the opener plugin (http/https only) rather than navigating the app window.
-* **Limits / TODO**: no context-window management yet (very long conversations will eventually be rejected by the
-  provider with a clear error); API keys come from `.env` only (OS keychain storage is a TODO).
+* **Limits / TODO**: API keys come from `.env` only (OS keychain storage is a TODO).
+
+## Intelligence interface
+
+The layer between IGRIS and AI models. IGRIS asks for a *role*; history, budgets and capabilities are IGRIS
+concepts; provider specifics stay inside the adapters.
+
+```
+core/chat ─▶ ModelRouter.route_for(role, needs) ─▶ Route { provider, model, capabilities }
+    │
+    ├─ provider-neutral history (core/context) ─▶ Budget for the route's model (core/budget)
+    │        └─ over budget? ─▶ compaction (core/compaction): summary of older messages via the Fast role
+    ▼
+ AiProvider adapter (ai/anthropic, ai/openai) translates canonical turns to its wire format
+```
+
+* **Canonical history** (`ai/mod.rs`, `core/context.rs`): a `ChatTurn` holds text, tool calls, tool results, media
+  and optional `ProviderExtras { provider, data }`. Extras are opaque data owned by one provider (Anthropic content
+  blocks with thinking signatures, Gemini `thought_signature`s) and are replayed only by that provider's adapter;
+  every other provider rebuilds the turn from the canonical fields. Older stored formats (a raw Anthropic block
+  array, or turns with untagged `raw` / `provider_data`) are decoded on read and attributed to the provider that
+  wrote them — nothing is rewritten in the database.
+* **Adapters**: the Anthropic adapter sanitises and de-duplicates tool-call ids from other providers
+  (its ids must match `^[a-zA-Z0-9_-]+$`); the OpenAI-compatible adapter (OpenAI, Gemini, local) echoes Gemini
+  signatures only to Gemini. Switching provider mid-conversation keeps text, tool calls and tool results.
+* **Model router** (`ai/router.rs`): roles `Chat` (`AI_MODEL`, or the Settings model), `Vision`
+  (`AI_VISION_MODEL`) and `Fast` (`AI_FAST_MODEL`). Unset roles follow the chat model, so the default behaviour is
+  one model for everything. A request with images goes to a model that can read them; if the chat model isn't
+  known to read images and no vision model is configured, the request is still sent (logged as `MODEL_ROUTE_FALLBACK`) and the
+  provider's answer decides. All roles use the configured provider.
+* **Capabilities** (`ai/capabilities.rs`): a small table of model families (context window, tools, vision,
+  reasoning) with conservative fallbacks for unknown models (32k, no vision; local servers 16k).
+  `AI_CONTEXT_WINDOW` overrides the window.
+* **Budget** (`core/budget.rs`): provider-neutral, deterministic estimate (≈4 ASCII characters per token, denser
+  for other scripts, fixed costs for images and PDFs). The window is capped at 128k unless `AI_CONTEXT_WINDOW` is
+  set; output room (up to 16k) and a 5% margin are reserved. Within a tool loop, older tool outputs are shortened
+  progressively in the request copy only (the database keeps them in full); the newest results stay intact.
+* **Compaction** (`core/compaction.rs`): only when the history doesn't fit. Older messages (split at user messages;
+  the latest exchange is always kept verbatim) are summarised by the Fast role with no tools, in chunks, with
+  instructions to keep goals, decisions, facts, open tasks and the state of active work. The summary is stored in
+  `conversation_summaries` with the last message it covers and reused by later requests, then extended when needed.
+  Memory attached to summarised messages is carried over verbatim. If summarising fails, an extractive digest is
+  used for that request (not stored) and the reply still goes ahead. Editing a message deletes summaries that
+  cover it. All original messages stay in the database and in the UI; the UI shows "Condensing earlier messages…".
+* **Response depth** (Settings → AI): `low` / `medium` / `high`. Anthropic: `output_config.effort`. OpenAI
+  reasoning models and Gemini 2.5+/3: `reasoning_effort` for low/high; medium leaves the provider default. Other
+  models ignore it.
 
 ## Tools and permissions (Phase 3)
 

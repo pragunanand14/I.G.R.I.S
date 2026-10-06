@@ -241,6 +241,27 @@ pub const MIGRATIONS: &[Migration] = &[
             CREATE INDEX operator_tasks_created ON operator_tasks (created_at);
         "#,
     },
+    Migration {
+        version: 9,
+        name: "conversation_summaries",
+        sql: r#"
+            -- Provider-neutral summaries of the older part of long conversations
+            -- (context compaction). Messages are never deleted; a summary covers
+            -- messages up to `through_seq` and replaces them in model context.
+            CREATE TABLE conversation_summaries (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                through_seq     INTEGER NOT NULL,
+                summary         TEXT NOT NULL,
+                -- Memory blocks of the summarized messages, carried forward verbatim (JSON).
+                memory          TEXT NOT NULL DEFAULT '[]',
+                provider        TEXT,
+                model           TEXT,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            CREATE INDEX conversation_summaries_conv ON conversation_summaries (conversation_id, through_seq);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {
@@ -282,6 +303,26 @@ mod tests {
         assert_eq!(run(&mut conn).unwrap(), latest);
         assert_eq!(run(&mut conn).unwrap(), latest);
         assert_eq!(current_version(&conn).unwrap(), latest);
+    }
+
+    #[test]
+    fn upgrading_keeps_existing_conversations() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for m in MIGRATIONS.iter().filter(|m| m.version <= 8) {
+            conn.execute_batch(m.sql).unwrap();
+            conn.pragma_update(None, "user_version", m.version).unwrap();
+        }
+        conn.execute("INSERT INTO conversations (id, title, system_prompt) VALUES ('c', 'Old', 'sys')", []).unwrap();
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, seq, role, content, status, provider, raw) VALUES ('m', 'c', 1, 'assistant', 'hi', 'complete', 'anthropic', '[{\"type\":\"text\",\"text\":\"hi\"}]')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(run(&mut conn).unwrap(), MIGRATIONS.last().unwrap().version);
+        let raw: String = conn.query_row("SELECT raw FROM messages WHERE id = 'm'", [], |r| r.get(0)).unwrap();
+        assert_eq!(raw, "[{\"type\":\"text\",\"text\":\"hi\"}]", "stored history isn't rewritten");
+        let summaries: i64 = conn.query_row("SELECT COUNT(*) FROM conversation_summaries", [], |r| r.get(0)).unwrap();
+        assert_eq!(summaries, 0);
     }
 
     #[test]
