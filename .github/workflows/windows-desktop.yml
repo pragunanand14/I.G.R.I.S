@@ -1,0 +1,53 @@
+name: Windows desktop
+
+# Real-desktop tests for computer control (real screen, input, UI Automation,
+# applications) on a GitHub-hosted Windows runner. They take over mouse and
+# keyboard, so they run separately from CI.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "src-tauri/src/computer/**"
+      - "src-tauri/src/tools/computer.rs"
+      - "src-tauri/src/tools/browser.rs"
+      - "src-tauri/tests/windows_desktop.rs"
+      - ".github/workflows/windows-desktop.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  desktop:
+    name: Real Windows desktop
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npx vite build
+      - name: Desktop session
+        shell: pwsh
+        run: |
+          query session 2>$null
+          Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId
+          [System.Environment]::UserInteractive
+      - name: Real desktop tests
+        working-directory: src-tauri
+        run: cargo test --locked --test windows_desktop -- --ignored --test-threads=1 --nocapture
