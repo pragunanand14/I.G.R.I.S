@@ -1,4 +1,5 @@
 import { Check, Circle, CircleDot, ListChecks, Loader2, Pause, Play, RotateCcw, Square, TriangleAlert, X } from "lucide-react";
+import type { ReactElement } from "react";
 import { latestTask, useTaskStore } from "@/stores/taskStore";
 import { FINAL_STATES, type StepStatus, type TaskInfo } from "@/types/task";
 
@@ -28,7 +29,7 @@ function stateLabel(t: TaskInfo): string {
   }
 }
 
-const STEP_ICON: Record<StepStatus, JSX.Element> = {
+const STEP_ICON: Record<StepStatus, ReactElement> = {
   pending: <Circle className="size-3 text-faint" />,
   active: <CircleDot className="size-3 text-accent" />,
   completed: <Check className="size-3 text-success" />,

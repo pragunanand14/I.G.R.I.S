@@ -296,10 +296,10 @@ impl TaskSession {
         let path = ["cwd", "path", "to"].iter().find_map(|k| call.input[*k].as_str())?;
         let conn = self.hub.db.conn().ok()?;
         let projects = crate::projects::list(&conn).ok()?;
-        let target = std::path::Path::new(path);
+        let target = comparable(std::path::Path::new(path));
         projects
             .into_iter()
-            .filter(|p| !p.path.is_empty() && target.starts_with(&p.path))
+            .filter(|p| !p.path.is_empty() && target.starts_with(comparable(std::path::Path::new(&p.path))))
             .max_by_key(|p| p.path.len())
             .map(|p| super::task::TaskProject { id: p.id, name: p.name })
     }
@@ -454,5 +454,48 @@ impl TaskSession {
             .filter(|a| !a.ok || a.verification == Verification::Failed)
             .map(|a| format!("{} {}: {}", a.tool, clip(&a.target, 80), if a.note.is_empty() { "failed" } else { &a.note }))
             .collect()
+    }
+}
+
+/// A path in a form that compares reliably: resolved through its nearest
+/// existing ancestor (the file may not exist yet), without Windows' `\\?\`
+/// prefix (which `canonicalize` adds), and case-insensitive on Windows.
+fn comparable(path: &std::path::Path) -> std::path::PathBuf {
+    let mut existing = path;
+    let mut rest = Vec::new();
+    let resolved = loop {
+        if let Ok(c) = existing.canonicalize() {
+            break c;
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_os_string());
+                existing = parent;
+            }
+            _ => break path.to_path_buf(),
+        }
+    };
+    let mut full = resolved;
+    for part in rest.into_iter().rev() {
+        full.push(part);
+    }
+    let s = full.to_string_lossy().into_owned();
+    let s = s.strip_prefix(r"\\?\").unwrap_or(&s).to_string();
+    std::path::PathBuf::from(if cfg!(windows) { s.to_lowercase() } else { s })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paths_compare_through_canonical_forms_and_missing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let canonical = dir.path().canonicalize().unwrap();
+        let new_file = dir.path().join("sub").join("new.txt");
+        assert!(comparable(&new_file).starts_with(comparable(&canonical)), "a file that doesn't exist yet is still inside");
+        assert!(!comparable(std::path::Path::new("/elsewhere/x")).starts_with(comparable(&canonical)));
+        #[cfg(windows)]
+        assert_eq!(comparable(std::path::Path::new(r"\\?\C:\Windows")), comparable(std::path::Path::new(r"c:\windows")));
     }
 }
