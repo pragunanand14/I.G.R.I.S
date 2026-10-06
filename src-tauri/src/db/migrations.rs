@@ -280,6 +280,24 @@ pub const MIGRATIONS: &[Migration] = &[
             CREATE INDEX operator_tasks_conversation ON operator_tasks (conversation_id, created_at);
         "#,
     },
+    Migration {
+        version: 11,
+        name: "task_events",
+        sql: r#"
+            -- What a task attempted and what happened, written as it happens so it
+            -- survives a crash (bounded per task; details are short and redacted).
+            CREATE TABLE task_events (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL REFERENCES operator_tasks(id) ON DELETE CASCADE,
+                at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                kind    TEXT NOT NULL,
+                tool    TEXT,
+                detail  TEXT,
+                state   TEXT NOT NULL
+            );
+            CREATE INDEX task_events_task ON task_events (task_id, id);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

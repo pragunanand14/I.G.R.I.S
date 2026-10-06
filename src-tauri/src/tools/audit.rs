@@ -40,7 +40,8 @@ const MAX_FIELD: usize = 2000;
 
 /// The audit log never stores secrets: fields that look like passwords, keys,
 /// card or ID numbers are replaced wholesale.
-fn redact(s: &str) -> String {
+/// Clip, and replace anything that looks like a secret (shared with task activity).
+pub(crate) fn redact(s: &str) -> String {
     match crate::memory::sensitive::detect(s) {
         Some(kind) => format!("[redacted — looked like {}]", kind.describe()),
         None => clip(s),

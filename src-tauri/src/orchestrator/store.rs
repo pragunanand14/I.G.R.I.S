@@ -122,6 +122,59 @@ pub fn recover_interrupted(conn: &Connection) -> AppResult<Vec<Task>> {
     Ok(recovered)
 }
 
+/// Activity entries kept per task (older ones are pruned).
+pub const MAX_EVENTS_PER_TASK: i64 = 200;
+
+/// One entry of a task's activity log.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskEventRow {
+    pub at: String,
+    pub kind: String,
+    pub tool: Option<String>,
+    pub detail: Option<String>,
+    pub state: String,
+}
+
+/// Append to a task's activity log (details are clipped and redacted).
+pub fn record_event(conn: &Connection, task_id: &str, kind: &str, tool: Option<&str>, detail: Option<&str>, state: TaskState) -> AppResult<()> {
+    let detail = detail.filter(|d| !d.trim().is_empty()).map(crate::tools::audit::redact);
+    let id = conn.query_row(
+        "INSERT INTO task_events (task_id, kind, tool, detail, state) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id",
+        params![task_id, kind, tool, detail, state.as_str()],
+        |r| r.get::<_, i64>(0),
+    )?;
+    if id % 25 == 0 {
+        conn.execute(
+            "DELETE FROM task_events WHERE task_id = ?1 AND id <= (SELECT id FROM task_events WHERE task_id = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2)",
+            params![task_id, MAX_EVENTS_PER_TASK],
+        )?;
+    }
+    Ok(())
+}
+
+/// The newest `limit` entries of a task's activity, oldest first.
+pub fn events(conn: &Connection, task_id: &str, limit: u32) -> AppResult<Vec<TaskEventRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT at, kind, tool, detail, state FROM (SELECT * FROM task_events WHERE task_id = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
+    )?;
+    let rows = stmt.query_map(params![task_id, limit], |r| Ok(TaskEventRow { at: r.get(0)?, kind: r.get(1)?, tool: r.get(2)?, detail: r.get(3)?, state: r.get(4)? }))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// A tool that started and never reported back (IGRIS closed mid-action), with what it was doing.
+pub fn unfinished_action(conn: &Connection, task_id: &str) -> AppResult<Option<(String, Option<String>)>> {
+    let mut open: Option<(String, Option<String>)> = None;
+    for e in events(conn, task_id, MAX_EVENTS_PER_TASK as u32)? {
+        match (e.kind.as_str(), e.tool) {
+            ("tool_started", Some(t)) => open = Some((t, e.detail)),
+            ("tool_completed" | "interrupted", _) => open = None,
+            _ => {}
+        }
+    }
+    Ok(open)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +260,27 @@ mod tests {
         // Paused-and-interrupted tasks stay that way on the next start.
         assert_eq!(recover_interrupted(&conn).unwrap().len(), 3);
         assert_eq!(get(&conn, &running).unwrap().unwrap().state, TaskState::Paused);
+    }
+
+    #[test]
+    fn activity_is_logged_bounded_redacted_and_shows_unfinished_actions() {
+        let (db, cid) = conn_with_conversation();
+        let conn = db.conn().unwrap();
+        let t = Task::new(Some(&cid), "x");
+        save(&conn, &t).unwrap();
+        record_event(&conn, &t.id, "tool_started", Some("write_file"), Some("Write notes.txt"), TaskState::Executing).unwrap();
+        assert_eq!(unfinished_action(&conn, &t.id).unwrap(), Some(("write_file".to_string(), Some("Write notes.txt".to_string()))));
+        record_event(&conn, &t.id, "tool_completed", Some("write_file"), None, TaskState::Executing).unwrap();
+        assert_eq!(unfinished_action(&conn, &t.id).unwrap(), None);
+        record_event(&conn, &t.id, "tool_started", Some("computer_type"), Some("Type sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"), TaskState::Executing)
+            .unwrap();
+        let ev = events(&conn, &t.id, 10).unwrap();
+        assert_eq!(ev.len(), 3);
+        assert!(!ev[2].detail.as_deref().unwrap().contains("sk-ant"), "secrets never reach the activity log: {:?}", ev[2].detail);
+        for i in 0..(MAX_EVENTS_PER_TASK + 60) {
+            record_event(&conn, &t.id, "observation_received", Some("read_file"), Some(&i.to_string()), TaskState::Executing).unwrap();
+        }
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM task_events WHERE task_id = ?1", [&t.id], |r| r.get(0)).unwrap();
+        assert!(n <= MAX_EVENTS_PER_TASK + 25, "bounded: {n}");
     }
 }

@@ -57,6 +57,10 @@ pub enum TaskEvent {
     ToolRequested {
         tool: String,
     },
+    /// The executor is running it now (after any approval).
+    ToolStarted {
+        tool: String,
+    },
     ApprovalRequested {
         tool: String,
     },
@@ -98,6 +102,7 @@ impl TaskEvent {
             TaskEvent::PlanUpdated => "TASK_PLAN_UPDATED",
             TaskEvent::StepStarted { .. } => "TASK_STEP_STARTED",
             TaskEvent::ToolRequested { .. } => "TASK_TOOL_REQUESTED",
+            TaskEvent::ToolStarted { .. } => "TASK_TOOL_STARTED",
             TaskEvent::ApprovalRequested { .. } => "TASK_APPROVAL_REQUESTED",
             TaskEvent::ToolCompleted { .. } => "TASK_TOOL_COMPLETED",
             TaskEvent::ObservationReceived { .. } => "TASK_OBSERVATION_RECEIVED",
@@ -210,6 +215,32 @@ impl Orchestrator {
 
     fn emit(&self, event: TaskEvent, task: &Task, live: bool) {
         tracing::info!(event = event.name(), task_id = %task.id, state = task.state.as_str(), steps = task.steps, failures = task.failures);
+        // The activity log is written as things happen, so it survives a crash.
+        let tool = match &event {
+            TaskEvent::ToolRequested { tool }
+            | TaskEvent::ToolStarted { tool }
+            | TaskEvent::ToolCompleted { tool, .. }
+            | TaskEvent::ApprovalRequested { tool }
+            | TaskEvent::VerificationPassed { tool }
+            | TaskEvent::VerificationFailed { tool }
+            | TaskEvent::Retrying { tool } => Some(tool.as_str()).filter(|t| !t.is_empty()),
+            _ => None,
+        };
+        let detail = match &event {
+            TaskEvent::ToolCompleted { ok: false, .. } | TaskEvent::VerificationFailed { .. } | TaskEvent::VerificationPassed { .. } => {
+                task.context.actions.last().map(|a| a.note.clone())
+            }
+            TaskEvent::ToolRequested { .. } | TaskEvent::ToolStarted { .. } | TaskEvent::ApprovalRequested { .. } => task.activity.clone(),
+            TaskEvent::Paused => task.pause_reason.clone(),
+            TaskEvent::Failed | TaskEvent::Cancelled => task.error.clone(),
+            TaskEvent::Completed | TaskEvent::Ended => task.result.clone(),
+            TaskEvent::PlanUpdated => Some(task.plan.iter().map(|p| p.title.as_str()).collect::<Vec<_>>().join(" → ")),
+            _ => None,
+        };
+        let kind = event.name().trim_start_matches("TASK_").to_lowercase();
+        if let Err(e) = self.db.conn().and_then(|c| store::record_event(&c, &task.id, &kind, tool, detail.as_deref(), task.state)) {
+            tracing::warn!(event = "TASK_EVENT_SAVE_FAILED", error = %e);
+        }
         let update = TaskUpdate { event, task: TaskInfo { task: task.clone(), live } };
         let listeners = self.listeners.read().map(|g| g.clone()).unwrap_or_default();
         for l in listeners {
@@ -221,10 +252,78 @@ impl Orchestrator {
     /// marked interrupted. Nothing is resumed automatically.
     pub fn recover(&self) -> AppResult<Vec<Task>> {
         let tasks = store::recover_interrupted(&*self.db.conn()?)?;
-        for t in &tasks {
+        let mut out = Vec::new();
+        for mut t in tasks {
             tracing::info!(event = "TASK_INTERRUPTED", task_id = %t.id, state = t.state.as_str());
+            if t.context.interrupted {
+                if let Err(e) = self.record_interruption(&mut t) {
+                    tracing::warn!(event = "TASK_INTERRUPTION_RECORD_FAILED", error = %e);
+                }
+            }
+            out.push(t);
         }
-        Ok(tasks)
+        Ok(out)
+    }
+
+    /// Make an interrupted task's history coherent: an action that was running
+    /// when IGRIS closed has an unknown result, and the conversation turn that
+    /// never got a reply gets one saying what happened.
+    fn record_interruption(&self, t: &mut Task) -> AppResult<()> {
+        let mut conn = self.db.conn()?;
+        if let Some((tool, what)) = store::unfinished_action(&conn, &t.id)? {
+            let note = "IGRIS closed while this was running; its result is unknown.".to_string();
+            t.context.record(task::ActionRecord {
+                tool: tool.clone(),
+                target: what.clone().unwrap_or_else(|| tool.clone()),
+                ok: true,
+                verification: task::Verification::Unverified,
+                note: note.clone(),
+            });
+            store::save(&conn, t)?;
+            store::record_event(&conn, &t.id, "interrupted", Some(&tool), Some(&note), t.state)?;
+        } else {
+            store::record_event(&conn, &t.id, "interrupted", None, t.pause_reason.as_deref(), t.state)?;
+        }
+        let Some(cid) = t.conversation_id.clone() else { return Ok(()) };
+        let last = crate::conversations::messages(&conn, &cid)?.into_iter().last();
+        if last.is_some_and(|m| m.role == crate::ai::Role::User) {
+            let done: Vec<String> = t
+                .context
+                .actions
+                .iter()
+                .map(|a| {
+                    let v = match (a.ok, a.verification) {
+                        (false, _) => "failed",
+                        (true, task::Verification::Passed) => "done, checked",
+                        (true, task::Verification::Failed) => "check failed",
+                        (true, task::Verification::Unverified) => "result unknown",
+                        _ => "done",
+                    };
+                    format!("- {} {} — {v}", a.tool, task::clip(&a.target, 100))
+                })
+                .collect();
+            let content = if done.is_empty() {
+                "IGRIS was closed while working on this task, before it took any action.".to_string()
+            } else {
+                format!("IGRIS was closed while working on this task. What happened before that:\n{}", done.join("\n"))
+            };
+            crate::conversations::append(
+                &mut conn,
+                &cid,
+                crate::conversations::NewMessage {
+                    role: crate::ai::Role::Assistant,
+                    status: crate::conversations::MessageStatus::Error,
+                    error: Some("Interrupted: IGRIS closed during this reply. Resume the task to continue.".into()),
+                    ..crate::conversations::NewMessage::user(content)
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// A task's activity log, oldest first.
+    pub fn events(&self, id: &str, limit: u32) -> AppResult<Vec<store::TaskEventRow>> {
+        store::events(&*self.db.conn()?, id, limit)
     }
 
     /// Start a task for the running turn of `conversation_id`.
@@ -558,6 +657,33 @@ mod tests {
         assert_eq!(resumed.state, TaskState::Executing);
         assert!(!resumed.context.interrupted);
         assert_eq!(hub2.checkpoint(&t.id).await, Ok(true), "the first round re-observes");
+    }
+
+    #[test]
+    fn a_crash_mid_action_leaves_a_coherent_history() {
+        let (hub, _op, cid, _) = hub();
+        crate::conversations::append(&mut hub.db.conn().unwrap(), &cid, crate::conversations::NewMessage::user("Write notes.txt")).unwrap();
+        let t = hub.begin(&cid, "Write notes.txt", &CancellationToken::new()).unwrap();
+        hub.transition(&t.id, TaskState::Executing, |_| {}).unwrap();
+        hub.update(&t.id, Some(TaskEvent::ToolStarted { tool: "write_file".into() }), |t| t.activity = Some("Overwrite notes.txt".into()));
+        // IGRIS dies here: no completion, no reply.
+        let hub2 = Orchestrator::new(hub.db.clone(), None);
+        hub2.recover().unwrap();
+        let back = hub2.task(&t.id).unwrap();
+        let last = back.context.actions.last().unwrap();
+        assert_eq!((last.tool.as_str(), last.verification), ("write_file", task::Verification::Unverified));
+        assert!(last.note.contains("result is unknown"));
+        let kinds: Vec<String> = hub2.events(&t.id, 50).unwrap().into_iter().map(|e| e.kind).collect();
+        for k in ["created", "tool_started", "interrupted"] {
+            assert!(kinds.contains(&k.to_string()), "{k} in {kinds:?}");
+        }
+        let msgs = crate::conversations::messages(&hub.db.conn().unwrap(), &cid).unwrap();
+        let reply = msgs.last().unwrap();
+        assert_eq!((reply.role, reply.status), (crate::ai::Role::Assistant, crate::conversations::MessageStatus::Error));
+        assert!(reply.content.contains("write_file Overwrite notes.txt — result unknown"), "{}", reply.content);
+        // A second start doesn't add another reply.
+        Orchestrator::new(hub.db.clone(), None).recover().unwrap();
+        assert_eq!(crate::conversations::messages(&hub.db.conn().unwrap(), &cid).unwrap().len(), msgs.len());
     }
 
     #[test]

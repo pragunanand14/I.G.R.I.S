@@ -48,6 +48,7 @@ jobs:
           query session 2>$null
           Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId
           [System.Environment]::UserInteractive
+          exit 0
       - name: Real desktop tests
         working-directory: src-tauri
         run: cargo test --locked --test windows_desktop -- --ignored --test-threads=1 --nocapture

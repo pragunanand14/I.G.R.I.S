@@ -214,8 +214,11 @@ impl TaskSession {
                     self.hub.update(&self.id, Some(TaskEvent::ApprovalRequested { tool: a.tool.clone() }), |_| {});
                 }
             }
-            ActivityStatus::Running if self.state() == TaskState::WaitingForApproval => {
-                let _ = self.hub.transition(&self.id, TaskState::Executing, |t| t.activity = Some(a.description.clone()));
+            ActivityStatus::Running => {
+                if self.state() == TaskState::WaitingForApproval {
+                    let _ = self.hub.transition(&self.id, TaskState::Executing, |t| t.activity = Some(a.description.clone()));
+                }
+                self.hub.update(&self.id, Some(TaskEvent::ToolStarted { tool: a.tool.clone() }), |t| t.activity = Some(a.description.clone()));
             }
             _ => {}
         }
