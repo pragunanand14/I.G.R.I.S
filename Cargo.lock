@@ -2291,6 +2291,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
+ "tauri-plugin-igris-device",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tempfile",
@@ -2330,6 +2331,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+ "webpki-root-certs",
 ]
 
 [[package]]
@@ -5454,6 +5456,16 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tauri-plugin-igris-device"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.21",

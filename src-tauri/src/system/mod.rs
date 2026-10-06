@@ -4,7 +4,16 @@
 //! When a value is unavailable on the current platform it is reported as
 //! `null` / absent — never estimated or fabricated.
 
+#[cfg(desktop)]
 mod battery;
+#[cfg(mobile)]
+mod battery {
+    pub use super::BatteryInfo;
+    /// Phones report their battery through the platform (see [`super::SystemMonitor::set_battery_source`]).
+    pub fn read() -> Option<BatteryInfo> {
+        None
+    }
+}
 pub mod connectivity;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -12,7 +21,18 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use sysinfo::{Components, Disks, Networks, System};
 
-pub use battery::BatteryInfo;
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryInfo {
+    pub percent: f32,
+    /// charging | discharging | full | empty | paused | unknown
+    pub state: &'static str,
+    pub time_to_empty_secs: Option<u64>,
+    pub time_to_full_secs: Option<u64>,
+}
+
+/// Where battery readings come from (the OS on desktops; the platform elsewhere).
+pub type BatterySource = Box<dyn Fn() -> Option<BatteryInfo> + Send>;
 pub use connectivity::{Connectivity, ConnectivityMonitor};
 
 #[derive(Debug, Clone, Serialize)]
@@ -102,6 +122,7 @@ pub struct SystemMonitor {
     cpu_usage: Option<f32>,
     last_net_refresh: Instant,
     host: HostInfo,
+    battery: BatterySource,
 }
 
 impl Default for SystemMonitor {
@@ -130,7 +151,13 @@ impl SystemMonitor {
                 kernel_version: System::kernel_version(),
                 arch: System::cpu_arch(),
             },
+            battery: Box::new(battery::read),
         }
+    }
+
+    /// Read the battery from somewhere else (e.g. the phone's own API).
+    pub fn set_battery_source(&mut self, source: BatterySource) {
+        self.battery = source;
     }
 
     pub fn snapshot(&mut self, connectivity: Connectivity) -> SystemSnapshot {
@@ -194,7 +221,7 @@ impl SystemMonitor {
                 })
                 .collect(),
             network: NetworkInfo { connectivity, rx_bytes_per_sec: rate(rx), tx_bytes_per_sec: rate(tx), interface_count: count },
-            battery: battery::read(),
+            battery: (self.battery)(),
             temperatures: self
                 .components
                 .list()

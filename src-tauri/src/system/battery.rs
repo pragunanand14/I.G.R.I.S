@@ -1,17 +1,8 @@
-use serde::Serialize;
 use starship_battery::units::ratio::percent;
 use starship_battery::units::time::second;
 use starship_battery::{Manager, State};
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatteryInfo {
-    pub percent: f32,
-    /// charging | discharging | full | empty | paused | unknown
-    pub state: &'static str,
-    pub time_to_empty_secs: Option<u64>,
-    pub time_to_full_secs: Option<u64>,
-}
+pub use super::BatteryInfo;
 
 /// Read the first battery. Returns `None` if there is no battery or it can't
 /// be read — the UI then shows "No battery" rather than a guessed value.

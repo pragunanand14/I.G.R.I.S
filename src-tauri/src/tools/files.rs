@@ -644,7 +644,7 @@ impl Tool for TrashPathTool {
             return Err(ToolError::invalid("A shared folder itself can't be deleted. Remove it from the Tools page instead."));
         }
         let p = g.path.clone();
-        tokio::task::spawn_blocking(move || trash::delete(&p))
+        tokio::task::spawn_blocking(move || move_to_trash(&p))
             .await
             .map_err(|e| ToolError::failed(e.to_string()))?
             .map_err(|e| ToolError::failed(format!("Couldn't move it to the Recycle Bin: {e}")))?;
@@ -655,6 +655,16 @@ impl Tool for TrashPathTool {
             media: Vec::new(),
         })
     }
+}
+
+#[cfg(desktop)]
+fn move_to_trash(p: &Path) -> Result<(), String> {
+    trash::delete(p).map_err(|e| e.to_string())
+}
+
+#[cfg(mobile)]
+fn move_to_trash(_p: &Path) -> Result<(), String> {
+    Err("there is no recycle bin on this device".into())
 }
 
 // ----- open_path -----

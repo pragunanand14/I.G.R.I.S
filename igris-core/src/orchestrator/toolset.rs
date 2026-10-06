@@ -18,7 +18,7 @@ use crate::ai::ToolDef;
 pub enum Capability {
     /// Calculation, date and time.
     Reasoning,
-    /// Read-only facts about the computer (system info, processes, app list).
+    /// Read-only facts about the device (system info, processes, app lists, phone status).
     Information,
     Web,
     Memory,
@@ -66,7 +66,7 @@ pub fn capability(name: &str) -> Option<Capability> {
     use Capability::*;
     Some(match name {
         "calculator" | "get_datetime" => Reasoning,
-        "system_info" | "list_processes" | "list_applications" => Information,
+        "system_info" | "list_processes" | "list_applications" | "list_phone_apps" | "device_status" => Information,
         "web_search" | "fetch_url" => Web,
         "remember" | "search_memory" | "update_memory" | "forget_memory" => Memory,
         "add_task" | "list_tasks" | "update_task" | "delete_task" | "set_reminder" | "start_timer" | "list_reminders" | "cancel_reminder" | "add_event"
@@ -74,7 +74,7 @@ pub fn capability(name: &str) -> Option<Capability> {
         "list_projects" | "get_project_context" => Projects,
         "list_directory" | "search_files" | "read_file" => FilesRead,
         "create_file" | "create_folder" | "write_file" | "move_path" | "copy_path" | "trash_path" => FileChanges,
-        "launch_application" | "close_application" | "open_url" | "open_path" => Apps,
+        "launch_application" | "close_application" | "open_url" | "open_path" | "open_phone_app" => Apps,
         "run_command" => Terminal,
         "take_screenshot" => Screen,
         "operator_start" => Operator,

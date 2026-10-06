@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-igris-device"
+description = "IGRIS's Android device capabilities (installed apps, launching apps, battery and network status)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+links = "tauri-plugin-igris-device"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

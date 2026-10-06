@@ -1,17 +1,19 @@
-//! IGRIS desktop app (Windows/Tauri).
+//! The IGRIS app (Tauri), for Windows/desktop and Android.
 //!
 //! The shared IGRIS brain lives in the `igris-core` crate; this crate is the
-//! desktop platform around it: the Tauri app and its commands (the only way
-//! the UI reaches the backend, registered in [`run`]), the overlay and global
-//! hotkeys, the Windows computer driver and browser control, desktop tools,
-//! system monitoring and logging. Core modules are re-exported under their
-//! usual paths.
+//! platform around it: the Tauri app and its commands (the only way the UI
+//! reaches the backend, registered in [`run`]), system monitoring and
+//! logging, and per platform — on desktops the overlay and global hotkeys,
+//! the Windows computer driver, browser control and desktop tools; on Android
+//! the phone tools (through `tauri-plugin-igris-device`). Core modules are
+//! re-exported under their usual paths.
 
 pub use igris_core::{ai, attachments, config, conversations, core, db, error, files, memory, operator, orchestrator, productivity, projects, settings, voice};
 
 pub mod commands;
 pub mod computer;
 pub mod logging;
+#[cfg(desktop)]
 pub mod overlay;
 pub mod state;
 pub mod system;
@@ -33,11 +35,14 @@ use crate::system::{ConnectivityMonitor, SystemMonitor};
 
 const CONNECTIVITY_INTERVAL: Duration = Duration::from_secs(15);
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_dialog::init());
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_igris_device::init());
+    builder
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let resolver = app.path();
@@ -100,12 +105,34 @@ pub fn run() {
                 operator: operator.clone(),
                 orchestrator: orchestrator.clone(),
                 browser_profile: data_dir.join("browser-profile"),
-                open_path: Arc::new(|p: &std::path::Path| tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())),
-                open_url: Arc::new(|u: &str| tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())),
+                open_path: platform::path_opener(app.handle()),
+                open_url: platform::url_opener(app.handle()),
+                #[cfg(mobile)]
+                phone: platform::phone(app.handle()),
             });
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
-            let stop_hotkey = settings::load(&*db.conn()?).map(|s| s.operator_stop_hotkey).unwrap_or_else(|_| settings::DEFAULT_STOP_HOTKEY.into());
-            app.manage(overlay::Overlay::install(app.handle(), operator.clone(), &stop_hotkey));
+            #[cfg(desktop)]
+            {
+                let stop_hotkey = settings::load(&*db.conn()?).map(|s| s.operator_stop_hotkey).unwrap_or_else(|_| settings::DEFAULT_STOP_HOTKEY.into());
+                app.manage(overlay::Overlay::install(app.handle(), operator.clone(), &stop_hotkey));
+            }
+            #[cfg(mobile)]
+            {
+                let phone = platform::phone(app.handle());
+                let source = phone.clone();
+                system.lock().map_err(|_| "system monitor lock poisoned")?.set_battery_source(Box::new(move || platform::phone_battery(source.as_ref())));
+                // One check that the phone answers (off the main thread, which serves the plugin). Counts and kinds only.
+                tauri::async_runtime::spawn_blocking(move || match (phone.apps(), phone.status()) {
+                    (Ok(apps), Ok(s)) => tracing::info!(
+                        event = "PHONE_READY",
+                        apps = apps.len(),
+                        network = s.network.as_deref().unwrap_or("unknown"),
+                        battery_known = s.battery_percent.is_some(),
+                        sdk = s.sdk_int.unwrap_or(0)
+                    ),
+                    (a, s) => tracing::warn!(event = "PHONE_UNAVAILABLE", apps_error = ?a.err(), status_error = ?s.err()),
+                });
+            }
 
             tauri::async_runtime::spawn(productivity::run_scheduler(db.clone(), reminder_notifier(app.handle().clone())));
 
@@ -124,6 +151,7 @@ pub fn run() {
                 operator,
                 orchestrator,
             });
+            #[cfg(desktop)]
             register_voice_hotkey(app.handle());
             tracing::info!(event = "APP_STARTED");
             Ok(())
@@ -228,6 +256,7 @@ fn reminder_notifier(app: tauri::AppHandle) -> productivity::OnFire {
 /// combination) is logged, not fatal — the in-app mic button still works.
 pub const VOICE_HOTKEY: &str = "ctrl+shift+space";
 
+#[cfg(desktop)]
 fn register_voice_hotkey(app: &tauri::AppHandle) {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     let result = app.global_shortcut().on_shortcut(VOICE_HOTKEY, |app, _shortcut, event| {
@@ -242,5 +271,77 @@ fn register_voice_hotkey(app: &tauri::AppHandle) {
     match result {
         Ok(()) => tracing::info!(event = "VOICE_HOTKEY_REGISTERED", hotkey = VOICE_HOTKEY),
         Err(e) => tracing::warn!(event = "VOICE_HOTKEY_UNAVAILABLE", hotkey = VOICE_HOTKEY, error = %e),
+    }
+}
+
+/// How this platform opens things and reaches the device.
+mod platform {
+    use std::sync::Arc;
+
+    use crate::tools::standard::{PathOpener, UrlOpener};
+
+    #[cfg(desktop)]
+    pub fn path_opener(_app: &tauri::AppHandle) -> PathOpener {
+        Arc::new(|p: &std::path::Path| tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string()))
+    }
+
+    #[cfg(desktop)]
+    pub fn url_opener(_app: &tauri::AppHandle) -> UrlOpener {
+        Arc::new(|u: &str| tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string()))
+    }
+
+    #[cfg(mobile)]
+    pub fn path_opener(app: &tauri::AppHandle) -> PathOpener {
+        use tauri_plugin_opener::OpenerExt;
+        let app = app.clone();
+        Arc::new(move |p: &std::path::Path| app.opener().open_path(p.display().to_string(), None::<&str>).map_err(|e| e.to_string()))
+    }
+
+    #[cfg(mobile)]
+    pub fn url_opener(app: &tauri::AppHandle) -> UrlOpener {
+        use tauri_plugin_opener::OpenerExt;
+        let app = app.clone();
+        Arc::new(move |u: &str| app.opener().open_url(u, None::<&str>).map_err(|e| e.to_string()))
+    }
+
+    /// The phone, through the IGRIS device plugin.
+    #[cfg(mobile)]
+    pub fn phone(app: &tauri::AppHandle) -> crate::tools::phone::SharedPhone {
+        Arc::new(PluginPhone(app.clone()))
+    }
+
+    #[cfg(mobile)]
+    struct PluginPhone(tauri::AppHandle);
+
+    #[cfg(mobile)]
+    impl crate::tools::phone::Phone for PluginPhone {
+        fn apps(&self) -> Result<Vec<crate::tools::phone::PhoneApp>, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().list_apps().map_err(|e| e.to_string())
+        }
+        fn open(&self, package: &str) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().launch_app(package).map_err(|e| e.to_string())
+        }
+        fn status(&self) -> Result<crate::tools::phone::PhoneStatus, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().status().map_err(|e| e.to_string())
+        }
+    }
+
+    /// The phone's battery, for the system monitor.
+    #[cfg(mobile)]
+    pub fn phone_battery(phone: &dyn crate::tools::phone::Phone) -> Option<crate::system::BatteryInfo> {
+        let s = phone.status().ok()?;
+        Some(crate::system::BatteryInfo {
+            percent: s.battery_percent?.clamp(0.0, 100.0),
+            state: match s.charging {
+                Some(true) => "charging",
+                Some(false) => "discharging",
+                None => "unknown",
+            },
+            time_to_empty_secs: None,
+            time_to_full_secs: None,
+        })
     }
 }

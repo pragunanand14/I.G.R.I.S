@@ -23,6 +23,7 @@ pub mod db;
 pub mod error;
 pub mod files;
 pub mod memory;
+pub mod net;
 pub mod operator;
 pub mod orchestrator;
 pub mod productivity;

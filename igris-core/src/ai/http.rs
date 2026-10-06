@@ -49,7 +49,7 @@ pub fn client() -> AiResult<reqwest::Client> {
 /// `read_timeout` is the longest silence allowed between bytes. Local models on
 /// a CPU can take minutes to read a long prompt before the first token.
 pub fn client_with_read_timeout(read_timeout: Duration) -> AiResult<reqwest::Client> {
-    reqwest::Client::builder()
+    crate::net::client_builder()
         .connect_timeout(Duration::from_secs(15))
         // Idle timeout between reads; long generations stream continuously.
         .read_timeout(read_timeout)

@@ -159,7 +159,7 @@ pub fn voice_status(cfg: &AppConfig) -> VoiceStatus {
 }
 
 fn client() -> Result<reqwest::Client, AiError> {
-    reqwest::Client::builder()
+    crate::net::client_builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(60))
         .build()

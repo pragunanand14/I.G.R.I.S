@@ -4,10 +4,12 @@
 #   context, conversations, memory, orchestrator and tasks, operator task
 #   engine, tool framework and permissions, neutral tools, productivity,
 #   projects, settings, voice backends, persistence).
-# - src-tauri: the Windows/Tauri desktop app (UI commands, overlay, Windows
-#   computer driver, browser control, desktop tools, system monitoring).
+# - src-tauri: the IGRIS app (Tauri), built for Windows/desktop and for Android:
+#   UI commands, and per platform the overlay, Windows computer driver, browser
+#   control and desktop tools, or the Android device tools.
+# - plugins/tauri-plugin-igris-device: Android device capabilities (Kotlin).
 [workspace]
-members = ["igris-core", "src-tauri"]
+members = ["igris-core", "src-tauri", "plugins/tauri-plugin-igris-device"]
 resolver = "2"
 
 [workspace.package]

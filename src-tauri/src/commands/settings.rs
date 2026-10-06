@@ -1,6 +1,8 @@
 use tauri::State;
 
-use crate::error::{AppError, AppResult};
+#[cfg(desktop)]
+use crate::error::AppError;
+use crate::error::AppResult;
 use crate::settings::{self, Settings, SettingsPatch};
 use crate::state::AppState;
 
@@ -9,6 +11,7 @@ pub fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
     settings::load(&*state.db.conn()?)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn update_settings(state: State<'_, AppState>, overlay: State<'_, std::sync::Arc<crate::overlay::Overlay>>, patch: SettingsPatch) -> AppResult<Settings> {
     // The core checks the shortcut's shape; only the desktop knows which
@@ -25,4 +28,12 @@ pub fn update_settings(state: State<'_, AppState>, overlay: State<'_, std::sync:
         overlay.set_stop_hotkey(&s.operator_stop_hotkey);
     }
     Ok(s)
+}
+
+/// Phones have no global stop hotkey or overlay; the setting is stored as is.
+#[cfg(mobile)]
+#[tauri::command]
+pub fn update_settings(state: State<'_, AppState>, patch: SettingsPatch) -> AppResult<Settings> {
+    let mut conn = state.db.conn()?;
+    settings::update(&mut conn, patch)
 }

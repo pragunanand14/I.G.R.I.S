@@ -140,7 +140,8 @@ pub fn save_user_message_with(
     let conversation = match conversation_id {
         Some(id) => conversations::require(&conn, id)?,
         None => {
-            let system = prompt::system_prompt(&PromptContext { user_name, date: &prompt::today(), os: prompt::os_label() });
+            let system =
+                prompt::system_prompt(&PromptContext { user_name, date: &prompt::today(), os: prompt::os_label(), device: prompt::DeviceKind::current() });
             let title_source = match (content.trim().is_empty(), attachment_ids.first()) {
                 (true, Some(id)) => crate::attachments::get(&conn, id)?.map(|a| a.name).unwrap_or_default(),
                 _ => content.to_string(),
