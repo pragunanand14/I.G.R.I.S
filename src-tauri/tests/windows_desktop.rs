@@ -311,3 +311,88 @@ async fn launches_are_verified_by_their_window() {
         None => finding("VS Code is not installed on this machine; skipped"),
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs an interactive Windows desktop"]
+async fn ocr_reads_text_from_the_screen() {
+    let d = native();
+    let (_np, w) = notepad(&d);
+    let els = d.ui_elements(w.id, 4000).unwrap();
+    let editor = els.iter().find(|e| matches!(e.role.as_str(), "edit" | "document")).unwrap();
+    let (x, y) = editor.rect.center();
+    d.click(x, y, MouseButton::Left, 1).unwrap();
+    d.type_text("IGRIS OCR CHECK 4271", &|| false).unwrap();
+    sleep(Duration::from_millis(500));
+    let display = d.displays().unwrap().into_iter().find(|d| d.primary).unwrap();
+    let shot = d.capture(&display).unwrap();
+    let t = Instant::now();
+    match d.ocr(&shot) {
+        Ok(lines) => {
+            finding(format!(
+                "OCR: {} lines in {} ms; sample: {:?}",
+                lines.len(),
+                t.elapsed().as_millis(),
+                lines.iter().take(8).map(|l| &l.text).collect::<Vec<_>>()
+            ));
+            let hit = lines.iter().find(|l| l.text.contains("4271") || l.text.to_uppercase().contains("OCR CHECK"));
+            finding(format!("OCR found the typed text: {:?}", hit.map(|l| (&l.text, l.rect))));
+            assert!(hit.is_some(), "the typed text is recognised");
+            // The recognised position is inside the Notepad window.
+            let r = hit.unwrap().rect;
+            assert!(w.rect.contains(r.x + r.w / 2, r.y + r.h / 2) || d.foreground().unwrap().is_some_and(|f| f.rect.contains(r.x, r.y)));
+        }
+        Err(e) => {
+            finding(format!("OCR unavailable on this machine: {e}"));
+            panic!("OCR failed: {e}");
+        }
+    }
+    kill("notepad.exe");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs an interactive Windows desktop"]
+async fn chromium_is_driven_through_devtools_on_the_desktop() {
+    use igris_lib::computer::browser::{find_browser, Browser};
+    let Some(exe) = find_browser() else {
+        finding("no Chrome or Edge found; skipped");
+        return;
+    };
+    finding(format!("browser: {}", exe.display()));
+    // A local page (the browser profile is IGRIS's own temp profile here).
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = l.local_addr().unwrap();
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        loop {
+            let Ok((mut s, _)) = l.accept().await else { return };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 2048];
+                let _ = s.read(&mut buf).await;
+                let body = "<html><head><title>IGRIS desktop page</title></head><body><input aria-label='Search' id='q'><button onclick=\"document.title='Searched '+document.getElementById('q').value\">Go</button></body></html>";
+                let _ = s
+                    .write_all(
+                        format!("HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).as_bytes(),
+                    )
+                    .await;
+            });
+        }
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let b = Browser::new(dir.path().join("profile"));
+    let t = Instant::now();
+    let page = b.navigate(&format!("http://{addr}/")).await.expect("navigate");
+    finding(format!("browser start + navigate: {} ms → {:?}", t.elapsed().as_millis(), page));
+    assert_eq!(page.title, "IGRIS desktop page");
+    let d = native();
+    let win = wait_window(&d, |w| w.title.contains("IGRIS desktop page"), Duration::from_secs(10));
+    finding(format!("visible browser window: {:?}", win.as_ref().map(|w| (&w.title, &w.process))));
+    let snap = b.snapshot("").await.unwrap();
+    let field = snap.elements.iter().find(|e| e.name == "Search").expect("search field").reference;
+    let go = snap.elements.iter().find(|e| e.name == "Go").expect("button").reference;
+    let (_, v) = b.type_text(field, "operator ✓", true).await.unwrap();
+    assert_eq!(v.as_deref(), Some("operator ✓"));
+    let (_, after) = b.click(go).await.unwrap();
+    finding(format!("after click: {:?}", after.title));
+    assert_eq!(after.title, "Searched operator ✓");
+    b.close().await;
+}

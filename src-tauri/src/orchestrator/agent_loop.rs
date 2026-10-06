@@ -314,6 +314,12 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
                 }
             }
             let (result, activity) = run_call(&input, &toolset, session.as_mut(), call, offset, &mut *emit).await;
+            if call.name == "request_tools" && activity.status == ActivityStatus::Completed {
+                let groups = crate::tools::task::requested_groups(&call.input);
+                if toolset.expand(&groups) {
+                    tracing::info!(event = "TOOLS_FOCUS_EXPANDED", exposed = toolset.exposed().len());
+                }
+            }
             emit(ChatEvent::Tool { activity: activity.clone() });
             activities.push(activity);
             results.push(result);

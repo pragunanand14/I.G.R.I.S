@@ -24,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsIconic, IsWindow, IsWindowVisible, SetCursorPos, SetForegroundWindow, ShowWindow, WindowFromPoint, GA_ROOT, GWL_EXSTYLE, SW_RESTORE, WS_EX_TOOLWINDOW,
 };
 
-use super::{Display, Driver, FieldInfo, Key, MouseButton, Rect, UiElement, WindowInfo};
+use super::{Display, Driver, FieldInfo, Key, MouseButton, OcrLine, Rect, UiElement, WindowInfo};
 
 pub struct WindowsDriver;
 
@@ -505,6 +505,59 @@ impl Driver for WindowsDriver {
             GetWindowThreadProcessId(if root.0.is_null() { h } else { root }, Some(&mut pid));
             (pid != 0).then_some(pid)
         }
+    }
+
+    fn ocr(&self, image: &RgbaImage) -> Result<Vec<OcrLine>, String> {
+        use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
+        use windows::Media::Ocr::OcrEngine;
+        use windows::Storage::Streams::DataWriter;
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let engine = OcrEngine::TryCreateFromUserProfileLanguages()
+            .map_err(|e| format!("Windows text recognition isn't available (no OCR language installed?): {e}"))?;
+        // The engine has a maximum image size; scale down if needed.
+        let max = OcrEngine::MaxImageDimension().unwrap_or(2600);
+        let (w, h) = image.dimensions();
+        let scale = (max as f32 / w.max(h) as f32).min(1.0);
+        let img = if scale < 1.0 {
+            image::imageops::resize(image, (w as f32 * scale) as u32, (h as f32 * scale) as u32, image::imageops::FilterType::Triangle)
+        } else {
+            image.clone()
+        };
+        // RGBA → BGRA for SoftwareBitmap.
+        let mut bgra = img.as_raw().clone();
+        for px in bgra.chunks_exact_mut(4) {
+            px.swap(0, 2);
+        }
+        let err = |e: windows::core::Error| format!("Text recognition failed: {e}");
+        let writer = DataWriter::new().map_err(err)?;
+        writer.WriteBytes(&bgra).map_err(err)?;
+        let buffer = writer.DetachBuffer().map_err(err)?;
+        let bitmap = SoftwareBitmap::CreateCopyFromBuffer(&buffer, BitmapPixelFormat::Bgra8, img.width() as i32, img.height() as i32).map_err(err)?;
+        let result = engine.RecognizeAsync(&bitmap).map_err(err)?.join().map_err(err)?;
+        let lines = result.Lines().map_err(err)?;
+        let mut out = Vec::new();
+        for i in 0..lines.Size().map_err(err)? {
+            let line = lines.GetAt(i).map_err(err)?;
+            let text = line.Text().map_err(err)?.to_string();
+            let words = line.Words().map_err(err)?;
+            let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, 0f32, 0f32);
+            for j in 0..words.Size().map_err(err)? {
+                let r = words.GetAt(j).and_then(|w| w.BoundingRect()).map_err(err)?;
+                x0 = x0.min(r.X);
+                y0 = y0.min(r.Y);
+                x1 = x1.max(r.X + r.Width);
+                y1 = y1.max(r.Y + r.Height);
+            }
+            if text.trim().is_empty() || x0 == f32::MAX {
+                continue;
+            }
+            // Back to the original image's pixels.
+            let s = 1.0 / scale;
+            out.push(OcrLine { text, rect: Rect { x: (x0 * s) as i32, y: (y0 * s) as i32, w: ((x1 - x0) * s) as i32, h: ((y1 - y0) * s) as i32 } });
+        }
+        Ok(out)
     }
 
     fn idle_ms(&self) -> Option<u64> {

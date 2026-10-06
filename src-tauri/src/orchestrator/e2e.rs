@@ -134,6 +134,7 @@ impl Env {
         r.register(Arc::new(WriteFileTool::new(self.db.clone())));
         r.register(Arc::new(CreateFileTool::new(self.db.clone())));
         r.register(Arc::new(crate::tools::task::TaskPlanTool::new(self.hub.clone())));
+        r.register(Arc::new(crate::tools::task::RequestToolsTool::default()));
         if let Some(op) = &self.operator {
             use crate::tools::computer::*;
             r.register(Arc::new(OperatorStartTool::new(op.clone())));
@@ -624,4 +625,25 @@ async fn an_action_requested_before_a_pause_is_not_run_after_it() {
     assert_eq!(folder.calls(), 0, "the action decided before the pause was not run");
     let last = tool_results(&server.requests().await[2].json());
     assert!(last.last().unwrap().contains("paused before this action"), "{last:?}");
+}
+
+#[tokio::test]
+async fn questions_get_a_focused_tool_list_and_the_model_can_ask_for_more() {
+    let mut env = Env::new(Approval::Denied);
+    let add = Scripted::new("add_task", PermissionLevel::Low, vec![Ok("Added.")]);
+    env.extra.push(add.clone());
+    let server = MockServer::start(vec![
+        (200, "text/event-stream", sse::tool("r1", "request_tools", json!({"groups": ["productivity"]}))),
+        (200, "text/event-stream", sse::tool("a1", "add_task", json!({"x": "milk"}))),
+        (200, "text/event-stream", sse::text("Added milk.")),
+    ])
+    .await;
+    let (_cid, m) = env.turn(&server, "Hello there, could you help with something?").await;
+    assert_eq!(m.status, MessageStatus::Complete);
+    let reqs = server.requests().await;
+    let first = tool_names(&reqs[0].json());
+    assert!(!first.contains(&"add_task".to_string()) && !first.contains(&"write_file".to_string()), "focused: {first:?}");
+    assert!(first.contains(&"request_tools".to_string()) && first.contains(&"calculator".to_string()));
+    assert!(tool_names(&reqs[1].json()).contains(&"add_task".to_string()), "added after request_tools");
+    assert_eq!(add.calls(), 1);
 }

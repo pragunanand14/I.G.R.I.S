@@ -156,6 +156,14 @@ pub fn run() {
                 tools.register(Arc::new(ComputerDragTool::new(operator.clone())));
                 tools.register(Arc::new(ComputerFocusWindowTool::new(operator.clone())));
                 tools.register(Arc::new(ComputerConfirmedActionTool::new(operator.clone())));
+                // IGRIS's own Chrome/Edge, driven through the DevTools protocol (operator mode).
+                use crate::tools::browser::*;
+                let b = BrowserTools::new(crate::computer::browser::Browser::new(data_dir.join("browser-profile")), operator.clone());
+                tools.register(Arc::new(BrowserOpenTool::new(b.clone())));
+                tools.register(Arc::new(BrowserSnapshotTool::new(b.clone())));
+                tools.register(Arc::new(BrowserClickTool::new(b.clone())));
+                tools.register(Arc::new(BrowserTypeTool::new(b.clone())));
+                tools.register(Arc::new(BrowserConfirmedClickTool::new(b)));
             }
             tools.register(Arc::new(crate::tools::terminal::RunCommandTool::new(db.clone(), Some(operator.clone()))));
 
@@ -173,6 +181,7 @@ pub fn run() {
                 }));
             }
             tools.register(Arc::new(crate::tools::task::TaskPlanTool::new(orchestrator.clone())));
+            tools.register(Arc::new(crate::tools::task::RequestToolsTool::default()));
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
             let stop_hotkey = settings::load(&*db.conn()?).map(|s| s.operator_stop_hotkey).unwrap_or_else(|_| settings::DEFAULT_STOP_HOTKEY.into());
             app.manage(overlay::Overlay::install(app.handle(), operator.clone(), &stop_hotkey));

@@ -245,7 +245,11 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         }
     }
     let provider_id = route.provider_id();
-    let toolset = Toolset::new(offered);
+    // Focus the tool list on what this request needs (plus what the recent
+    // conversation has been using); the model can ask for more.
+    let request = history.last().map(|m| m.content.clone()).unwrap_or_default();
+    let recent_tools: Vec<String> = base_turns.iter().rev().take(12).flat_map(|t| t.tool_calls.iter().map(|c| c.name.clone())).collect();
+    let toolset = Toolset::new(offered).with_focus(crate::orchestrator::toolset::focus_for(&request, &recent_tools));
 
     emit(ChatEvent::Generating { conversation_id: conversation_id.to_string(), model: route.model.clone() });
     tracing::info!(
@@ -265,7 +269,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         LoopInput {
             db,
             conversation_id,
-            request: history.last().map(|m| m.content.clone()).unwrap_or_default(),
+            request,
             system,
             route,
             budget,

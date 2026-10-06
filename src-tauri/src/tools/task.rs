@@ -100,6 +100,61 @@ impl Tool for TaskPlanTool {
     }
 }
 
+/// `request_tools`: show more tool groups to the model for the rest of this
+/// turn. It only changes what the model sees; permissions and approvals apply
+/// to every call as always.
+pub struct RequestToolsTool {
+    spec: ToolSpec,
+}
+
+impl Default for RequestToolsTool {
+    fn default() -> Self {
+        let groups: Vec<&str> = crate::orchestrator::toolset::REQUESTABLE.iter().map(|(n, _)| *n).collect();
+        Self {
+            spec: ToolSpec {
+                name: "request_tools",
+                title: "More tools",
+                description: "Your tool list is focused on this request. If you need tools you don't see, ask for their group: \
+productivity (tasks, reminders, timers, calendar), files (create, change, move, delete files), terminal (developer \
+commands, projects), projects (registered projects), screen (screenshot).",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": { "groups": { "type": "array", "minItems": 1, "maxItems": groups.len(), "items": { "type": "string", "enum": groups } } },
+                    "required": ["groups"],
+                    "additionalProperties": false
+                }),
+                permission: PermissionLevel::Safe,
+            },
+        }
+    }
+}
+
+/// The capability groups a `request_tools` call asks for.
+pub fn requested_groups(input: &Value) -> Vec<crate::orchestrator::toolset::Capability> {
+    let names: Vec<&str> = input["groups"].as_array().into_iter().flatten().filter_map(|v| v.as_str()).collect();
+    crate::orchestrator::toolset::REQUESTABLE.iter().filter(|(n, _)| names.contains(n)).flat_map(|(_, caps)| caps.iter().copied()).collect()
+}
+
+#[async_trait::async_trait]
+impl Tool for RequestToolsTool {
+    fn spec(&self) -> &ToolSpec {
+        &self.spec
+    }
+    fn describe(&self, input: &Value) -> String {
+        let names: Vec<&str> = input["groups"].as_array().into_iter().flatten().filter_map(|v| v.as_str()).collect();
+        format!("More tools: {}", names.join(", "))
+    }
+    async fn execute(&self, input: &Value) -> ToolResultT {
+        let names: Vec<&str> = input["groups"].as_array().into_iter().flatten().filter_map(|v| v.as_str()).collect();
+        Ok(ToolOutput {
+            content: format!("Added these tool groups: {}. Their tools are available from your next step.", names.join(", ")),
+            summary: names.join(", "),
+            sources: vec![],
+            media: vec![],
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

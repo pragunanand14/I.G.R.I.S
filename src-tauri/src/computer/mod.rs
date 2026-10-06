@@ -11,6 +11,8 @@ use std::sync::Arc;
 use image::RgbaImage;
 use serde::Serialize;
 
+pub mod browser;
+pub mod cdp;
 pub mod state;
 #[cfg(windows)]
 pub mod windows;
@@ -64,6 +66,13 @@ pub struct UiElement {
     pub rect: Rect,
     pub enabled: bool,
     pub focused: bool,
+}
+
+/// A line of text recognised on screen (OCR), in image pixels.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OcrLine {
+    pub text: String,
+    pub rect: Rect,
 }
 
 /// The focused text field's state, read through accessibility.
@@ -191,6 +200,11 @@ pub trait Driver: Send + Sync {
     /// Value / editability of the focused control.
     fn focused_field(&self) -> Option<FieldInfo> {
         None
+    }
+    /// Recognise text in an image (OCR) — a fallback for apps whose
+    /// accessibility data doesn't expose their text.
+    fn ocr(&self, _image: &RgbaImage) -> Result<Vec<OcrLine>, String> {
+        Err("Text recognition (OCR) isn't available on this system.".into())
     }
 }
 

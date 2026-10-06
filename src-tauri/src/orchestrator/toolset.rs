@@ -40,6 +40,8 @@ pub enum Capability {
     OperatorSession,
     /// Declaring and revising a task plan.
     Tasks,
+    /// Asking for more tools (`request_tools`).
+    Meta,
 }
 
 impl Capability {
@@ -68,31 +70,193 @@ pub fn capability(name: &str) -> Option<Capability> {
         "take_screenshot" => Screen,
         "operator_start" => Operator,
         "operator_update" | "operator_finish" => OperatorSession,
-        n if n.starts_with("computer_") => OperatorSession,
+        n if n.starts_with("computer_") || n.starts_with("browser_") => OperatorSession,
         "task_plan" => Tasks,
+        "request_tools" => Meta,
         _ => return None,
     })
 }
 
+/// Groups every request gets: cheap, broadly useful, and the entry points
+/// to everything else (operator mode, plans, more tools).
+pub const CORE: &[Capability] = &[
+    Capability::Reasoning,
+    Capability::Information,
+    Capability::Web,
+    Capability::Memory,
+    Capability::FilesRead,
+    Capability::Apps,
+    Capability::Operator,
+    Capability::Tasks,
+    Capability::Meta,
+];
+
+/// Groups a request plainly calls for (word stems, matched case-insensitively
+/// at word starts). Deliberately simple: a miss costs one `request_tools` call.
+const FOCUS_WORDS: &[(Capability, &[&str])] = &[
+    (
+        Capability::Productivity,
+        &[
+            "remind",
+            "reminder",
+            "timer",
+            "alarm",
+            "todo",
+            "to-do",
+            "to do",
+            "task",
+            "calendar",
+            "event",
+            "meeting",
+            "schedule",
+            "appointment",
+            "deadline",
+            "due",
+            "agenda",
+        ],
+    ),
+    (
+        Capability::FileChanges,
+        &[
+            "file",
+            "folder",
+            "director",
+            "document",
+            "doc",
+            "note",
+            "save",
+            "write",
+            "create",
+            "rename",
+            "move",
+            "copy",
+            "delete",
+            "trash",
+            "overwrite",
+            "edit",
+            "txt",
+            "csv",
+            "markdown",
+            "report",
+            "draft",
+        ],
+    ),
+    (
+        Capability::Terminal,
+        &[
+            "code", "coding", "build", "test", "run", "compile", "project", "repo", "git", "npm", "cargo", "python", "node", "script", "program", "bug", "fix",
+            "error", "install", "develop", "deploy", "vs code", "vscode", "terminal", "command", "app",
+        ],
+    ),
+    (Capability::Projects, &["project", "repo", "codebase", "workspace", "my app"]),
+    (Capability::Screen, &["screen", "screenshot", "what's on", "what is on", "look at my", "see my"]),
+];
+
+/// Names `request_tools` accepts, and the groups each adds.
+pub const REQUESTABLE: &[(&str, &[Capability])] = &[
+    ("productivity", &[Capability::Productivity]),
+    ("files", &[Capability::FilesRead, Capability::FileChanges]),
+    ("terminal", &[Capability::Terminal, Capability::Projects]),
+    ("projects", &[Capability::Projects]),
+    ("screen", &[Capability::Screen]),
+];
+
+fn word_hit(text: &str, stem: &str) -> bool {
+    let mut from = 0;
+    while let Some(i) = text[from..].find(stem) {
+        let at = from + i;
+        if at == 0 || !text[..at].chars().next_back().is_some_and(char::is_alphanumeric) {
+            return true;
+        }
+        from = at + stem.len();
+    }
+    false
+}
+
+/// The groups a turn starts with: the core, what the request asks for, and
+/// whatever the recent conversation has been using (so "move it to 6pm"
+/// after setting a reminder still has the reminder tools).
+pub fn focus_for(request: &str, recent_tools: &[String]) -> std::collections::HashSet<Capability> {
+    let text = request.to_lowercase();
+    let mut set: std::collections::HashSet<Capability> = CORE.iter().copied().collect();
+    for (cap, words) in FOCUS_WORDS {
+        if words.iter().any(|w| word_hit(&text, w)) {
+            set.insert(*cap);
+        }
+    }
+    if set.contains(&Capability::Terminal) {
+        set.insert(Capability::FileChanges);
+    }
+    set.extend(recent_tools.iter().filter_map(|n| capability(n)).filter(|c| *c != Capability::OperatorSession));
+    set
+}
+
 /// The tools of one generation: everything the conversation offers (the
 /// executor's allow-list) and the subset the model sees this round.
+///
+/// What the model sees is narrowed in two ways: operator-session tools only
+/// while operator mode runs, and — when a focus is set — only the capability
+/// groups the request needs. Narrowing is about relevance, never permission:
+/// the executor still validates, checks permission and asks for approval.
 #[derive(Debug, Clone)]
 pub struct Toolset {
     offered: Vec<ToolDef>,
     operator_session: bool,
+    /// `None` = every group.
+    focus: Option<std::collections::HashSet<Capability>>,
     exposed: Vec<ToolDef>,
 }
 
 impl Toolset {
     pub fn new(offered: Vec<ToolDef>) -> Self {
-        let mut t = Self { offered: dedup(offered), operator_session: false, exposed: Vec::new() };
+        let mut t = Self { offered: dedup(offered), operator_session: false, focus: None, exposed: Vec::new() };
         t.rebuild();
         t
     }
 
+    /// Show only these capability groups (plus tools without a group).
+    pub fn with_focus(mut self, focus: std::collections::HashSet<Capability>) -> Self {
+        self.focus = Some(focus);
+        self.rebuild();
+        self
+    }
+
+    /// Add groups (the model asked for them, or a task needs them). Returns whether anything changed.
+    pub fn expand(&mut self, caps: &[Capability]) -> bool {
+        let Some(focus) = self.focus.as_mut() else { return false };
+        let before = focus.len();
+        focus.extend(caps.iter().copied());
+        let changed = focus.len() != before;
+        if changed {
+            self.rebuild();
+        }
+        changed
+    }
+
+    /// Groups offered but not shown right now (for `request_tools`).
+    pub fn hidden_groups(&self) -> Vec<&'static str> {
+        let Some(focus) = &self.focus else { return Vec::new() };
+        REQUESTABLE.iter().filter(|(_, caps)| caps.iter().any(|c| !focus.contains(c))).map(|(n, _)| *n).collect()
+    }
+
     fn rebuild(&mut self) {
         let session = self.operator_session;
-        self.exposed = self.offered.iter().filter(|d| session || capability(&d.name) != Some(Capability::OperatorSession)).cloned().collect();
+        let focus = self.focus.clone();
+        let hides_something = focus
+            .as_ref()
+            .is_some_and(|f| self.offered.iter().any(|d| capability(&d.name).is_some_and(|c| !f.contains(&c) && c != Capability::OperatorSession)));
+        self.exposed = self
+            .offered
+            .iter()
+            .filter(|d| match capability(&d.name) {
+                Some(Capability::OperatorSession) => session,
+                // Only offered while something is actually hidden.
+                Some(Capability::Meta) => hides_something,
+                Some(c) => focus.as_ref().map_or(true, |f| f.contains(&c)),
+                None => true,
+            })
+            .cloned()
+            .collect();
     }
 
     pub fn offered(&self) -> &[ToolDef] {
@@ -170,6 +334,50 @@ mod tests {
     }
 
     #[test]
+    fn requests_get_focused_tool_groups() {
+        let names = |t: &Toolset| t.exposed().iter().map(|d| d.name.clone()).collect::<Vec<_>>();
+        let all = vec![
+            def("calculator"),
+            def("web_search"),
+            def("add_task"),
+            def("set_reminder"),
+            def("write_file"),
+            def("read_file"),
+            def("run_command"),
+            def("take_screenshot"),
+            def("launch_application"),
+            def("operator_start"),
+            def("computer_click"),
+            def("task_plan"),
+            def("request_tools"),
+        ];
+        // A question: the core only.
+        let t = Toolset::new(all.clone()).with_focus(focus_for("What's 12 * 7?", &[]));
+        assert_eq!(names(&t), ["calculator", "web_search", "read_file", "launch_application", "operator_start", "task_plan", "request_tools"]);
+        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen"]);
+        assert_eq!(t.allowed().len(), all.len(), "hidden is not forbidden: the executor still decides");
+        // Reminders, coding, files, screen: what the request names.
+        assert!(names(&Toolset::new(all.clone()).with_focus(focus_for("Remind me tomorrow at 5pm", &[]))).contains(&"set_reminder".to_string()));
+        let code = names(&Toolset::new(all.clone()).with_focus(focus_for("Fix the failing tests in my project", &[])));
+        assert!(code.contains(&"run_command".to_string()) && code.contains(&"write_file".to_string()));
+        assert!(!code.contains(&"add_task".to_string()));
+        assert!(names(&Toolset::new(all.clone()).with_focus(focus_for("What's on my screen?", &[]))).contains(&"take_screenshot".to_string()));
+        // Word starts only: "tasks" in "multitasking" doesn't pull in the task list.
+        assert!(!focus_for("I'm multitasking", &[]).contains(&Capability::Productivity));
+        // Follow-ups keep what the conversation was using.
+        assert!(focus_for("move it to 6pm", &["set_reminder".into()]).contains(&Capability::Productivity));
+        // The model can ask for more; request_tools disappears once nothing is hidden.
+        let mut t = Toolset::new(all.clone()).with_focus(focus_for("hi", &[]));
+        assert!(t.expand(&[Capability::Productivity, Capability::FileChanges, Capability::Terminal, Capability::Projects, Capability::Screen]));
+        assert!(!names(&t).contains(&"request_tools".to_string()) && names(&t).contains(&"add_task".to_string()));
+        assert!(!t.expand(&[Capability::Productivity]), "unchanged lists aren't rebuilt");
+        // Operator-session tools still follow operator mode, focus or not.
+        assert!(!names(&t).contains(&"computer_click".to_string()));
+        t.set_operator_session(true);
+        assert!(names(&t).contains(&"computer_click".to_string()));
+    }
+
+    #[test]
     fn refresh_adds_new_tools_removes_gone_ones_and_never_duplicates() {
         let stored = vec![def("calculator"), def("web_search")];
         // Unchanged → no refresh.
@@ -189,6 +397,7 @@ mod tests {
     fn every_registered_tool_has_a_capability_group() {
         let sources = [
             include_str!("../tools/apps.rs"),
+            include_str!("../tools/browser.rs"),
             include_str!("../tools/calculator.rs"),
             include_str!("../tools/computer.rs"),
             include_str!("../tools/files.rs"),

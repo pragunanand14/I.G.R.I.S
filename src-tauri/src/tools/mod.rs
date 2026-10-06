@@ -8,6 +8,7 @@
 
 pub mod apps;
 pub mod audit;
+pub mod browser;
 pub mod calculator;
 pub mod computer;
 pub mod executor;
