@@ -51,15 +51,34 @@ pub enum TaskEvent {
     Created,
     PlanningStarted,
     PlanUpdated,
-    StepStarted { step: usize },
-    ToolRequested { tool: String },
-    ApprovalRequested { tool: String },
-    ToolCompleted { tool: String, ok: bool },
-    ObservationReceived { tool: String },
-    VerificationStarted { tool: String },
-    VerificationPassed { tool: String },
-    VerificationFailed { tool: String },
-    Retrying { tool: String },
+    StepStarted {
+        step: usize,
+    },
+    ToolRequested {
+        tool: String,
+    },
+    ApprovalRequested {
+        tool: String,
+    },
+    ToolCompleted {
+        tool: String,
+        ok: bool,
+    },
+    ObservationReceived {
+        tool: String,
+    },
+    VerificationStarted {
+        tool: String,
+    },
+    VerificationPassed {
+        tool: String,
+    },
+    VerificationFailed {
+        tool: String,
+    },
+    Retrying {
+        tool: String,
+    },
     Recovering,
     Paused,
     Resumed,

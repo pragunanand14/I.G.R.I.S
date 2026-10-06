@@ -34,6 +34,11 @@ audited tools — there is no shell access.
   control back instantly. It prepares freely but asks before anything is sent, posted, bought or deleted.
 - **Builds software** — writes code in your shared project folders and runs build/test/install commands (no shell,
   allowlisted tools, each command approved), reads the errors and fixes them; can open the project in VS Code.
+- **Tasks** — requests that take action ("create a project", "fix the failing tests") run as tasks: a plan when
+  there are several steps, every action checked by IGRIS itself (a written file is read back, a command's exit code is
+  read), a task card with progress, Pause / Resume / Stop, and an honest outcome — *done · verified*, *failed*, or
+  *finished · not verified*. Interrupted tasks survive a restart and wait for you to resume them. Questions stay
+  plain chat.
 - **Security page** — choose which actions need your approval, and review the audit log of everything IGRIS did.
 
 ## Status
@@ -51,6 +56,7 @@ audited tools — there is no shell access.
 | 9 — Multimodal | Attach images and PDFs (picker, paste, drag-and-drop), vision through Anthropic and OpenAI-compatible providers, PDF reading (native or extracted text), screenshot tool that always asks first | ✅ Done |
 | 10 — Hardening | Security review ([docs/SECURITY.md](docs/SECURITY.md)), secret redaction in the audit log, crash-safe release builds, lazy-loaded UI, CI on Linux + Windows, Windows installer workflow | ✅ Done |
 | 11 — Computer operator | Operator mode: Windows computer control (UI Automation, mouse, keyboard, windows, per-display capture), closed-loop observe → act → verify task engine with pause/stop/takeover handling, consequential-action confirmation, desktop overlay (border + orb), `run_command` for development, `copy_path` | ✅ Foundation |
+| 12 — Orchestrator | Task model + state machine shared with operator mode, agent loop extracted from chat, plans, verification, bounded recovery, pause/resume/stop, restart-safe tasks, tool refresh, task card | ✅ v1 |
 
 **Not implemented** (and IGRIS says so if asked): operator mode on macOS/Linux, arbitrary shell commands (only
 allowlisted developer tools via `run_command`), long-running background processes, calendar sync with Google/Outlook,
@@ -155,7 +161,8 @@ src/                     React UI
 src-tauri/src/           Rust backend
   commands/              thin IPC handlers — the entire UI-facing surface
   ai/                    provider trait; Anthropic + OpenAI-compatible providers (tools, vision, streaming)
-  core/                  system prompt, context building, the chat turn pipeline
+  core/                  system prompt, context building, budgeting, compaction, the chat turn pipeline
+  orchestrator/          tasks: state machine, agent loop, verification, recovery, persistence
   tools/                 registry, schema validation, executor (permissions + audit) and every tool
   memory/ files/ projects/ productivity/ attachments/ voice/ system/
   conversations/ db/ settings/ config.rs logging.rs error.rs state.rs

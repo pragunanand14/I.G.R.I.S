@@ -374,7 +374,9 @@ async fn run_call(
             let held = match s.checkpoint(&ctx).await {
                 Ok(false) => None,
                 // Decided before the pause: the computer may have changed since.
-                Ok(true) => Some("IGRIS was paused before this action, so it wasn't run. The task has been resumed: check the current state and decide again.".to_string()),
+                Ok(true) => Some(
+                    "IGRIS was paused before this action, so it wasn't run. The task has been resumed: check the current state and decide again.".to_string(),
+                ),
                 Err(why) => Some(why),
             };
             if let Some(why) = held {

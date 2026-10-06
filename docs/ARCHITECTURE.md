@@ -125,7 +125,7 @@ core/chat ─▶ ModelRouter.route_for(role, needs) ─▶ Route { provider, mod
 ## Tools and permissions (Phase 3)
 
 ```
-model ──tool_use──▶ core/chat loop ──▶ tools/executor
+model ──tool_use──▶ agent loop ──────▶ tools/executor
                                          1. malformed JSON?        → INVALID_JSON error result
                                          2. unknown / not offered? → "Unknown tool" error result
                                          3. schema + tool validate → "Invalid input" error result
@@ -355,9 +355,9 @@ chat turn ─ operator_start (SENSITIVE: user approves the task) ─┐
   interactive control types) and xcap capture per display. Other platforms get `Unsupported`, which says so. A fake
   desktop backs the tests. Targeting prefers accessibility elements (name, role, bounds) over screenshot coordinates;
   coordinates are mapped from the downscaled screenshot back to the display.
-* **`operator/`** — the task engine. States: `created → planning → waiting_for_permission → executing ⇄ paused →
-  verifying → completed | failed | cancelled`, persisted in `operator_tasks` (objective, plan, steps, retries,
-  result, error). One task at a time; it belongs to the chat turn that started it and always ends with that turn
+* **`operator/`** — the operator session. It uses the shared task state machine (`orchestrator/task.rs`, see
+  *Orchestrator* below) and writes its own columns (state, steps, retries, result, error) into the row of the
+  orchestrator task it belongs to in `operator_tasks`. One task at a time; it belongs to the chat turn that started it and always ends with that turn
   (control returns to the user). `checkpoint()` runs before every action: it enforces stop/pause, and when the user
   has used the mouse or keyboard since IGRIS's last input it requires a fresh observation — or pauses if they switched
   windows. Limits: 8 failed actions, 150 actions per task, 5 minutes paused.
@@ -381,7 +381,9 @@ chat turn ─ operator_start (SENSITIVE: user approves the task) ─┐
   unnamed container — not a popup over it). Typing refuses when focus isn't a text field (web apps read stray keys as
   shortcuts) and reads the field back afterwards. Safety refusals don't count toward the failure limit. Rate limits
   are retried after the delay the provider asks for (up to 60 s); a used-up daily quota is reported as such.
-* **Chat loop** — up to 80 tool rounds while a task runs (8 otherwise). Only the two most recent operator screenshots
+* **Agent loop** — up to 80 tool rounds while operator mode runs (30 for other tasks, 8 for plain chat). The
+  operator-session tools (`computer_*`, `operator_update`, `operator_finish`) are only sent to the model while operator
+  mode is running. Only the two most recent operator screenshots
   stay in the request; screenshots are never written to disk or the database.
 * **Overlay (`overlay.rs`, `components/operator/`)** — two always-on-top, transparent, content-protected (excluded
   from capture) windows created on first use: a click-through animated border on the display IGRIS works on, and a
@@ -390,6 +392,65 @@ chat turn ─ operator_start (SENSITIVE: user approves the task) ─┐
   configurable) is registered only while a task runs and briefly released when IGRIS itself presses Esc. The main
   window shows a banner with the same controls; the IGRIS core shows planning / executing / waiting / verifying /
   success states. Voice: "IGRIS, stop / pause / continue" control a running task.
+
+## Orchestrator (tasks)
+
+Actionable requests become tasks with a lifecycle; conversation stays lightweight.
+
+```
+chat turn ─▶ core/chat: save message, Phase 2 context (router, budget, compaction), persist reply
+                │
+                ▼
+     orchestrator/agent_loop ── model round ─▶ tool calls ─▶ tools/executor (validation, permission,
+                │                                            approval, run, audit) — the only execution path
+                │  first action / task_plan ─▶ task (intent.rs) ─▶ TaskSession (session.rs)
+                ▼
+     before a call: pause checkpoint, refusals · during: waiting_for_approval · after: verify ─▶ recover
+                ▼
+     end of turn: completed only with evidence · failed · ended (not verified) · cancelled
+```
+
+* **Chat or task** (`intent.rs`): every turn starts as chat — no task, no extra model call. It becomes a task when
+  the model asks for an action that changes the computer (file changes, apps/links/documents, `run_command`,
+  `operator_start`) or declares a plan with `task_plan` (SAFE). Questions, look-ups and IGRIS's own records (memory,
+  reminders) stay chat.
+* **Task model** (`task.rs`): id, conversation, kind (`general` / `operator`), objective (the user's words), state,
+  plan (steps with pending/active/completed/failed/skipped), current step, live activity, action count, failure
+  count, result/error, pause reason, project, and a bounded context (the last 24 actions with their verification).
+  Stored in `operator_tasks` (generalized by migration 10; old operator rows and plain-string plans still load).
+* **State machine**: `created, planning, waiting_for_approval, executing, paused, verifying, recovering, completed,
+  failed, cancelled, ended`. Every change goes through `TaskState::advance`; illegal transitions are refused (e.g.
+  completion only from `verifying`; `failed` reopens only when the user retries). Operator mode uses the same machine.
+* **Hub** (`mod.rs`): running tasks, transitions (each persisted and sent to the UI as a `task-update` event), and
+  pause / resume / stop. A task runs inside the chat turn that started it, but its state lives here and in the
+  database, independent of the response stream. Operator pause, takeover and Esc/orb/voice stop are mirrored into the
+  task.
+* **Task context** (`brief.rs`): each round, a short `<task_state>` (plan, recent actions and checks, failures,
+  notes such as "resumed") is added to the request copy only — never to the stored transcript. Phase 2 budgeting
+  and compaction apply as for any turn.
+* **Verification** (`verify.rs`): after a successful action — a read-only probe through the executor (`read_file`
+  after a write, the folder listing after a move or delete), evidence the tool observed (exit code, process running
+  after a launch), the open windows, or operator mode's own observe-then-finish rule. Otherwise the action is
+  *unverified*. The verdict is added to the tool result (`[IGRIS check: …]`).
+* **Recovery** (`recovery.rs`): failures are classified from the executor outcome. Only read-only calls are retried
+  automatically, once; actions are never repeated automatically; an identical call that failed twice is refused;
+  5 failed actions end the task; a denied or unanswered approval fails it; cancellation ends it.
+* **Completion**: when the reply ends, the latest attempt at each target decides. Any failed or unconfirmed one →
+  `failed`. Open plan steps, no actions, or unverifiable actions → `ended` with a note saying so. Only fully
+  checked work is `completed`.
+* **Pause / resume / stop**: the task card (and, for operator tasks, the orb, Esc and voice) pause, resume or stop.
+  A pause holds the next round and any action already requested. After a resume, IGRIS re-checks earlier verified
+  work itself, tells the model what changed, and an action decided before the pause is handed back instead of run.
+  Stop cancels the running request and tool. 5 minutes paused cancels the task.
+* **Restart**: tasks still running when IGRIS closed load as paused + interrupted and are never resumed
+  automatically. *Resume* (or *Try again* for a failed task) records a message in the conversation and runs a new
+  turn that re-checks first. Operator tasks must ask for operator mode again.
+* **Tool refresh** (`toolset.rs`): tools belong to capability groups. A conversation's tool snapshot is re-evaluated
+  against the registry and configuration when a task starts or resumes (new tools appear, removed ones go, no
+  duplicates); conversations created without tools stay without tools.
+* **Projects**: an action inside a registered project's folder links the task to that project.
+* **Limits**: 30 rounds per task run (80 while operating the computer), 30 minutes per run, 5 failed actions, tool
+  timeouts, cancellation at every step.
 
 ## Possible next steps
 

@@ -391,7 +391,6 @@ impl TaskSession {
         if let Some(t) = &t {
             tracing::info!(event = "TASK_RUN_ENDED", task_id = %t.id, state = t.state.as_str(), steps = t.steps, failures = t.failures);
         }
-        let _ = &self.conversation_id;
         t
     }
 

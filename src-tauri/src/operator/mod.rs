@@ -498,11 +498,11 @@ impl Operator {
         }
     }
 
-    /// Recent tasks, newest first (for recall and the UI).
+    /// Recent operator tasks, newest first (for recall and the UI). General tasks share the table.
     pub fn history(&self, limit: u32) -> Vec<TaskView> {
         let Ok(conn) = self.db.conn() else { return Vec::new() };
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id, conversation_id, objective, plan, state, steps, retries, result, error FROM operator_tasks ORDER BY created_at DESC, rowid DESC LIMIT ?1",
+            "SELECT id, conversation_id, objective, plan, state, steps, retries, result, error FROM operator_tasks WHERE kind = 'operator' ORDER BY created_at DESC, rowid DESC LIMIT ?1",
         ) else {
             return Vec::new();
         };
