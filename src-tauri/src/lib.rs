@@ -17,6 +17,7 @@ pub mod files;
 pub mod logging;
 pub mod memory;
 pub mod operator;
+pub mod orchestrator;
 pub mod overlay;
 pub mod productivity;
 pub mod projects;
@@ -157,6 +158,21 @@ pub fn run() {
                 tools.register(Arc::new(ComputerConfirmedActionTool::new(operator.clone())));
             }
             tools.register(Arc::new(crate::tools::terminal::RunCommandTool::new(db.clone(), Some(operator.clone()))));
+
+            // The task orchestrator: actionable requests become tasks (see orchestrator/).
+            let orchestrator = orchestrator::Orchestrator::new(db.clone(), Some(operator.clone()));
+            match orchestrator.recover() {
+                Ok(t) if !t.is_empty() => tracing::info!(event = "TASKS_RECOVERED", count = t.len()),
+                Ok(_) => {}
+                Err(e) => tracing::warn!(event = "TASKS_RECOVER_FAILED", error = %e),
+            }
+            {
+                let app = app.handle().clone();
+                orchestrator.on_event(Arc::new(move |u: &orchestrator::TaskUpdate| {
+                    let _ = app.emit("task-update", u);
+                }));
+            }
+            tools.register(Arc::new(crate::tools::task::TaskPlanTool::new(orchestrator.clone())));
             tracing::info!(event = "TOOLS_REGISTERED", count = tools.specs().len());
             let stop_hotkey = settings::load(&*db.conn()?).map(|s| s.operator_stop_hotkey).unwrap_or_else(|_| settings::DEFAULT_STOP_HOTKEY.into());
             app.manage(overlay::Overlay::install(app.handle(), operator.clone(), &stop_hotkey));
@@ -176,6 +192,7 @@ pub fn run() {
                 paths: AppPaths { data_dir, config_dir, log_dir, db_path },
                 attachments,
                 operator,
+                orchestrator,
             });
             register_voice_hotkey(app.handle());
             tracing::info!(event = "APP_STARTED");
@@ -205,6 +222,9 @@ pub fn run() {
             commands::operator::get_operator_state,
             commands::operator::operator_control,
             commands::operator::list_operator_tasks,
+            commands::operator::list_conversation_tasks,
+            commands::operator::task_control,
+            commands::chat::task_resume,
             commands::tools::list_tools,
             commands::tools::list_tool_audit,
             commands::tools::list_applications,

@@ -220,7 +220,7 @@ Press Esc or Stop on the orb to take back control.",
     }
     async fn execute_in(&self, i: &Value, ctx: &ToolCtx) -> ToolResultT {
         let plan: Vec<String> = i["plan"].as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_string)).collect();
-        let t = self.op.start(ctx.conversation_id.as_deref(), i["objective"].as_str().unwrap_or_default(), plan).map_err(failed)?;
+        let t = self.op.start(ctx.task_id.as_deref(), ctx.conversation_id.as_deref(), i["objective"].as_str().unwrap_or_default(), plan).map_err(failed)?;
         // Probe the platform once so an unsupported system fails here, not mid-task.
         let driver = self.op.driver.clone();
         if let Err(e) = blocking(move || driver.displays()).await {
@@ -1178,7 +1178,7 @@ mod tests {
     }
 
     fn ctx() -> ToolCtx {
-        ToolCtx { conversation_id: Some("c1".into()) }
+        ToolCtx { conversation_id: Some("c1".into()), task_id: None }
     }
 
     async fn start(op: &Arc<Operator>) {

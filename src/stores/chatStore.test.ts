@@ -147,4 +147,11 @@ describe("chat store", () => {
     await useChatStore.getState().regenerate();
     expect(useChatStore.getState().messages.map((m) => m.content)).toEqual(["Hi", "new"]);
   });
+  it("resumes a task as a new turn in its conversation", async () => {
+    vi.spyOn(api, "getConversation").mockResolvedValue({ conversation: conv, messages: [], busy: false });
+    const start = vi.spyOn(chatService, "startTurn").mockImplementation(async () => ({ conversationId: "c1", assistantMessage: msg({}) }) as TurnResult);
+    expect(await useChatStore.getState().resumeTask("t1", "c1")).toBe(true);
+    expect(useChatStore.getState().activeId).toBe("c1");
+    expect(start).toHaveBeenCalledWith(expect.any(String), { kind: "resume", taskId: "t1" }, expect.any(Function));
+  });
 });

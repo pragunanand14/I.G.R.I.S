@@ -1,11 +1,13 @@
-//! One assistant message: load context → (stream → run tools)* → persist.
+//! One assistant message: save the user's message → prepare the context →
+//! run the agent loop → persist the reply.
 //!
-//! The model may request tools; each request goes through the tool executor
-//! (validation, permission policy, audit) and the results are sent back until
-//! the model produces a final answer or the step limit is reached. Every
-//! outcome is persisted with a `status` (complete, truncated, refused,
-//! cancelled, error), so the UI never has to guess and a failure is never
-//! reported as success.
+//! Chat owns the conversation: transcripts, the Phase 2 context preparation
+//! (model routing, budget, compaction) and persistence. The rounds — model,
+//! tool calls through the executor, and the task lifecycle when a request is
+//! actionable — run in the orchestrator's agent loop
+//! (`orchestrator/agent_loop.rs`). Every outcome is persisted with a `status`
+//! (complete, truncated, refused, cancelled, error), so the UI never has to
+//! guess and a failure is never reported as success.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -13,33 +15,24 @@ use std::time::Instant;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use super::budget::{self, estimate_text, estimate_turns, shorten_old_tool_results, Budget};
+use super::budget::{self, estimate_text, estimate_turns, Budget};
 use super::compaction::{self, Group};
 use super::context::encode_turns;
 use super::prompt::{self, PromptContext};
-use crate::ai::{
-    AiError, AiErrorKind, ChatRequest, ChatTurn, MediaKind, ModelRole, ModelRouter, Needs, ResponseDepth, Role, ServerToolEvent, StopReason, StreamEvent,
-    ToolDef, Usage,
-};
+use crate::ai::{AiErrorKind, ChatTurn, MediaKind, ModelRole, ModelRouter, Needs, ResponseDepth, Role, StopReason, ToolDef};
 use crate::attachments::AttachmentStore;
 use crate::conversations::StoredSummary;
 use crate::conversations::{self, Conversation, Message, MessageStatus, NewMessage};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::memory::retrieval::{self, MemoryContext};
-use crate::tools::executor::{self, ActivityStatus, Actor, Approver, ExecContext, Policy, ToolActivity};
-use crate::tools::{audit, PermissionLevel, ToolRegistry};
+use crate::orchestrator::agent_loop::{self, LoopInput, LoopOutput, Outcome};
+use crate::orchestrator::toolset::Toolset;
+use crate::tools::executor::{self, Approver, Policy, ToolActivity};
+use crate::tools::ToolRegistry;
 
 pub const MAX_INPUT_CHARS: usize = 100_000;
-/// Per-response output cap. Streaming keeps large values safe from HTTP timeouts.
-pub const MAX_OUTPUT_TOKENS: u32 = 64_000;
-/// Maximum model ↔ tool round trips for one message.
-pub const MAX_TOOL_ROUNDS: usize = 8;
-/// Round trips allowed while an operator task runs (observe → act → verify loops).
-pub const OPERATOR_MAX_ROUNDS: usize = 80;
-/// Screenshots kept in the request during a long tool loop; older ones are dropped
-/// (the model already acted on them) to bound cost.
-const KEEP_RECENT_TOOL_IMAGES: usize = 2;
+pub use crate::orchestrator::agent_loop::{MAX_OUTPUT_TOKENS, MAX_TOOL_ROUNDS, OPERATOR_MAX_ROUNDS, TASK_MAX_ROUNDS};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -64,6 +57,10 @@ pub type Emit<'a> = &'a mut (dyn FnMut(ChatEvent) + Send);
 
 pub struct Tooling {
     pub registry: Arc<ToolRegistry>,
+    /// Web search mode for re-evaluating a conversation's tools (see `ToolRegistry::offered`).
+    pub web_search_mode: Option<String>,
+    /// The task orchestrator (actionable requests become tasks). `None` = plain tool loop.
+    pub orchestrator: Option<Arc<crate::orchestrator::Orchestrator>>,
     pub policy: Policy,
     pub approver: Arc<dyn Approver>,
     /// Conversations trusted with "Allow for this chat".
@@ -81,6 +78,8 @@ pub struct GenerationParams {
     pub tooling: Tooling,
     /// Where attachment bytes are loaded from (None in tests without files).
     pub attachments: Option<Arc<AttachmentStore>>,
+    /// Continue this stored task (the user resumed it) instead of starting fresh.
+    pub resume_task: Option<String>,
 }
 
 pub fn validate_input(content: &str) -> AppResult<String> {
@@ -174,13 +173,6 @@ pub fn edit_user_message(db: &Database, message_id: &str, content: &str, memory_
     conversations::edit_user_message(&mut conn, message_id, content, memory_context.as_ref())
 }
 
-enum Outcome {
-    Finished(StopReason),
-    Failed(AiError),
-    Cancelled,
-    StepLimit,
-}
-
 /// Generate and persist the assistant reply to the conversation's last user message.
 pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &GenerationParams, cancel: &CancellationToken, emit: Emit<'_>) -> AppResult<Message> {
     let (system, history, offered) = {
@@ -252,8 +244,8 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
             }
         }
     }
-    let allowed: Vec<String> = offered.iter().map(|t| t.name.clone()).collect();
     let provider_id = route.provider_id();
+    let toolset = Toolset::new(offered);
 
     emit(ChatEvent::Generating { conversation_id: conversation_id.to_string(), model: route.model.clone() });
     tracing::info!(
@@ -262,185 +254,32 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
         model = %route.model,
         role = ?route.role,
         turns = base_turns.len(),
-        tools = offered.len(),
-        context_tokens = fixed + estimate_turns(&base_turns),
+        tools = toolset.exposed().len(),
+        context_tokens = budget::estimate_fixed(&system, toolset.exposed()) + estimate_turns(&base_turns),
         input_limit = budget.input_limit,
     );
 
+    // The agent loop (and, for actionable requests, the task orchestrator) runs the rounds.
     let started = Instant::now();
-    let mut first_token_ms: Option<u128> = None;
-    let mut reasoning_chars = 0usize;
-    let mut text = String::new();
-    let mut new_turns: Vec<ChatTurn> = Vec::new();
-    let mut activities: Vec<ToolActivity> = Vec::new();
-    let mut usage = Usage::default();
-    let mut served_model = route.model.clone();
-    let mut outcome = Outcome::StepLimit;
-
-    let operator_running = || params.tooling.operator.as_ref().is_some_and(|o| o.covers(Some(conversation_id)));
-    let mut limit = MAX_TOOL_ROUNDS;
-    let mut round = 0usize;
-    loop {
-        if operator_running() {
-            limit = OPERATOR_MAX_ROUNDS;
-        }
-        let mut turns = base_turns.clone();
-        turns.extend(new_turns.iter().cloned());
-        drop_old_tool_images(&mut turns, KEEP_RECENT_TOOL_IMAGES);
-        fit_tool_output(&mut turns, fixed, &budget);
-        let request = ChatRequest {
-            model: route.model.clone(),
-            system: system.clone(),
-            turns,
-            max_tokens: MAX_OUTPUT_TOKENS,
-            depth: params.depth,
-            tools: offered.clone(),
-        };
-
-        let mut round_has_text = false;
-        let mut server_running: Vec<ToolActivity> = Vec::new();
-        let result = route
-            .provider
-            .stream(&request, cancel, &mut |ev| match ev {
-                StreamEvent::ServerTool(ServerToolEvent::Started { id, name, input }) => {
-                    let query = input["query"].as_str().or(input["url"].as_str()).unwrap_or_default();
-                    let a = ToolActivity {
-                        id,
-                        tool: name.clone(),
-                        title: if name == "web_search" { "Web search".into() } else { name.clone() },
-                        permission: Some(PermissionLevel::Safe),
-                        description: if name == "web_search" { format!("Search the web for \"{query}\"") } else { format!("{name} {query}") },
-                        status: ActivityStatus::Running,
-                        result: None,
-                        duration_ms: None,
-                        text_offset: Some(text.chars().count()),
-                        sources: Vec::new(),
-                        attachments: Vec::new(),
-                    };
-                    emit(ChatEvent::Tool { activity: a.clone() });
-                    server_running.push(a);
-                }
-                StreamEvent::ServerTool(ServerToolEvent::Finished { id, ok, summary, sources }) => {
-                    if let Some(pos) = server_running.iter().position(|a| a.id == id) {
-                        let mut a = server_running.remove(pos);
-                        a.status = if ok { ActivityStatus::Completed } else { ActivityStatus::Failed };
-                        a.result = Some(summary);
-                        a.sources = sources;
-                        if let Ok(conn) = db.conn() {
-                            let _ = audit::record(
-                                &conn,
-                                &audit::NewAuditEntry {
-                                    conversation_id: Some(conversation_id),
-                                    tool: &a.tool,
-                                    permission: "safe",
-                                    actor: "assistant",
-                                    description: &a.description,
-                                    input: "",
-                                    status: if ok { "completed" } else { "failed" },
-                                    approval: "auto",
-                                    result: a.result.as_deref(),
-                                    duration_ms: None,
-                                },
-                            );
-                        }
-                        emit(ChatEvent::Tool { activity: a.clone() });
-                        activities.push(a);
-                    }
-                }
-                StreamEvent::Reasoning(n) => {
-                    reasoning_chars += n;
-                    emit(ChatEvent::Reasoning { chars: reasoning_chars });
-                }
-                StreamEvent::TextDelta(t) => {
-                    if first_token_ms.is_none() {
-                        first_token_ms = Some(started.elapsed().as_millis());
-                    }
-                    // Separate text written before and after tool calls.
-                    if !round_has_text && round > 0 && !text.is_empty() && !text.ends_with("\n\n") {
-                        text.push_str("\n\n");
-                        emit(ChatEvent::Delta { text: "\n\n".into() });
-                    }
-                    round_has_text = true;
-                    text.push_str(&t);
-                    emit(ChatEvent::Delta { text: t });
-                }
-            })
-            .await;
-
-        // Server tools that never reported a result in this round.
-        for mut a in server_running.drain(..) {
-            a.status = ActivityStatus::Cancelled;
-            emit(ChatEvent::Tool { activity: a.clone() });
-            activities.push(a);
-        }
-        let completion = match result {
-            Ok(c) => c,
-            Err(e) if e.kind == AiErrorKind::Cancelled => {
-                outcome = Outcome::Cancelled;
-                break;
-            }
-            Err(e) => {
-                outcome = Outcome::Failed(e);
-                break;
-            }
-        };
-        usage.input_tokens = Some(usage.input_tokens.unwrap_or(0) + completion.usage.input_tokens.unwrap_or(0));
-        usage.output_tokens = Some(usage.output_tokens.unwrap_or(0) + completion.usage.output_tokens.unwrap_or(0));
-        served_model = completion.model.clone();
-
-        // Only act on tool calls when the model actually stopped to use them —
-        // a refusal or max_tokens stop can leave a call cut off mid-input.
-        let wants_tools = completion.stop_reason == StopReason::ToolUse && !completion.tool_calls.is_empty();
-        new_turns.push(ChatTurn {
-            extras: completion.extras.clone(),
-            tool_calls: completion.tool_calls.clone(),
-            ..ChatTurn::assistant(completion.text.clone())
-        });
-        if completion.stop_reason == StopReason::PauseTurn {
-            // A provider-side tool loop paused: re-send as-is and it resumes.
-            if round >= limit {
-                break; // StepLimit
-            }
-            round += 1;
-            continue;
-        }
-        if !wants_tools {
-            outcome = Outcome::Finished(completion.stop_reason);
-            break;
-        }
-        if round >= limit {
-            break; // StepLimit
-        }
-
-        let ctx = ExecContext {
-            registry: &params.tooling.registry,
+    let run = agent_loop::run(
+        LoopInput {
             db,
-            conversation_id: Some(conversation_id),
-            actor: Actor::Assistant,
-            policy: params.tooling.policy,
-            allowed: Some(&allowed),
-            approver: params.tooling.approver.as_ref(),
+            conversation_id,
+            request: history.last().map(|m| m.content.clone()).unwrap_or_default(),
+            system,
+            route,
+            budget,
+            base_turns,
+            depth: params.depth,
+            tooling: &params.tooling,
+            toolset,
             cancel,
-            trust: params.tooling.trust.as_deref(),
-            operator: params.tooling.operator.as_deref(),
-        };
-        let mut results = Vec::new();
-        let offset = Some(text.chars().count());
-        for call in &completion.tool_calls {
-            let (result, mut activity) =
-                executor::execute(call, &ctx, &mut |a| emit(ChatEvent::Tool { activity: ToolActivity { text_offset: offset, ..a.clone() } })).await;
-            activity.text_offset = offset;
-            emit(ChatEvent::Tool { activity: activity.clone() });
-            activities.push(activity);
-            results.push(result);
-        }
-        new_turns.push(ChatTurn { tool_results: results, ..ChatTurn::user("") });
-        if cancel.is_cancelled() {
-            outcome = Outcome::Cancelled;
-            break;
-        }
-        round += 1;
-    }
+            resume: params.resume_task.clone(),
+        },
+        &mut *emit,
+    )
+    .await;
+    let LoopOutput { outcome, text, new_turns, activities, usage, served_model, limit, first_token_ms, task } = run;
 
     // Raw turns are only replayable when every tool call in them was answered.
     let answered = new_turns.last().is_some_and(|t| t.tool_calls.is_empty());
@@ -472,6 +311,7 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
                 status = ?status,
                 served_model = %served_model,
                 tool_calls = activities.len(),
+                task = task.as_ref().map(|t| t.state.as_str()),
                 first_token_ms = first_token_ms.map(|v| v as u64),
                 total_ms = started.elapsed().as_millis() as u64,
                 input_tokens = usage.input_tokens,
@@ -500,43 +340,6 @@ pub async fn generate(db: &Arc<Database>, conversation_id: &str, params: &Genera
     };
     emit(ChatEvent::Finished { message: message.clone() });
     Ok(message)
-}
-
-/// Long tool loops (operator tasks, build-fix cycles) grow the request every
-/// round. Over budget, older tool output in this request is shortened — more
-/// aggressively if needed — while calls, the newest results and the
-/// conversation stay intact. Only the request copy changes; nothing stored does.
-fn fit_tool_output(turns: &mut [ChatTurn], fixed: u32, budget: &Budget) {
-    for (keep, max_chars) in [(6, 1_200), (3, 400), (1, 160)] {
-        if fixed + estimate_turns(turns) <= budget.input_limit {
-            return;
-        }
-        shorten_old_tool_results(turns, keep, max_chars);
-    }
-    let size = fixed + estimate_turns(turns);
-    if size > budget.input_limit {
-        // Still too big (e.g. one huge message): send it and let the provider
-        // report a real context error rather than silently dropping content.
-        tracing::warn!(event = "CONTEXT_OVER_BUDGET", estimated = size, limit = budget.input_limit);
-    }
-}
-
-/// Keep only the `keep` most recent tool results that carry images; older
-/// ones get a short note instead (the model has already acted on them).
-fn drop_old_tool_images(turns: &mut [ChatTurn], keep: usize) {
-    let mut seen = 0;
-    for t in turns.iter_mut().rev() {
-        for r in t.tool_results.iter_mut().rev() {
-            if r.media.is_empty() {
-                continue;
-            }
-            seen += 1;
-            if seen > keep && r.media.iter().all(|m| m.attachment_id.is_empty()) {
-                r.media.clear();
-                r.content.push_str("\n[Older screenshot omitted.]");
-            }
-        }
-    }
 }
 
 /// Prepare a regeneration: drop assistant turns after the last user message.
@@ -629,11 +432,20 @@ mod tests {
 
     fn params(url: String, registry: Arc<ToolRegistry>, policy: Policy, approval: Approval) -> GenerationParams {
         GenerationParams {
+            resume_task: None,
             attachments: None,
             router: Arc::new(ModelRouter::new(Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()), "claude-opus-5-5")),
             chat_model: None,
             depth: Some(ResponseDepth::Medium),
-            tooling: Tooling { registry, policy, approver: Arc::new(FixedApprover(approval)), trust: None, operator: None },
+            tooling: Tooling {
+                registry,
+                web_search_mode: None,
+                orchestrator: None,
+                policy,
+                approver: Arc::new(FixedApprover(approval)),
+                trust: None,
+                operator: None,
+            },
         }
     }
 
@@ -840,7 +652,7 @@ mod tests {
         }
         let latest = turns.last().unwrap().tool_results[0].content.clone();
         assert!(estimate_turns(&turns) > budget.input_limit);
-        fit_tool_output(&mut turns, 3_000, &budget);
+        crate::orchestrator::agent_loop::fit_tool_output(&mut turns, 3_000, &budget);
         assert!(3_000 + estimate_turns(&turns) <= budget.input_limit);
         assert_eq!(turns.last().unwrap().tool_results[0].content, latest, "the newest result is intact");
         assert_eq!(turns.iter().filter(|t| !t.tool_calls.is_empty()).count(), 40, "every call is still there");
@@ -1091,7 +903,7 @@ mod tests {
         let msgs = second["messages"].as_array().unwrap();
         assert_eq!(msgs.last().unwrap()["role"], "assistant", "paused turn is re-sent without an extra user message");
         assert_eq!(msgs.last().unwrap()["content"][0]["type"], "server_tool_use");
-        let log = audit::list(&db.conn().unwrap(), 5).unwrap();
+        let log = crate::tools::audit::list(&db.conn().unwrap(), 5).unwrap();
         assert_eq!(log[0].tool, "web_search");
         assert_eq!(log[0].status, "completed");
     }

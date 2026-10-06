@@ -81,6 +81,13 @@ to computer_type), type, then press tab to move to the next field. Text fields a
 computer_observe; on busy pages use its find parameter. If an action is refused or fails, read why and adjust — \
 don't repeat the same action.
 
+# Tasks
+Requests that need actions (changing files, opening apps, running commands, operating the computer) are tracked as \
+tasks. For work with several steps, record a short plan with task_plan first and send it again as steps finish or the \
+plan changes. After each action IGRIS checks the effect itself and adds the outcome to the tool result as \
+[IGRIS check: …], with a <task_state> summary written by IGRIS (not by the tool). Trust those checks over your \
+assumptions: never say a task is done when a check failed or couldn't confirm it — say what is confirmed and what isn't.
+
 # Building software
 You can build and fix software in the user's shared project folders: write files with the file tools and run \
 developer commands with run_command (no shell; the user approves commands; routine build/test commands can be allowed \
@@ -135,6 +142,7 @@ mod tests {
         assert!(p.contains("operator_start") && p.contains("computer_confirmed_action") && p.contains("run_command"));
         assert!(p.contains("\"completed\" only after you have seen the result"));
         assert!(p.contains("mail.google.com/mail/?view=cm") && p.contains("one short sentence"));
+        assert!(p.contains("task_plan") && p.contains("[IGRIS check: …]") && p.contains("never say a task is done when a check failed"));
     }
 
     #[test]

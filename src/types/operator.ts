@@ -1,14 +1,15 @@
-// Mirrors `src-tauri/src/operator/mod.rs`. Keep in sync.
+// Mirrors `src-tauri/src/operator/mod.rs` (task states: `orchestrator/task.rs`). Keep in sync.
 
 export type OperatorPhase = "planning" | "executing" | "waiting" | "verifying" | "paused" | "success" | "error" | "stopped";
 
 export type OperatorTaskState =
   | "created"
   | "planning"
-  | "waiting_for_permission"
+  | "waiting_for_approval"
   | "executing"
   | "paused"
   | "verifying"
+  | "recovering"
   | "completed"
   | "failed"
   | "cancelled"

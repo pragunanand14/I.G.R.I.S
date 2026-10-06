@@ -44,6 +44,8 @@ interface ChatStore {
   send: (content: string, attachmentIds?: string[]) => Promise<boolean>;
   regenerate: () => Promise<void>;
   edit: (messageId: string, content: string) => Promise<boolean>;
+  /** Continue a paused (interrupted) or failed task in its conversation. */
+  resumeTask: (taskId: string, conversationId: string) => Promise<boolean>;
   cancel: () => Promise<void>;
   /** Answer a tool approval prompt. */
   /** `trustChat`: also allow later trustable actions in this conversation. */
@@ -216,6 +218,12 @@ export const useChatStore = create<ChatStore>((set, get) => {
       // If the edit was rejected outright, restore the real history.
       if (!ok && get().activeId === activeId) await get().openConversation(activeId).catch(() => set({ messages: previous }));
       return ok;
+    },
+
+    resumeTask: async (taskId, conversationId) => {
+      if (get().streaming) return false;
+      if (get().activeId !== conversationId) await get().openConversation(conversationId);
+      return runTurn({ kind: "resume", taskId }, conversationId);
     },
 
     cancel: async () => {

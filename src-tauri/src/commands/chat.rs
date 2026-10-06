@@ -20,13 +20,17 @@ fn validate_request_id(id: &str) -> AppResult<()> {
 fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
     let (router, _status) = state.ai_router()?;
     let settings = settings::load(&*state.db.conn()?)?;
+    let web_search_mode = state.config.read().map_err(|_| AppError::internal("config lock poisoned"))?.web_search_mode().map(str::to_string);
     Ok(GenerationParams {
+        resume_task: None,
         attachments: Some(state.attachments.clone()),
         router,
         chat_model: Some(settings.ai_model.clone()).filter(|m| !m.trim().is_empty()),
         depth: Some(settings.ai_effort),
         tooling: Tooling {
             registry: state.tools.clone(),
+            web_search_mode,
+            orchestrator: Some(state.orchestrator.clone()),
             policy: Policy { confirm_low: settings.confirm_low_risk },
             approver: std::sync::Arc::new(UiApprover { pending: state.approvals.clone(), timeout: APPROVAL_TIMEOUT }),
             trust: Some(state.trust.clone()),
@@ -128,6 +132,38 @@ pub async fn chat_edit(
     chat::edit_user_message(&state.db, &message_id, &content, memory_enabled)?;
     tracing::info!(event = "MESSAGE_EDITED", conversation_id = %conversation_id);
     run_generation(&state, &conversation_id, &guard.token, params, &on_event).await
+}
+
+/// Continue a task that was interrupted (IGRIS closed) or failed. The user
+/// asked for it: a short message records that in the conversation, and the
+/// task re-checks the current state before acting.
+#[tauri::command]
+pub async fn task_resume(state: State<'_, AppState>, request_id: String, task_id: String, on_event: Channel<ChatEvent>) -> AppResult<TurnResult> {
+    validate_request_id(&request_id)?;
+    let task = state.orchestrator.task(&task_id).ok_or_else(|| AppError::validation("That task no longer exists."))?;
+    let conversation_id = task.conversation_id.clone().ok_or_else(|| AppError::validation("That task's conversation was deleted."))?;
+    if !matches!(task.state, crate::orchestrator::task::TaskState::Paused | crate::orchestrator::task::TaskState::Failed)
+        || state.orchestrator.is_live(&task_id)
+    {
+        return Err(AppError::validation("Only a paused or failed task can be resumed."));
+    }
+    let mut params = generation_params(&state)?;
+    params.resume_task = Some(task_id);
+    let guard = state.generations.begin(&request_id, Some(&conversation_id))?;
+    let s = settings::load(&*state.db.conn()?)?;
+    let verb = if task.state == crate::orchestrator::task::TaskState::Failed { "Try the task again" } else { "Continue the task" };
+    let (conversation, message) = chat::save_user_message(
+        &state.db,
+        Some(&conversation_id),
+        &format!("{verb}: {}", task.objective),
+        &s.user_name,
+        &offered_tools(&state)?,
+        s.memory_enabled,
+    )?;
+    guard.attach(&conversation.id);
+    let _ = on_event.send(ChatEvent::UserMessage { conversation: conversation.clone(), message });
+    tracing::info!(event = "TASK_RESUME_REQUESTED", task_id = %task.id);
+    run_generation(&state, &conversation.id, &guard.token, params, &on_event).await
 }
 
 /// "Allow for this chat": later overwrite / move / close-app actions in this

@@ -100,3 +100,41 @@ async fn read_request(sock: &mut TcpStream) -> CapturedRequest {
     }
     CapturedRequest { head: String::new(), body: String::new() }
 }
+
+/// Anthropic Messages SSE fixtures.
+pub mod sse {
+    use serde_json::{json, Value};
+
+    pub fn events(evs: &[Value]) -> String {
+        evs.iter().map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap())).collect()
+    }
+
+    /// A plain text answer.
+    pub fn text(text: &str) -> String {
+        events(&[
+            json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":text}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}),
+            json!({"type":"message_stop"}),
+        ])
+    }
+
+    /// One response asking for several tool calls, in order.
+    pub fn tools(calls: &[(&str, &str, Value)]) -> String {
+        let mut evs = vec![json!({"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10}}})];
+        for (i, (id, name, input)) in calls.iter().enumerate() {
+            evs.push(json!({"type":"content_block_start","index":i,"content_block":{"type":"tool_use","id":id,"name":name,"input":{}}}));
+            evs.push(json!({"type":"content_block_delta","index":i,"delta":{"type":"input_json_delta","partial_json":input.to_string()}}));
+            evs.push(json!({"type":"content_block_stop","index":i}));
+        }
+        evs.push(json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}));
+        evs.push(json!({"type":"message_stop"}));
+        events(&evs)
+    }
+
+    pub fn tool(id: &str, name: &str, input: Value) -> String {
+        tools(&[(id, name, input)])
+    }
+}

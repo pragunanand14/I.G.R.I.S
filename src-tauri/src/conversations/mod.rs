@@ -184,6 +184,12 @@ pub fn tool_specs(conn: &Connection, id: &str) -> AppResult<Vec<ToolDef>> {
     Ok(raw.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
 }
 
+/// Replace the conversation's tool snapshot (a refresh when a task starts).
+pub fn set_tool_specs(conn: &Connection, id: &str, tools: &[ToolDef]) -> AppResult<()> {
+    conn.execute("UPDATE conversations SET tool_specs = ?2 WHERE id = ?1", params![id, serde_json::to_string(tools)?])?;
+    Ok(())
+}
+
 pub fn list(conn: &Connection) -> AppResult<Vec<Conversation>> {
     let mut stmt = conn.prepare(&format!("SELECT {CONVERSATION_COLS} FROM conversations c ORDER BY c.updated_at DESC, c.rowid DESC"))?;
     let rows = stmt.query_map([], conversation_from_row)?;
@@ -376,6 +382,9 @@ mod tests {
         let defs = vec![ToolDef { name: "calculator".into(), description: "d".into(), input_schema: serde_json::json!({"type":"object"}), server: None }];
         let c = create(&conn, "t", "s", &defs).unwrap();
         assert_eq!(tool_specs(&conn, &c.id).unwrap(), defs);
+        let more = vec![defs[0].clone(), ToolDef { name: "task_plan".into(), ..defs[0].clone() }];
+        set_tool_specs(&conn, &c.id, &more).unwrap();
+        assert_eq!(tool_specs(&conn, &c.id).unwrap(), more);
         conn.execute("UPDATE conversations SET tool_specs = NULL WHERE id = ?1", [&c.id]).unwrap();
         assert!(tool_specs(&conn, &c.id).unwrap().is_empty());
     }

@@ -31,6 +31,8 @@ pub struct AppState {
     pub attachments: Arc<crate::attachments::AttachmentStore>,
     /// Operator mode (IGRIS operating the computer).
     pub operator: Arc<crate::operator::Operator>,
+    /// The task orchestrator.
+    pub orchestrator: Arc<crate::orchestrator::Orchestrator>,
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +208,7 @@ mod tests {
             text_offset: None,
             sources: Vec::new(),
             attachments: Vec::new(),
+            failure: None,
         }
     }
 

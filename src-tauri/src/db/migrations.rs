@@ -262,6 +262,24 @@ pub const MIGRATIONS: &[Migration] = &[
             CREATE INDEX conversation_summaries_conv ON conversation_summaries (conversation_id, through_seq);
         "#,
     },
+    Migration {
+        version: 10,
+        name: "tasks",
+        sql: r#"
+            -- Generalize operator tasks into IGRIS tasks (the orchestrator). Existing
+            -- rows are operator tasks; the plan column now holds step objects
+            -- ({title, status}) and still accepts the old plain-string plans.
+            ALTER TABLE operator_tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'operator';
+            ALTER TABLE operator_tasks ADD COLUMN current_step INTEGER;
+            ALTER TABLE operator_tasks ADD COLUMN failures INTEGER NOT NULL DEFAULT 0;
+            -- Bounded execution state (recent actions and their verification), JSON.
+            ALTER TABLE operator_tasks ADD COLUMN context TEXT NOT NULL DEFAULT '{}';
+            ALTER TABLE operator_tasks ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL;
+            ALTER TABLE operator_tasks ADD COLUMN pause_reason TEXT;
+            ALTER TABLE operator_tasks ADD COLUMN updated_at TEXT;
+            CREATE INDEX operator_tasks_conversation ON operator_tasks (conversation_id, created_at);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

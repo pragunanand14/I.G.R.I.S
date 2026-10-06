@@ -62,6 +62,9 @@ pub struct ToolActivity {
     /// Attachment ids of images the tool produced (e.g. a screenshot).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<String>,
+    /// Why the call failed, for the orchestrator's recovery (not persisted).
+    #[serde(skip)]
+    pub failure: Option<ToolErrorKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,6 +145,8 @@ pub struct ExecContext<'a> {
     pub trust: Option<&'a Trust>,
     /// The running operator task, whose approval covers its computer actions.
     pub operator: Option<&'a crate::operator::Operator>,
+    /// The orchestrator task this call belongs to (passed on to the tool).
+    pub task_id: Option<&'a str>,
 }
 
 fn clip(s: String) -> String {
@@ -168,6 +173,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
         text_offset: None,
         sources: Vec::new(),
         attachments: Vec::new(),
+        failure: None,
     };
     let mut approval = "auto";
 
@@ -276,7 +282,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
     on_update(&activity);
     tracing::info!(event = "TOOL_STARTED", tool = spec.name);
     let limit = tool.timeout(&call.input);
-    let tool_ctx = super::ToolCtx { conversation_id: ctx.conversation_id.map(str::to_string) };
+    let tool_ctx = super::ToolCtx { conversation_id: ctx.conversation_id.map(str::to_string), task_id: ctx.task_id.map(str::to_string) };
     let outcome = tokio::select! {
         _ = ctx.cancel.cancelled() => None,
         r = tokio::time::timeout(limit, tool.execute_in(&call.input, &tool_ctx)) => Some(r),
@@ -284,6 +290,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
     match outcome {
         None => finish(&mut activity, ActivityStatus::Cancelled, "Cancelled by the user.".into(), "Cancelled".into(), true, approval),
         Some(Err(_)) => {
+            activity.failure = Some(ToolErrorKind::Timeout);
             let msg = format!("{} timed out after {}s.", spec.title, limit.as_secs());
             finish(&mut activity, ActivityStatus::Failed, msg.clone(), msg, true, approval)
         }
@@ -302,6 +309,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
             (result, activity)
         }
         Some(Ok(Err(e))) => {
+            activity.failure = Some(e.kind);
             let status = if e.kind == ToolErrorKind::InvalidInput { ActivityStatus::Invalid } else { ActivityStatus::Failed };
             finish(&mut activity, status, e.message.clone(), e.message, true, approval)
         }
@@ -378,6 +386,7 @@ mod tests {
             cancel: &cancel,
             trust: None,
             operator: None,
+            task_id: None,
         };
         execute(c, &ctx, &mut |_| {}).await
     }
@@ -468,6 +477,7 @@ mod tests {
             cancel: &cancel,
             trust: Some(&trust),
             operator: None,
+            task_id: None,
         };
 
         // Not trusted yet: asks (and the approver denies).
@@ -547,13 +557,14 @@ mod tests {
             cancel: &cancel,
             trust: Some(&trust),
             operator: Some(&op),
+            task_id: None,
         };
         let other = ExecContext { conversation_id: Some("other"), ..base };
         let ctx = |cid: &str| if cid == "other" { &other } else { &base };
         execute(&call("computer_click", json!({})), ctx(&c1), &mut |_| {}).await;
         assert_eq!(*click.1.lock().unwrap(), 0, "no operator task: asks (denied)");
 
-        op.start(Some(&c1), "task", vec![]).unwrap();
+        op.start(None, Some(&c1), "task", vec![]).unwrap();
         let (res, _) = execute(&call("computer_click", json!({})), ctx(&c1), &mut |_| {}).await;
         assert!(!res.is_error);
         assert_eq!(*click.1.lock().unwrap(), 1, "covered by the approved task");

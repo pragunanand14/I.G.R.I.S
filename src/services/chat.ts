@@ -6,7 +6,9 @@ import { call } from "./backend";
 type Start =
   | { kind: "send"; conversationId: string | null; content: string; attachmentIds?: string[] }
   | { kind: "regenerate"; conversationId: string }
-  | { kind: "edit"; messageId: string; content: string };
+  | { kind: "edit"; messageId: string; content: string }
+  /** Continue a paused (interrupted) or failed task. */
+  | { kind: "resume"; taskId: string };
 
 export function startTurn(requestId: string, start: Start, onEvent: (ev: ChatEvent) => void): Promise<TurnResult> {
   const channel = new Channel<ChatEvent>();
@@ -24,6 +26,8 @@ export function startTurn(requestId: string, start: Start, onEvent: (ev: ChatEve
       return call<TurnResult>("chat_regenerate", { requestId, conversationId: start.conversationId, onEvent: channel });
     case "edit":
       return call<TurnResult>("chat_edit", { requestId, messageId: start.messageId, content: start.content, onEvent: channel });
+    case "resume":
+      return call<TurnResult>("task_resume", { requestId, taskId: start.taskId, onEvent: channel });
   }
 }
 

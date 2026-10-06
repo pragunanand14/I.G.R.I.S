@@ -19,6 +19,7 @@ pub mod projects;
 pub mod schema;
 pub mod screen;
 pub mod system_info;
+pub mod task;
 pub mod terminal;
 pub mod web;
 
@@ -124,6 +125,8 @@ pub type ToolResultT = Result<ToolOutput, ToolError>;
 #[derive(Debug, Clone, Default)]
 pub struct ToolCtx {
     pub conversation_id: Option<String>,
+    /// The orchestrator task this call belongs to, if any.
+    pub task_id: Option<String>,
 }
 
 #[async_trait::async_trait]

@@ -11,6 +11,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useOperatorStore } from "@/stores/operatorStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useTaskStore } from "@/stores/taskStore";
 
 export function AppShell() {
   const backend = useAppStore((s) => s.backend);
@@ -31,6 +32,8 @@ export function AppShell() {
 
   const connectOperator = useOperatorStore((s) => s.connect);
   useEffect(() => (backend === "ready" ? connectOperator() : undefined), [backend, connectOperator]);
+  const connectTasks = useTaskStore((s) => s.connect);
+  useEffect(() => (backend === "ready" ? connectTasks() : undefined), [backend, connectTasks]);
 
   useThemeEffect(settings);
   useTelemetryPolling(backend === "ready", settings.telemetryIntervalMs);

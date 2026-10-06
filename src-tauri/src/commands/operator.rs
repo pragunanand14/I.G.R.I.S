@@ -1,4 +1,4 @@
-//! Operator mode controls for the UI (main window and the overlay orb).
+//! Operator mode and task controls for the UI (main window, overlay orb, task card).
 
 use serde::Deserialize;
 use tauri::State;
@@ -43,4 +43,19 @@ pub fn operator_control(state: State<'_, AppState>, action: OperatorAction) -> A
 #[tauri::command]
 pub fn list_operator_tasks(state: State<'_, AppState>, limit: Option<u32>) -> Vec<TaskView> {
     state.operator.history(limit.unwrap_or(20).clamp(1, 100))
+}
+
+/// Tasks of a conversation, newest first (the running one marked `live`).
+#[tauri::command]
+pub fn list_conversation_tasks(state: State<'_, AppState>, conversation_id: String, limit: Option<u32>) -> AppResult<Vec<crate::orchestrator::TaskInfo>> {
+    state.orchestrator.for_conversation(&conversation_id, limit.unwrap_or(10).clamp(1, 50))
+}
+
+/// Pause, resume or stop a running task; stop also dismisses an interrupted one.
+#[tauri::command]
+pub fn task_control(state: State<'_, AppState>, task_id: String, action: crate::orchestrator::Control) -> AppResult<crate::orchestrator::TaskInfo> {
+    let task = state.orchestrator.control(&task_id, action)?;
+    let live = state.orchestrator.is_live(&task.id);
+    tracing::info!(event = "TASK_CONTROL", action = ?action);
+    Ok(crate::orchestrator::TaskInfo { task, live })
 }

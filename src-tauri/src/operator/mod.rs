@@ -5,7 +5,9 @@
 //! runs, and ends when IGRIS reports the outcome, the user stops it, or the turn
 //! ends. Every computer action passes [`Operator::checkpoint`] first, which
 //! enforces stop and pause and detects the user taking over the mouse or
-//! keyboard (→ automatic pause). Task history is kept in `operator_tasks`.
+//! keyboard (→ automatic pause). Task history is kept in `operator_tasks`
+//! (shared with the orchestrator, which owns the task an operator session
+//! belongs to; see `orchestrator/`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -17,6 +19,7 @@ use tokio::sync::Notify;
 
 use crate::computer::{Display, SharedDriver, UiElement, WindowInfo};
 use crate::db::Database;
+use crate::orchestrator::task::{decode_plan, PlanStep};
 
 /// Failed actions allowed per task before IGRIS gives up (no endless retry loops).
 pub const MAX_FAILURES: u32 = 8;
@@ -27,42 +30,9 @@ pub const PAUSE_LIMIT: Duration = Duration::from_secs(300);
 /// Input this long after IGRIS's own last input counts as the user's.
 const INPUT_SLACK_MS: u64 = 400;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskState {
-    Created,
-    Planning,
-    WaitingForPermission,
-    Executing,
-    Paused,
-    Verifying,
-    Completed,
-    Failed,
-    Cancelled,
-    /// Control handed back without a verified result: the user has to act
-    /// (log in, decide) or IGRIS ended its reply without reporting.
-    Ended,
-}
-
-impl TaskState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TaskState::Created => "created",
-            TaskState::Planning => "planning",
-            TaskState::WaitingForPermission => "waiting_for_permission",
-            TaskState::Executing => "executing",
-            TaskState::Paused => "paused",
-            TaskState::Verifying => "verifying",
-            TaskState::Completed => "completed",
-            TaskState::Failed => "failed",
-            TaskState::Cancelled => "cancelled",
-            TaskState::Ended => "ended",
-        }
-    }
-    pub fn is_final(self) -> bool {
-        matches!(self, TaskState::Completed | TaskState::Failed | TaskState::Cancelled | TaskState::Ended)
-    }
-}
+/// The task state machine is shared with the orchestrator: an operator
+/// session is a task of kind `operator`.
+pub use crate::orchestrator::task::TaskState;
 
 /// What the overlay orb shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -138,7 +108,7 @@ pub struct Operator {
     pub driver: SharedDriver,
     inner: Mutex<Inner>,
     changed: Notify,
-    listener: RwLock<Option<Listener>>,
+    listeners: RwLock<Vec<Listener>>,
     point_hook: RwLock<Option<PointHook>>,
     hotkey_hook: RwLock<Option<HotkeyHook>>,
     /// Set while IGRIS is injecting input (so its own Esc doesn't stop it).
@@ -152,16 +122,17 @@ impl Operator {
             driver,
             inner: Mutex::new(Inner { task: None, last_input: Instant::now(), observation: None, actions_since_observe: 0, target_window: None, stale: false }),
             changed: Notify::new(),
-            listener: RwLock::new(None),
+            listeners: RwLock::new(Vec::new()),
             point_hook: RwLock::new(None),
             hotkey_hook: RwLock::new(None),
             injecting: AtomicBool::new(false),
         }
     }
 
+    /// Add a listener for state changes (the overlay, the orchestrator).
     pub fn on_change(&self, l: Listener) {
-        if let Ok(mut g) = self.listener.write() {
-            *g = Some(l);
+        if let Ok(mut g) = self.listeners.write() {
+            g.push(l);
         }
     }
     pub fn on_point(&self, h: PointHook) {
@@ -197,20 +168,26 @@ impl Operator {
     fn notify(&self) {
         self.changed.notify_waiters();
         let snap = self.snapshot();
-        if let Some(l) = self.listener.read().ok().and_then(|g| g.clone()) {
+        let listeners = self.listeners.read().map(|g| g.clone()).unwrap_or_default();
+        for l in listeners {
             l(&snap);
         }
     }
 
     fn persist(&self, t: &TaskView) {
         let Ok(conn) = self.db.conn() else { return };
-        let plan = serde_json::to_string(&t.plan).unwrap_or_else(|_| "[]".into());
+        let plan: Vec<PlanStep> = t.plan.iter().map(PlanStep::pending).collect();
+        let plan = serde_json::to_string(&plan).unwrap_or_else(|_| "[]".into());
+        // The orchestrator's task row (same id) may exist already: operator mode
+        // owns only its own columns.
         let r = conn.execute(
-            "INSERT INTO operator_tasks (id, conversation_id, objective, plan, state, steps, retries, result, error, ended_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, CASE WHEN ?10 THEN strftime('%Y-%m-%dT%H:%M:%SZ', 'now') END)
-             ON CONFLICT(id) DO UPDATE SET state = ?5, steps = ?6, retries = ?7, result = ?8, error = ?9,
+            "INSERT INTO operator_tasks (id, conversation_id, objective, plan, state, steps, retries, result, error, kind, pause_reason, updated_at, ended_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'operator', ?11, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                     CASE WHEN ?10 THEN strftime('%Y-%m-%dT%H:%M:%SZ', 'now') END)
+             ON CONFLICT(id) DO UPDATE SET state = ?5, steps = ?6, retries = ?7, result = ?8, error = ?9, kind = 'operator',
+               pause_reason = ?11, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
                ended_at = COALESCE(ended_at, CASE WHEN ?10 THEN strftime('%Y-%m-%dT%H:%M:%SZ', 'now') END)",
-            params![t.id, t.conversation_id, t.objective, plan, t.state.as_str(), t.steps, t.retries, t.result, t.error, t.state.is_final()],
+            params![t.id, t.conversation_id, t.objective, plan, t.state.as_str(), t.steps, t.retries, t.result, t.error, t.state.is_final(), t.pause_reason],
         );
         if let Err(e) = r {
             tracing::warn!(event = "OPERATOR_TASK_SAVE_FAILED", error = %e);
@@ -244,8 +221,9 @@ impl Operator {
         self.snapshot().active
     }
 
-    /// Begin a task (after the user approved it).
-    pub fn start(&self, conversation_id: Option<&str>, objective: &str, plan: Vec<String>) -> Result<TaskView, String> {
+    /// Begin a task (after the user approved it). `task_id` is the
+    /// orchestrator task this session belongs to (its row is shared).
+    pub fn start(&self, task_id: Option<&str>, conversation_id: Option<&str>, objective: &str, plan: Vec<String>) -> Result<TaskView, String> {
         let display = self.driver.displays().ok().and_then(|d| d.into_iter().find(|d| d.primary));
         let task = {
             let mut g = self.lock();
@@ -256,12 +234,14 @@ impl Operator {
                     "IGRIS is already operating the computer for another chat.".into()
                 });
             }
+            let mut state = TaskState::Created;
+            state.advance(TaskState::Executing).map_err(|e| e.to_string())?;
             let t = TaskView {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: task_id.map(str::to_string).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                 conversation_id: conversation_id.map(str::to_string),
                 objective: objective.trim().to_string(),
                 plan,
-                state: TaskState::Executing,
+                state,
                 phase: Phase::Planning,
                 status: "PLANNING".into(),
                 steps: 0,
@@ -295,7 +275,7 @@ impl Operator {
             t.status = status;
             t.phase = phase;
             if t.state != TaskState::Paused {
-                t.state = if phase == Phase::Verifying { TaskState::Verifying } else { TaskState::Executing };
+                let _ = t.state.advance(if phase == Phase::Verifying { TaskState::Verifying } else { TaskState::Executing });
             }
         });
     }
@@ -402,10 +382,9 @@ impl Operator {
 
     pub fn pause(&self, reason: &str) {
         let paused = self.update(|t, _| {
-            if t.state.is_final() || t.state == TaskState::Paused {
+            if t.state.advance(TaskState::Paused).is_err() {
                 return;
             }
-            t.state = TaskState::Paused;
             t.phase = Phase::Paused;
             t.pause_reason = Some(reason.to_string());
             t.status = "PAUSED".into();
@@ -419,10 +398,9 @@ impl Operator {
     pub fn resume(&self) -> bool {
         let mut target = None;
         let resumed = self.update(|t, g| {
-            if t.state != TaskState::Paused {
+            if t.state != TaskState::Paused || t.state.advance(TaskState::Executing).is_err() {
                 return;
             }
-            t.state = TaskState::Executing;
             t.phase = Phase::Executing;
             t.pause_reason = None;
             t.status = "RESUMING".into();
@@ -456,6 +434,9 @@ impl Operator {
             if completed && g.actions_since_observe > 0 && t.steps > 0 {
                 return Err("Verify the result first: call computer_observe after your last action, check it shows the expected outcome, then finish.".into());
             }
+            if completed && t.state == TaskState::Paused {
+                return Err("The task is paused. Wait for the user to resume it, observe again, then finish.".into());
+            }
         }
         let (state, result, error) = match outcome {
             TaskState::Completed => (TaskState::Completed, Some(summary.to_string()), None),
@@ -470,7 +451,14 @@ impl Operator {
             if t.state.is_final() {
                 return;
             }
-            t.state = state;
+            // Completion is reached through verification (the observation after the last action).
+            if state == TaskState::Completed {
+                let _ = t.state.advance(TaskState::Verifying);
+            }
+            if let Err(e) = t.state.advance(state) {
+                tracing::warn!(event = "TASK_TRANSITION_REFUSED", error = %e);
+                return;
+            }
             t.phase = match state {
                 TaskState::Completed => Phase::Success,
                 TaskState::Cancelled => Phase::Stopped,
@@ -489,6 +477,9 @@ impl Operator {
             t.pause_reason = None;
             g.observation = None;
         })?;
+        if !t.state.is_final() {
+            return None;
+        }
         tracing::info!(event = "OPERATOR_ENDED", state = t.state.as_str(), steps = t.steps, retries = t.retries);
         Some(t)
     }
@@ -518,19 +509,12 @@ impl Operator {
         let rows = stmt.query_map([limit], |r| {
             let state: String = r.get(4)?;
             let plan: String = r.get(3)?;
-            let state = match state.as_str() {
-                "completed" => TaskState::Completed,
-                "cancelled" => TaskState::Cancelled,
-                "failed" => TaskState::Failed,
-                "ended" => TaskState::Ended,
-                "paused" => TaskState::Paused,
-                _ => TaskState::Executing,
-            };
+            let state = TaskState::parse(&state).unwrap_or(TaskState::Failed);
             Ok(TaskView {
                 id: r.get(0)?,
                 conversation_id: r.get(1)?,
                 objective: r.get(2)?,
-                plan: serde_json::from_str(&plan).unwrap_or_default(),
+                plan: decode_plan(&plan).into_iter().map(|p| p.title).collect(),
                 state,
                 phase: Phase::Executing,
                 status: String::new(),
@@ -587,10 +571,10 @@ mod tests {
         let s2 = seen.clone();
         op.on_change(Arc::new(move |s: &Snapshot| s2.lock().unwrap().push((s.active, s.task.as_ref().map(|t| t.state)))));
         assert!(op.checkpoint().await.is_err(), "no task, no actions");
-        let t = op.start(Some(c1.as_str()), "Open Notepad", vec!["open".into()]).unwrap();
+        let t = op.start(None, Some(c1.as_str()), "Open Notepad", vec!["open".into()]).unwrap();
         assert!(op.covers(Some(c1.as_str())));
         assert!(!op.covers(Some("c2")));
-        assert!(op.start(Some("c2"), "x", vec![]).unwrap_err().contains("another chat"));
+        assert!(op.start(None, Some("c2"), "x", vec![]).unwrap_err().contains("another chat"));
         op.checkpoint().await.unwrap();
         op.action_done("Opening Notepad").unwrap();
         assert_eq!(op.snapshot().task.unwrap().status, "OPENING NOTEPAD");
@@ -610,7 +594,7 @@ mod tests {
     #[tokio::test]
     async fn stop_pause_resume_and_user_takeover() {
         let (op, driver) = op();
-        op.start(Some("c1"), "task", vec![]).unwrap();
+        op.start(None, Some("c1"), "task", vec![]).unwrap();
         // The user used the computer in the same window → keep going, but look again first.
         op.set_target_window(1);
         op.mark_input();
@@ -649,7 +633,7 @@ mod tests {
     #[test]
     fn failures_and_turn_end_are_not_success() {
         let (op, _) = op();
-        op.start(Some("c1"), "task", vec![]).unwrap();
+        op.start(None, Some("c1"), "task", vec![]).unwrap();
         for i in 1..MAX_FAILURES {
             assert!(op.action_failed("click missed").is_none(), "{i}");
         }
@@ -657,7 +641,7 @@ mod tests {
         assert_eq!(op.snapshot().task.unwrap().state, TaskState::Failed);
 
         // The reply ended right after an unchecked action: not a success.
-        op.start(Some("c1"), "task 2", vec![]).unwrap();
+        op.start(None, Some("c1"), "task 2", vec![]).unwrap();
         op.action_done("Clicking").unwrap();
         op.end_turn("c1");
         let t = op.snapshot().task.unwrap();
@@ -665,7 +649,7 @@ mod tests {
         assert!(t.error.unwrap().contains("before IGRIS confirmed"));
 
         // Ended after looking, just without a report: handed back, neither success nor failure.
-        op.start(Some("c1"), "task 3", vec![]).unwrap();
+        op.start(None, Some("c1"), "task 3", vec![]).unwrap();
         op.end_turn("c1");
         let t = op.snapshot().task.unwrap();
         assert_eq!((t.state, t.phase, t.status.as_str()), (TaskState::Ended, Phase::Waiting, "OVER TO YOU"));

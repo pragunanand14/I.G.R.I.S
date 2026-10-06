@@ -4,10 +4,12 @@ import { Link } from "react-router";
 import { Composer } from "@/components/chat/Composer";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { MessageList } from "@/components/chat/MessageList";
+import { TaskCard } from "@/components/chat/TaskCard";
 import { AiCore } from "@/components/core/AiCore";
 import { useCoreState } from "@/hooks/useCoreState";
 import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useTaskStore } from "@/stores/taskStore";
 
 export function ChatPage() {
   const backend = useAppStore((s) => s.backend);
@@ -20,6 +22,11 @@ export function ChatPage() {
     void loadConversations();
     void loadAiStatus();
   }, [backend, loadConversations, loadAiStatus]);
+
+  const loadTasks = useTaskStore((t) => t.load);
+  useEffect(() => {
+    if (backend === "ready" && s.activeId) void loadTasks(s.activeId);
+  }, [backend, s.activeId, loadTasks]);
 
   const active = s.conversations.find((c) => c.id === s.activeId) ?? null;
   const streamingHere = s.streaming !== null && (s.streaming.conversationId === s.activeId || s.streaming.conversationId === null);
@@ -105,6 +112,7 @@ export function ChatPage() {
         )}
 
         <div className="mx-auto w-full max-w-3xl px-6 pb-5">
+          <TaskCard conversationId={s.activeId} busy={s.streaming !== null} onResume={(id, cid) => void s.resumeTask(id, cid)} />
           <Composer
             key={s.activeId ?? "new"}
             onSend={s.send}
