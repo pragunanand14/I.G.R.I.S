@@ -95,6 +95,18 @@ struct Inner {
     target_window: Option<u64>,
     /// The user touched the computer since the last observation: look again before acting.
     stale: bool,
+    /// The last action's checked expectation, for the orchestrator's verification.
+    verdict: Option<ActionVerdict>,
+}
+
+/// How an action's expected outcome turned out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionVerdict {
+    pub tool: String,
+    pub outcome: crate::computer::state::Outcome,
+    /// The model stated an expectation (vs. only a change check).
+    pub stated: bool,
+    pub note: String,
 }
 
 pub type Listener = Arc<dyn Fn(&Snapshot) + Send + Sync>;
@@ -120,7 +132,15 @@ impl Operator {
         Self {
             db,
             driver,
-            inner: Mutex::new(Inner { task: None, last_input: Instant::now(), observation: None, actions_since_observe: 0, target_window: None, stale: false }),
+            inner: Mutex::new(Inner {
+                task: None,
+                last_input: Instant::now(),
+                observation: None,
+                actions_since_observe: 0,
+                target_window: None,
+                stale: false,
+                verdict: None,
+            }),
             changed: Notify::new(),
             listeners: RwLock::new(Vec::new()),
             point_hook: RwLock::new(None),
@@ -257,6 +277,7 @@ impl Operator {
             g.actions_since_observe = 0;
             g.target_window = None;
             g.stale = false;
+            g.verdict = None;
             t
         };
         tracing::info!(event = "OPERATOR_STARTED", task_id = %task.id);
@@ -315,6 +336,21 @@ impl Operator {
                 }
                 _ => return Ok(()),
             }
+        }
+    }
+
+    /// Record how the last action's expected outcome turned out.
+    pub fn set_verdict(&self, v: ActionVerdict) {
+        self.lock().verdict = Some(v);
+    }
+
+    /// The verdict for `tool`'s last call, if it recorded one (taken once).
+    pub fn take_verdict(&self, tool: &str) -> Option<ActionVerdict> {
+        let mut g = self.lock();
+        if g.verdict.as_ref().is_some_and(|v| v.tool == tool) {
+            g.verdict.take()
+        } else {
+            None
         }
     }
 

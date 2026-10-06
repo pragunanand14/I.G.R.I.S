@@ -11,6 +11,7 @@ use std::sync::Arc;
 use image::RgbaImage;
 use serde::Serialize;
 
+pub mod state;
 #[cfg(windows)]
 pub mod windows;
 

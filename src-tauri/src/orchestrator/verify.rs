@@ -56,9 +56,11 @@ pub enum Check {
         what: String,
     },
     Done(Verdict),
-    /// A window of this application should be open.
+    /// A window of this application should be open. A running process is
+    /// only accepted as evidence when windows can't be checked at all.
     Window {
         app: String,
+        process_seen: bool,
     },
 }
 
@@ -95,13 +97,7 @@ pub fn check_for(call: &ToolCall, result: &ToolResult) -> Check {
             None => unverified("The folder can't be checked."),
         },
         "run_command" => Check::Done(command_verdict(&result.content)),
-        "launch_application" => {
-            if result.content.contains("process") && result.content.contains("is running") {
-                Check::Done(Verdict::new(Verification::Passed, "Its process was running after launch."))
-            } else {
-                Check::Window { app: s("name") }
-            }
-        }
+        "launch_application" => Check::Window { app: s("name"), process_seen: result.content.contains("process") && result.content.contains("is running") },
         name if super::toolset::capability(name) == Some(super::toolset::Capability::Operator)
             || super::toolset::capability(name) == Some(super::toolset::Capability::OperatorSession) =>
         {
@@ -151,19 +147,56 @@ pub fn judge(expect: &Expect, what: &str, probe: &ToolResult) -> Verdict {
     }
 }
 
-/// Look for an open window of `app` (read-only; the driver may be unavailable).
-pub async fn window_check(driver: Option<SharedDriver>, app: &str) -> Verdict {
-    let Some(driver) = driver else { return Verdict::new(Verification::Unverified, "Open windows can't be checked here.") };
-    let needle: String = app.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect();
-    let windows = tokio::task::spawn_blocking(move || driver.windows()).await.ok().and_then(Result::ok);
+/// Whether a window belongs to `app` ("VS Code" matches Code.exe / "Visual
+/// Studio Code"): the whole name, or one of its words of 4+ letters.
+pub fn window_is_app(w: &crate::computer::WindowInfo, app: &str) -> bool {
     let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
-    match windows {
-        None => Verdict::new(Verification::Unverified, "Open windows can't be checked here."),
-        Some(_) if needle.is_empty() => Verdict::new(Verification::Unverified, "No application name to look for."),
-        Some(ws) => match ws.iter().find(|w| norm(&w.title).contains(&needle) || norm(&w.process).contains(&needle)) {
-            Some(w) => Verdict::new(Verification::Passed, format!("A {} window is open (\"{}\").", app, w.title)),
-            None => Verdict::new(Verification::Unverified, format!("No window titled like {app} was found; it may still be starting.")),
-        },
+    let (title, process) = (norm(&w.title), norm(w.process.to_lowercase().trim_end_matches(".exe")));
+    let whole = norm(app);
+    if whole.is_empty() {
+        return false;
+    }
+    if title.contains(&whole) || process.contains(&whole) {
+        return true;
+    }
+    app.split(|c: char| !c.is_alphanumeric()).map(norm).filter(|t| t.chars().count() >= 4).any(|t| title.contains(&t) || process == t)
+}
+
+/// Wait up to `wait` for a window of `app` (read-only; the driver may be unavailable).
+pub async fn window_check(driver: Option<SharedDriver>, app: &str, process_seen: bool, wait: std::time::Duration) -> Verdict {
+    let unavailable = |why: &str| {
+        if process_seen {
+            Verdict::new(Verification::Passed, format!("Its process was running after launch ({why})."))
+        } else {
+            Verdict::new(Verification::Unverified, why.to_string())
+        }
+    };
+    let Some(driver) = driver else { return unavailable("open windows can't be checked here") };
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        let d = driver.clone();
+        let windows = tokio::task::spawn_blocking(move || d.windows()).await.ok().and_then(Result::ok);
+        let Some(ws) = windows else { return unavailable("open windows can't be checked here") };
+        if let Some(w) = ws.iter().find(|w| window_is_app(w, app)) {
+            return Verdict::new(Verification::Passed, format!("A {app} window is open (\"{}\").", w.title));
+        }
+        if std::time::Instant::now() >= deadline {
+            let why = if process_seen { "its process is running, but no window appeared" } else { "no window appeared" };
+            return Verdict::new(Verification::Unverified, format!("{app} was launched, but {why} within {}s.", wait.as_secs()));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    }
+}
+
+/// Operator mode's check of a computer action's expected outcome.
+pub fn from_operator(v: &crate::operator::ActionVerdict) -> Verdict {
+    use crate::computer::state::Outcome;
+    match (v.outcome, v.stated) {
+        (Outcome::Met, _) => Verdict::new(Verification::Passed, v.note.clone()),
+        (Outcome::NotMet, true) => Verdict::new(Verification::Failed, v.note.clone()),
+        (Outcome::Unknown, true) => Verdict::new(Verification::Unverified, v.note.clone()),
+        // Only a change check ran: operator mode's observe → verify loop decides.
+        _ => Verdict::new(Verification::Operator, v.note.clone()),
     }
 }
 
@@ -223,9 +256,12 @@ mod tests {
         assert_eq!(v.verification, Verification::Unverified);
 
         let launch = call("launch_application", json!({"name": "VS Code"}));
-        let Check::Done(v) = check_for(&launch, &ok("VS Code is open (process 42 is running).")) else { panic!() };
-        assert_eq!(v.verification, Verification::Passed);
-        assert_eq!(check_for(&launch, &ok("VS Code was launched. Its launcher exited normally…")), Check::Window { app: "VS Code".into() });
+        // A running process isn't enough when a window can be checked.
+        assert_eq!(check_for(&launch, &ok("VS Code is open (process 42 is running).")), Check::Window { app: "VS Code".into(), process_seen: true });
+        assert_eq!(
+            check_for(&launch, &ok("VS Code was launched. Its launcher exited normally…")),
+            Check::Window { app: "VS Code".into(), process_seen: false }
+        );
     }
 
     #[test]
@@ -241,10 +277,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_windows_confirm_a_handed_off_launch() {
+    async fn launches_are_confirmed_by_a_real_window() {
+        let w0 = std::time::Duration::ZERO;
         let driver: SharedDriver = Arc::new(FakeDriver::with(vec![window(1, "Welcome - Visual Studio Code", "Code.exe")], vec![]));
-        assert_eq!(window_check(Some(driver.clone()), "Code").await.verification, Verification::Passed);
-        assert_eq!(window_check(Some(driver), "Notepad").await.verification, Verification::Unverified);
-        assert_eq!(window_check(None, "Code").await.verification, Verification::Unverified);
+        assert_eq!(window_check(Some(driver.clone()), "VS Code", true, w0).await.verification, Verification::Passed, "VS Code ↔ Code.exe");
+        let v = window_check(Some(driver.clone()), "Notepad", true, w0).await;
+        assert_eq!(v.verification, Verification::Unverified, "a process without a window isn't verified");
+        assert!(v.note.contains("no window appeared"));
+        assert_eq!(window_check(None, "Code", true, w0).await.verification, Verification::Passed, "process evidence when windows can't be checked");
+        assert_eq!(window_check(None, "Code", false, w0).await.verification, Verification::Unverified);
+        // A window that appears a moment later is found.
+        let fake = Arc::new(FakeDriver::with(vec![], vec![]));
+        let f2 = fake.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            f2.0.lock().unwrap().windows.push(window(3, "Untitled - Notepad", "notepad.exe"));
+        });
+        let d: SharedDriver = fake;
+        assert_eq!(window_check(Some(d), "Notepad", false, std::time::Duration::from_secs(2)).await.verification, Verification::Passed);
+        assert!(!window_is_app(&window(1, "Inbox - Outlook", "OUTLOOK.EXE"), "VS Code"));
+        assert!(window_is_app(&window(1, "New Tab - Google Chrome", "chrome.exe"), "Chrome"));
+    }
+
+    #[test]
+    fn operator_verdicts_map_to_task_verification() {
+        use crate::computer::state::Outcome;
+        let v = |outcome, stated| crate::operator::ActionVerdict { tool: "computer_click".into(), outcome, stated, note: "n".into() };
+        assert_eq!(from_operator(&v(Outcome::Met, true)).verification, Verification::Passed);
+        assert_eq!(from_operator(&v(Outcome::NotMet, true)).verification, Verification::Failed);
+        assert_eq!(from_operator(&v(Outcome::Unknown, true)).verification, Verification::Unverified);
+        assert_eq!(from_operator(&v(Outcome::Unknown, false)).verification, Verification::Operator);
     }
 }

@@ -165,8 +165,10 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
         let mut turns = input.base_turns.clone();
         turns.extend(new_turns.iter().cloned());
         drop_old_tool_images(&mut turns, KEEP_RECENT_TOOL_IMAGES);
-        if let Some(brief) = session.as_mut().and_then(|s| s.brief()) {
-            super::brief::inject(&mut turns, &brief);
+        if let Some(s) = session.as_mut() {
+            if let Some(brief) = s.brief().await {
+                super::brief::inject(&mut turns, &brief);
+            }
         }
         let fixed = budget::estimate_fixed(&input.system, toolset.exposed());
         fit_tool_output(&mut turns, fixed, &input.budget);

@@ -155,10 +155,10 @@ pub fn record_event(conn: &Connection, task_id: &str, kind: &str, tool: Option<&
 
 /// The newest `limit` entries of a task's activity, oldest first.
 pub fn events(conn: &Connection, task_id: &str, limit: u32) -> AppResult<Vec<TaskEventRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT at, kind, tool, detail, state FROM (SELECT * FROM task_events WHERE task_id = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
-    )?;
-    let rows = stmt.query_map(params![task_id, limit], |r| Ok(TaskEventRow { at: r.get(0)?, kind: r.get(1)?, tool: r.get(2)?, detail: r.get(3)?, state: r.get(4)? }))?;
+    let mut stmt =
+        conn.prepare("SELECT at, kind, tool, detail, state FROM (SELECT * FROM task_events WHERE task_id = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id")?;
+    let rows =
+        stmt.query_map(params![task_id, limit], |r| Ok(TaskEventRow { at: r.get(0)?, kind: r.get(1)?, tool: r.get(2)?, detail: r.get(3)?, state: r.get(4)? }))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 

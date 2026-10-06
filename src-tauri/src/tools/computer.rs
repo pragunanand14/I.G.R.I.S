@@ -16,8 +16,9 @@ use serde_json::{json, Value};
 
 use super::{PermissionLevel, Tool, ToolCtx, ToolError, ToolOutput, ToolResultT, ToolSpec};
 use crate::ai::{Media, MediaKind};
+use crate::computer::state::{self as screen, Expect, Outcome, ScreenState};
 use crate::computer::{self, Key, MouseButton, UiElement, WindowInfo};
-use crate::operator::{Injecting, Observation, Operator, Phase};
+use crate::operator::{ActionVerdict, Injecting, Observation, Operator, Phase};
 
 /// Screenshots for the model: smaller than chat screenshots to keep long tasks affordable.
 const OBSERVE_MAX_EDGE: u32 = 1280;
@@ -72,6 +73,30 @@ async fn after_action(op: &Arc<Operator>, did: &str, before: Option<&WindowInfo>
         content.push_str(&format!(" Keyboard focus: {}.", element_label(&f)));
     }
     ToolOutput { content, summary: did.to_string(), sources: vec![], media: vec![] }
+}
+
+/// The desktop right before an action (for change detection and expectations).
+async fn state_before(op: &Arc<Operator>) -> ScreenState {
+    let driver = op.driver.clone();
+    tokio::task::spawn_blocking(move || screen::snapshot(driver.as_ref())).await.unwrap_or_default()
+}
+
+/// Like [`after_action`], then checks the action's expected outcome (or, with
+/// none stated, whether anything changed) and records the verdict.
+async fn after_expected(op: &Arc<Operator>, tool: &str, did: &str, before: ScreenState, expect: Expect) -> ToolOutput {
+    let mut out = after_action(op, did, before.foreground.as_ref()).await;
+    let driver = op.driver.clone();
+    let wait = if expect == Expect::Nothing { Duration::ZERO } else { Duration::from_millis(2500) };
+    let e = expect.clone();
+    let (outcome, note) = tokio::task::spawn_blocking(move || {
+        let (_, o, n) = screen::evaluate(driver.as_ref(), &e, &before, wait);
+        (o, n)
+    })
+    .await
+    .unwrap_or((Outcome::Unknown, "Couldn't check the result.".into()));
+    out.content.push_str(&format!(" {note}"));
+    op.set_verdict(ActionVerdict { tool: tool.to_string(), outcome, stated: expect != Expect::Nothing, note });
+    out
 }
 
 /// Shared pre-flight for actions: stop/pause/takeover, and the window still being the one observed.
@@ -563,14 +588,16 @@ impl ComputerClickTool {
             spec: spec(
                 "computer_click",
                 "Click",
-                "Click a control (by index from the latest computer_observe) or a point in the latest screenshot. \
-Buttons that send, submit, publish, pay or delete are refused here — use computer_confirmed_action for those.",
+                "Click a control (by index from the latest computer_observe — prefer this) or a point in the latest screenshot \
+(only when no control fits). Say what should happen in expect (e.g. window_present \"Save As\", element_present \"Run\") so \
+IGRIS can check it. Buttons that send, submit, publish, pay or delete are refused here — use computer_confirmed_action.",
                 with_target(
                     json!({
                         "button": { "type": "string", "enum": ["left", "right", "middle"] },
-                        "double": { "type": "boolean" }
+                        "double": { "type": "boolean" },
+                        "expect": screen::expect_schema()
                     }),
-                    &["button", "double"],
+                    &["button", "double", "expect"],
                 ),
                 PermissionLevel::Low,
             ),
@@ -614,7 +641,8 @@ fn report(op: &Arc<Operator>, r: ToolResultT) -> ToolResultT {
 }
 
 async fn click(op: &Arc<Operator>, i: &Value, confirmed: bool) -> ToolResultT {
-    let (fg, obs) = preflight(op, true).await?;
+    let expect = if i["expect"].is_object() { screen::parse_expect(&i["expect"]).map_err(ToolError::invalid)? } else { Expect::Nothing };
+    let (_fg, obs) = preflight(op, true).await?;
     let obs = obs.ok_or_else(|| failed("Look at the screen first with computer_observe."))?;
     let (point, el) = target(op, &obs, i["element"].as_i64().unwrap_or(-1), i["x"].as_i64().unwrap_or(-1), i["y"].as_i64().unwrap_or(-1)).await?;
     let what = el.as_ref().map(element_label).unwrap_or_else(|| format!("the point {point:?}"));
@@ -629,13 +657,15 @@ async fn click(op: &Arc<Operator>, i: &Value, confirmed: bool) -> ToolResultT {
         _ => MouseButton::Left,
     };
     let count = if i["double"].as_bool() == Some(true) { 2 } else { 1 };
+    let before = state_before(op).await;
     {
         let _inj = Injecting::new(op);
         let driver = op.driver.clone();
         blocking(move || driver.click(point.0, point.1, button, count)).await?;
     }
     op.action_done(&format!("Clicking {}", el.as_ref().map(|e| e.name.as_str()).filter(|n| !n.is_empty()).unwrap_or(""))).map_err(failed)?;
-    Ok(after_action(op, &format!("{} {what}", if count == 2 { "double-clicked" } else { "clicked" }), fg.as_ref()).await)
+    let tool = if confirmed { "computer_confirmed_action" } else { "computer_click" };
+    Ok(after_expected(op, tool, &format!("{} {what}", if count == 2 { "double-clicked" } else { "clicked" }), before, expect).await)
 }
 
 pub struct ComputerTypeTool {
@@ -730,15 +760,17 @@ index (or click it) first.",
         after_action(op, &format!("typed {n} characters{}", focus.map(|f| format!(" into {}", element_label(&f))).unwrap_or_default()), fg.as_ref()).await;
     // Closed loop: read the field back when the app exposes its text.
     let driver = op.driver.clone();
-    if let Some(value) = tokio::task::spawn_blocking(move || driver.focused_field()).await.ok().flatten().and_then(|f| if f.password { None } else { f.value })
-    {
-        if contains_typed(&value, typed) {
-            out.content.push_str(" The field now shows the typed text.");
-        } else {
+    let read_back = tokio::task::spawn_blocking(move || driver.focused_field()).await.ok().flatten().and_then(|f| if f.password { None } else { f.value });
+    let (outcome, note) = match read_back {
+        Some(value) if contains_typed(&value, typed) => (Outcome::Met, " The field now shows the typed text (read back).".to_string()),
+        Some(value) => {
             let shown: String = value.chars().take(200).collect();
-            out.content.push_str(&format!(" Check: the focused field now reads \"{shown}\", which doesn't show all the typed text — observe and fix it."));
+            (Outcome::NotMet, format!(" Check: the focused field now reads \"{shown}\", which doesn't show all the typed text — observe and fix it."))
         }
-    }
+        None => (Outcome::Unknown, " This app doesn't expose the field's text, so it couldn't be read back — check it on screen.".to_string()),
+    };
+    out.content.push_str(&note);
+    op.set_verdict(ActionVerdict { tool: "computer_type".into(), outcome, stated: true, note: note.trim().to_string() });
     Ok(out)
 }
 
@@ -795,9 +827,10 @@ are refused — use computer_confirmed_action. Win+R and terminals are off-limit
                     "type": "object",
                     "properties": {
                         "keys": { "type": "string", "minLength": 1, "maxLength": 40 },
-                        "repeat": { "type": "integer", "minimum": 1, "maximum": 20 }
+                        "repeat": { "type": "integer", "minimum": 1, "maximum": 20 },
+                        "expect": screen::expect_schema()
                     },
-                    "required": ["keys", "repeat"],
+                    "required": ["keys", "repeat", "expect"],
                     "additionalProperties": false
                 }),
                 PermissionLevel::Low,
@@ -834,7 +867,19 @@ impl Tool for ComputerKeyTool {
 async fn press(op: &Arc<Operator>, i: &Value, confirmed: bool) -> ToolResultT {
     let spec = i["keys"].as_str().unwrap_or_default().to_string();
     let keys = computer::parse_keys(&spec).map_err(ToolError::invalid)?;
-    let (fg, _) = preflight(op, false).await?;
+    let expect = if i["expect"].is_object() { screen::parse_expect(&i["expect"]).map_err(ToolError::invalid)? } else { Expect::Nothing };
+    let (fg, obs) = preflight(op, false).await?;
+    // Precondition: a shortcut lands in whatever is in front, so it must still be the app IGRIS looked at.
+    if let (Some(seen), Some(now)) = (obs.as_ref().and_then(|o| o.window.as_ref()), fg.as_ref()) {
+        if seen.id != now.id && !confirmed {
+            return Err(ToolError::refused(format!(
+                "The active window is now {} (you observed {}). {spec} would go to the wrong app — observe again first.",
+                window_label(now),
+                window_label(seen)
+            )));
+        }
+    }
+    let before = state_before(op).await;
     let driver = op.driver.clone();
     let focus = blocking(move || driver.focused_element()).await?;
     guard_command_window(fg.as_ref(), focus.as_ref())?;
@@ -871,7 +916,8 @@ async fn press(op: &Arc<Operator>, i: &Value, confirmed: bool) -> ToolResultT {
         r?;
     }
     op.action_done("").map_err(failed)?;
-    Ok(after_action(op, &format!("pressed {spec}{}", if repeat > 1 { format!(" ×{repeat}") } else { String::new() }), fg.as_ref()).await)
+    let tool = if confirmed { "computer_confirmed_action" } else { "computer_key" };
+    Ok(after_expected(op, tool, &format!("pressed {spec}{}", if repeat > 1 { format!(" ×{repeat}") } else { String::new() }), before, expect).await)
 }
 
 pub struct ComputerScrollTool {
@@ -1221,6 +1267,52 @@ mod tests {
         observe.execute(&json!({"screenshot": false, "list_windows": false, "find": ""})).await.unwrap();
         finish.execute(&json!({"outcome": "completed", "summary": "Drafted"})).await.unwrap();
         assert!(!op.is_active());
+    }
+
+    #[tokio::test]
+    async fn actions_check_their_expected_outcome_and_report_no_change() {
+        let (op, driver) = setup(vec![element("Open", "button", 10, 10), element("Save", "button", 120, 10)]);
+        start(&op).await;
+        let observe = ComputerObserveTool::new(op.clone());
+        let click = ComputerClickTool::new(op.clone());
+        let look_input = json!({"screenshot": false, "list_windows": false, "find": ""});
+        let look = || observe.execute(&look_input);
+        let with = |el: i64, kind: &str, value: &str| json!({ "element": el, "x": -1, "y": -1, "button": "left", "double": false, "expect": {"kind": kind, "value": value} });
+
+        // The click brings Notepad to the front, as expected.
+        look().await.unwrap();
+        driver.0.lock().unwrap().on_click_focus = Some(2);
+        let out = click.execute(&with(0, "window_present", "Notepad")).await.unwrap();
+        assert!(out.content.contains("Expected a window \"Notepad\" is open — verified"), "{}", out.content);
+        let v = op.take_verdict("computer_click").unwrap();
+        assert_eq!((v.outcome, v.stated), (Outcome::Met, true));
+        assert!(op.take_verdict("computer_click").is_none(), "taken once");
+
+        // Expecting a dialog that never comes: reported as not met, not as success.
+        driver.0.lock().unwrap().foreground = Some(1);
+        look().await.unwrap();
+        let out = click.execute(&with(1, "window_present", "Save As")).await.unwrap();
+        assert!(out.content.contains("NOT met"), "{}", out.content);
+        assert_eq!(op.take_verdict("computer_click").unwrap().outcome, Outcome::NotMet);
+
+        // No expectation and nothing changed: said plainly.
+        look().await.unwrap();
+        let out = click.execute(&with(0, "none", "")).await.unwrap();
+        assert!(out.content.contains("Nothing visibly changed"), "{}", out.content);
+        assert!(!op.take_verdict("computer_click").unwrap().stated);
+        assert!(click.execute(&with(0, "field_contains", "")).await.unwrap_err().message.contains("needs a value"));
+    }
+
+    #[tokio::test]
+    async fn shortcuts_refuse_to_go_to_a_different_app_than_observed() {
+        let (op, driver) = setup(vec![element("Open", "button", 10, 10)]);
+        start(&op).await;
+        ComputerObserveTool::new(op.clone()).execute(&json!({"screenshot": false, "list_windows": false, "find": ""})).await.unwrap();
+        driver.0.lock().unwrap().foreground = Some(2);
+        let key = ComputerKeyTool::new(op.clone());
+        let e = key.execute(&json!({"keys": "ctrl+s", "repeat": 1, "expect": {"kind": "none", "value": ""}})).await.unwrap_err();
+        assert!(e.message.contains("wrong app"), "{}", e.message);
+        assert!(driver.log().iter().all(|l| !l.starts_with("press")), "nothing pressed");
     }
 
     #[tokio::test]

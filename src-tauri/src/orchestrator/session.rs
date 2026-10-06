@@ -152,9 +152,13 @@ impl TaskSession {
     }
 
     /// The task-state brief for this round's request (one-shot notes included).
-    pub fn brief(&mut self) -> Option<String> {
+    /// While operating the computer, it also says what's on screen now.
+    pub async fn brief(&mut self) -> Option<String> {
         let t = self.task()?;
-        let notes = std::mem::take(&mut self.notes);
+        let mut notes = std::mem::take(&mut self.notes);
+        if let Some(screen) = self.screen_summary().await {
+            notes.push(format!("Computer now: {screen}"));
+        }
         Some(super::brief::render(&t, &notes))
     }
 
@@ -283,12 +287,31 @@ impl TaskSession {
                     return After::Continue;
                 }
                 self.hub.update(&self.id, Some(TaskEvent::ToolCompleted { tool: call.name.clone(), ok: false }), |_| {});
+                // Re-observe: a computer action that failed or was refused usually means the
+                // screen isn't what the model thinks; give it the current state.
+                if cap == Some(Capability::OperatorSession) && matches!(failure, Failure::Refused | Failure::Transient) {
+                    if let Some(summary) = self.screen_summary().await {
+                        result.content.push_str(&format!("\n[IGRIS looked again — {summary}]"));
+                    }
+                }
                 let note = clip(&result.content, 200);
                 let record = ActionRecord { tool: call.name.clone(), target, ok: false, verification: Verification::NotApplicable, note };
                 self.hub.update(&self.id, None, |t| t.context.record(record));
                 self.fail(failure, activity, attempt, result)
             }
         }
+    }
+
+    /// A cheap description of the desktop now (operator tasks only).
+    async fn screen_summary(&self) -> Option<String> {
+        let op = self.hub.operator()?.clone();
+        if !op.is_active() {
+            return None;
+        }
+        let driver = op.driver.clone();
+        let st = tokio::task::spawn_blocking(move || crate::computer::state::snapshot(driver.as_ref())).await.ok()?;
+        st.foreground.as_ref()?;
+        Some(st.summary())
     }
 
     /// The registered project whose folder this action works in, if any.
@@ -346,7 +369,14 @@ impl TaskSession {
                 let (r, _) = executor::execute(&probe, ctx, &mut |_| {}).await;
                 verify::judge(&expect, &what, &r)
             }
-            Check::Window { app } => verify::window_check(self.hub.operator().map(|o| o.driver.clone()), &app).await,
+            Check::Window { app, process_seen } => {
+                verify::window_check(self.hub.operator().map(|o| o.driver.clone()), &app, process_seen, Duration::from_secs(8)).await
+            }
+        };
+        // Computer actions: operator mode checked the stated expectation itself.
+        let verdict = match (self.hub.operator().and_then(|o| o.take_verdict(&call.name)), &verdict.verification) {
+            (Some(v), Verification::Operator) => verify::from_operator(&v),
+            _ => verdict,
         };
         let event = match verdict.verification {
             Verification::Passed => Some(TaskEvent::VerificationPassed { tool: call.name.clone() }),
