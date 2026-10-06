@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
+import { api } from "@/services/api";
 import { latestTask, useTaskStore } from "@/stores/taskStore";
 import type { TaskInfo } from "@/types/task";
 import { TaskCard } from "./TaskCard";
@@ -90,6 +91,20 @@ describe("task card", () => {
     render(<TaskCard conversationId="c1" busy onResume={vi.fn()} />);
     expect(screen.getByText("Failed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Try again/ })).toBeDisabled();
+  });
+
+  it("shows what an interrupted task did, from its activity log", async () => {
+    vi.spyOn(api, "listTaskEvents").mockResolvedValue([
+      { at: "t", kind: "tool_started", tool: "write_file", detail: "Overwrite notes.txt", state: "executing" },
+      { at: "t", kind: "plan_updated", tool: null, detail: "a → b", state: "executing" },
+      { at: "t", kind: "interrupted", tool: "write_file", detail: "IGRIS closed while this was running; its result is unknown.", state: "paused" },
+    ]);
+    show(task({ state: "paused", live: false, context: { actions: [], interrupted: true, resumes: 0 } }));
+    render(<TaskCard conversationId="c1" busy={false} onResume={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "What happened" }));
+    expect(await screen.findByText(/Started · write_file — Overwrite notes.txt/)).toBeInTheDocument();
+    expect(screen.getByText(/Interrupted — IGRIS closed · write_file — IGRIS closed while this was running/)).toBeInTheDocument();
+    expect(screen.queryByText(/plan_updated/)).toBeNull();
   });
 
   it("picks the newest task of the conversation", () => {

@@ -61,4 +61,13 @@ export interface TaskUpdate {
 
 export type TaskControl = "pause" | "resume" | "stop";
 
+/** One entry of a task's activity log (written as it happens, so it survives a crash). */
+export interface TaskEventRow {
+  at: string;
+  kind: string;
+  tool: string | null;
+  detail: string | null;
+  state: TaskState;
+}
+
 export const FINAL_STATES: TaskState[] = ["completed", "failed", "cancelled", "ended"];

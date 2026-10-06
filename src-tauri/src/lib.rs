@@ -161,6 +161,7 @@ pub fn run() {
             commands::operator::list_operator_tasks,
             commands::operator::list_conversation_tasks,
             commands::operator::task_control,
+            commands::operator::list_task_events,
             commands::chat::task_resume,
             commands::tools::list_tools,
             commands::tools::list_tool_audit,

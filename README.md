@@ -34,6 +34,8 @@ audited tools — there is no shell access.
   control back instantly. It prepares freely but asks before anything is sent, posted, bought or deleted.
 - **Builds software** — writes code in your shared project folders and runs build/test/install commands (no shell,
   allowlisted tools, each command approved), reads the errors and fixes them; can open the project in VS Code.
+- **Browser control** — in operator mode IGRIS opens its own Chrome/Edge window (separate profile) and works on the
+  page's structure (links, buttons, fields) instead of pixels; buttons that send, pay or delete always ask first.
 - **Tasks** — requests that take action ("create a project", "fix the failing tests") run as tasks: a plan when
   there are several steps, every action checked by IGRIS itself (a written file is read back, a command's exit code is
   read), a task card with progress, Pause / Resume / Stop, and an honest outcome — *done · verified*, *failed*, or
@@ -57,6 +59,7 @@ audited tools — there is no shell access.
 | 10 — Hardening | Security review ([docs/SECURITY.md](docs/SECURITY.md)), secret redaction in the audit log, crash-safe release builds, lazy-loaded UI, CI on Linux + Windows, Windows installer workflow | ✅ Done |
 | 11 — Computer operator | Operator mode: Windows computer control (UI Automation, mouse, keyboard, windows, per-display capture), closed-loop observe → act → verify task engine with pause/stop/takeover handling, consequential-action confirmation, desktop overlay (border + orb), `run_command` for development, `copy_path` | ✅ Foundation |
 | 12 — Orchestrator | Task model + state machine shared with operator mode, agent loop extracted from chat, plans, verification, bounded recovery, pause/resume/stop, restart-safe tasks, tool refresh, task card | ✅ v1 |
+| 13 — Operator hardening | Real-Windows desktop test suite on CI, structured expected outcomes + change detection, window-verified launches, Chromium DevTools browser control, Windows OCR fallback, focused tool sets + `request_tools`, crash-safe task activity log, live-provider harness | ✅ v1 |
 
 **Not implemented** (and IGRIS says so if asked): operator mode on macOS/Linux, arbitrary shell commands (only
 allowlisted developer tools via `run_command`), long-running background processes, calendar sync with Google/Outlook,

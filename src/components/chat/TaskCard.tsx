@@ -1,7 +1,8 @@
 import { Check, Circle, CircleDot, ListChecks, Loader2, Pause, Play, RotateCcw, Square, TriangleAlert, X } from "lucide-react";
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
+import { api } from "@/services/api";
 import { latestTask, useTaskStore } from "@/stores/taskStore";
-import { FINAL_STATES, type StepStatus, type TaskInfo } from "@/types/task";
+import { FINAL_STATES, type StepStatus, type TaskEventRow, type TaskInfo } from "@/types/task";
 
 function stateLabel(t: TaskInfo): string {
   switch (t.state) {
@@ -36,6 +37,59 @@ const STEP_ICON: Record<StepStatus, ReactElement> = {
   failed: <TriangleAlert className="size-3 text-danger" />,
   skipped: <X className="size-3 text-faint" />,
 };
+
+/** Activity entries worth showing to the user, in plain words. */
+const EVENT_TEXT: Record<string, string> = {
+  tool_started: "Started",
+  tool_completed: "Finished",
+  approval_requested: "Asked for approval",
+  verification_passed: "Checked ✓",
+  verification_failed: "Check failed",
+  retrying: "Retried",
+  paused: "Paused",
+  resumed: "Resumed",
+  interrupted: "Interrupted — IGRIS closed",
+  failed: "Failed",
+  cancelled: "Stopped",
+  completed: "Completed",
+  ended: "Ended",
+};
+
+/** What a finished or interrupted task did, from its activity log. */
+function Activity({ taskId }: { taskId: string }) {
+  const [events, setEvents] = useState<TaskEventRow[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const toggle = () => {
+    setOpen(!open);
+    if (!events) {
+      void api
+        .listTaskEvents(taskId, 60)
+        .then(setEvents)
+        .catch(() => setEvents([]));
+    }
+  };
+  const shown = (events ?? []).filter((e) => e.kind in EVENT_TEXT).slice(-12);
+  return (
+    <div className="mt-1.5">
+      <button type="button" className="text-[11px] text-faint underline-offset-2 hover:text-fg hover:underline" onClick={toggle} aria-expanded={open}>
+        {open ? "Hide what happened" : "What happened"}
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-0.5 font-mono text-[10.5px] text-muted" aria-label="Task activity">
+          {events === null && <li>Loading…</li>}
+          {events !== null && shown.length === 0 && <li>No recorded activity.</li>}
+          {shown.map((e, i) => (
+            <li key={i} className="truncate" title={e.detail ?? undefined}>
+              {EVENT_TEXT[e.kind]}
+              {e.tool ? ` · ${e.tool}` : ""}
+              {e.detail ? ` — ${e.detail}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   conversationId: string | null;
@@ -124,6 +178,7 @@ export function TaskCard({ conversationId, onResume, busy }: Props) {
       {t.pauseReason && t.state === "paused" && <p className="mt-1 text-xs text-warning">{t.pauseReason}</p>}
       {t.failures > 0 && !final && <p className="mt-1 text-xs text-warning">{t.failures === 1 ? "1 step failed" : `${t.failures} steps failed`} so far</p>}
       {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+      {!t.live && <Activity taskId={t.id} />}
       {final && (t.error ?? t.result) && <p className={`mt-1 text-xs ${t.state === "failed" ? "text-danger" : "text-muted"}`}>{t.error ?? t.result}</p>}
     </div>
   );

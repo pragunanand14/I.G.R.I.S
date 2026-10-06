@@ -393,6 +393,62 @@ chat turn ─ operator_start (SENSITIVE: user approves the task) ─┐
   window shows a banner with the same controls; the IGRIS core shows planning / executing / waiting / verifying /
   success states. Voice: "IGRIS, stop / pause / continue" control a running task.
 
+## Operator hardening (real Windows)
+
+How operator mode observes, acts and checks on a real desktop. The real-desktop test suite and results are in
+[OPERATOR_TESTING.md](OPERATOR_TESTING.md).
+
+```
+observe (UIA controls · focused field · windows · optional screenshot · OCR fallback)
+   → act on a semantic target (control index / DOM ref) with a stated expectation
+   → state after the action (cheap snapshot, polled up to 2.5 s) → verdict: met / not met / unknown
+   → orchestrator verification → recover (re-observe, adjust) or continue
+```
+
+* **Targeting order**: IGRIS's browser via DevTools DOM refs → UI Automation controls (indexes from
+  `computer_observe`) → screenshot vision → OCR text positions → raw coordinates. Element targets are re-checked at
+  their position before acting; coordinates need a screenshot.
+* **Screen state** (`computer/state.rs`): a cheap snapshot from window and accessibility data (no screenshot): active
+  window, open windows, focused control, focused field text (never password fields). Used before/after actions for
+  change detection, in failure recovery ("IGRIS looked again — …"), and as one line in the task brief each round while
+  operating.
+* **Expected outcomes**: `computer_click` and `computer_key` take `expect` (`window_present`, `window_gone`,
+  `element_present`, `element_gone`, `field_contains`, `focus_on`, `screen_changed`, or `none`). After the action the
+  state is polled until it's met or 2.5 s pass. With `none`, IGRIS still reports whether anything visibly changed
+  ("Nothing visibly changed — the action may not have worked"). `computer_type` reads the field back. Verdicts feed the
+  task's verification: met → verified, not met → failed check (recovering), unknown → unverified.
+* **Preconditions**: actions refuse when the window in front isn't the one observed (including shortcuts, which would
+  go to the wrong app); element targets must still be at their observed position; typing needs a text field in focus;
+  commands only run in shared folders (`run_command`).
+* **Launch verification**: a launched app counts as verified only when one of its windows appears (polled up to 8 s;
+  "VS Code" matches `Code.exe` / "Visual Studio Code"). A running process is accepted only where windows can't be
+  listed at all.
+* **Browser** (`computer/cdp.rs`, `computer/browser.rs`, `tools/browser.rs`): IGRIS starts its own Chrome/Edge with a
+  separate profile and a DevTools port on 127.0.0.1 (never the user's profile; non-local endpoints are refused), and
+  works on the DOM: `browser_open` (http/https only, waits for load), `browser_snapshot` (interactive elements with
+  refs, field values except passwords, visible text — all marked untrusted), `browser_click` / `browser_type` (trusted
+  in-page events — the user's mouse and keyboard aren't used; typed text is read back), `browser_confirmed_click`
+  (CRITICAL, always asks; the prompt names the element actually on the page). Buttons that look like send / pay /
+  delete are refused by `browser_click`. These are operator-session tools: they need an approved operator task. A
+  minimal WebSocket client is built in (no new dependency).
+* **OCR** (`Driver::ocr`, Windows.Media.Ocr): only when `computer_observe` is called with `ocr: true`, or
+  automatically when a screenshot finds fewer than 3 readable controls. Lines come back with positions in screenshot
+  coordinates. On systems without it, observation says "OCR unavailable" rather than guessing.
+* **Focused tool sets** (`orchestrator/toolset.rs`): each request starts with a core set (calculation, system info,
+  web, memory, reading files, apps and links, `operator_start`, `task_plan`, `request_tools`) plus the groups its
+  words call for (productivity, file changes, terminal/projects, screen) and the groups the recent conversation used.
+  `request_tools` adds groups for the rest of the turn. Hidden ≠ forbidden ≠ permitted: the executor's validation,
+  permissions, approvals and audit apply to every call as before.
+* **Overlay truth**: while an action waits for approval during an operator task, the orb and border show *waiting*;
+  stop, pause and completion are mirrored from the task.
+* **Crash persistence**: every task event (tool requested / started / completed, checks, approvals, state changes) is
+  written to `task_events` as it happens (migration 11; ≤200 per task; details clipped and redacted). After a crash, an
+  action that started but never finished is recorded with an *unknown* result, and the reply that never came is
+  replaced by a message saying IGRIS closed and what had happened. The task card's "What happened" shows the log.
+* **Live harness** (`tests/operator_live.rs`, workflow *Operator live*): the full app stack with a real provider on a
+  real Windows desktop, scenario by scenario, writing `target/operator-live-report.md`. Its approver stands in for
+  the user: it approves ordinary approvals and denies every CRITICAL action.
+
 ## Orchestrator (tasks)
 
 Actionable requests become tasks with a lifecycle; conversation stays lightweight.

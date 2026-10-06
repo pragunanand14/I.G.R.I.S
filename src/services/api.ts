@@ -11,7 +11,7 @@ import type { SystemSnapshot } from "@/types/system";
 import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
 import { call, callRaw } from "./backend";
 import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
-import type { TaskControl, TaskInfo } from "@/types/task";
+import type { TaskControl, TaskEventRow, TaskInfo } from "@/types/task";
 
 /** All IPC commands in one place — mirrors `generate_handler!` in `src-tauri/src/lib.rs`. */
 export const api = {
@@ -36,6 +36,7 @@ export const api = {
   listOperatorTasks: (limit?: number) => call<OperatorTask[]>("list_operator_tasks", { limit }),
   listConversationTasks: (conversationId: string, limit?: number) => call<TaskInfo[]>("list_conversation_tasks", { conversationId, limit }),
   taskControl: (taskId: string, action: TaskControl) => call<TaskInfo>("task_control", { taskId, action }),
+  listTaskEvents: (taskId: string, limit?: number) => call<TaskEventRow[]>("list_task_events", { taskId, limit }),
   trustConversation: (conversationId: string) => call<void>("trust_conversation", { conversationId }),
   respondToolApproval: (callId: string, approved: boolean) => call<boolean>("respond_tool_approval", { callId, approved }),
   listTools: () => call<ToolInfo[]>("list_tools"),

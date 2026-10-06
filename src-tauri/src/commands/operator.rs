@@ -51,6 +51,12 @@ pub fn list_conversation_tasks(state: State<'_, AppState>, conversation_id: Stri
     state.orchestrator.for_conversation(&conversation_id, limit.unwrap_or(10).clamp(1, 50))
 }
 
+/// A task's activity log (oldest first): what it attempted and what happened.
+#[tauri::command]
+pub fn list_task_events(state: State<'_, AppState>, task_id: String, limit: Option<u32>) -> AppResult<Vec<crate::orchestrator::store::TaskEventRow>> {
+    state.orchestrator.events(&task_id, limit.unwrap_or(40).clamp(1, 200))
+}
+
 /// Pause, resume or stop a running task; stop also dismisses an interrupted one.
 #[tauri::command]
 pub fn task_control(state: State<'_, AppState>, task_id: String, action: crate::orchestrator::Control) -> AppResult<crate::orchestrator::TaskInfo> {
