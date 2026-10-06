@@ -80,7 +80,8 @@ the development container.
 
 No provider key was available in the development environment and the
 `Operator live` workflow needs the `IGRIS_AI_API_KEY` secret, so the live scenarios have not
-been run. The harness and workflow are in place; until they run, **the
+been run. An attempt (`Operator live` run `37496913264`, on `dfadba3`) stopped at its
+"Provider key present" step because the secret isn't set. The harness and workflow are in place; until they run, **the
 quality of a real model driving the desktop is unmeasured.**
 
 ### Manual on a real Windows 10/11 PC — NOT RUN
