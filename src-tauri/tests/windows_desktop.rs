@@ -24,7 +24,7 @@ use igris_lib::db::Database;
 use igris_lib::operator::{Operator, TaskState};
 use igris_lib::orchestrator::task::Verification;
 use igris_lib::orchestrator::verify::window_check;
-use igris_lib::tools::computer::{ComputerClickTool, ComputerKeyTool, ComputerObserveTool, ComputerTypeTool, OperatorFinishTool};
+use igris_lib::tools::computer::{ComputerKeyTool, ComputerObserveTool, ComputerTypeTool, OperatorFinishTool};
 use igris_lib::tools::Tool;
 use serde_json::json;
 
