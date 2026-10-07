@@ -60,6 +60,8 @@ audited tools — there is no shell access.
 | 11 — Computer operator | Operator mode: Windows computer control (UI Automation, mouse, keyboard, windows, per-display capture), closed-loop observe → act → verify task engine with pause/stop/takeover handling, consequential-action confirmation, desktop overlay (border + orb), `run_command` for development, `copy_path` | ✅ Foundation |
 | 12 — Orchestrator | Task model + state machine shared with operator mode, agent loop extracted from chat, plans, verification, bounded recovery, pause/resume/stop, restart-safe tasks, tool refresh, task card | ✅ v1 |
 | 13 — Operator hardening | Real-Windows desktop test suite on CI, structured expected outcomes + change detection, window-verified launches, Chromium DevTools browser control, Windows OCR fallback, focused tool sets + `request_tools`, crash-safe task activity log, live-provider harness | ✅ v1 |
+| 14 — Shared core | `igris-core` crate: the platform-independent IGRIS (no Tauri/OS code, CI-guarded); the app supplies device behaviour through seams | ✅ Done |
+| 15 — Android | The same app on Android ([docs/ANDROID.md](docs/ANDROID.md)): phone tool set (apps, opening apps, battery/network) via a Kotlin plugin, phone-aware prompt and UI, emulator smoke test on CI | ✅ First slice |
 
 **Not implemented** (and IGRIS says so if asked): operator mode on macOS/Linux, arbitrary shell commands (only
 allowlisted developer tools via `run_command`), long-running background processes, calendar sync with Google/Outlook,
@@ -169,11 +171,15 @@ igris-core/src/          shared IGRIS core (no Tauri, no OS APIs) — see docs/A
   tools/                 registry, schema validation, executor (permissions + audit), neutral tools
   memory/ files/ projects/ productivity/ attachments/ voice/
   conversations/ db/ settings/ config.rs error.rs
-src-tauri/src/           Windows/Tauri desktop app
+src-tauri/src/           the IGRIS app (Tauri) for desktop and Android
   commands/              thin IPC handlers — the entire UI-facing surface
   computer/              Windows driver (input, windows, UI Automation, OCR), Chromium DevTools control
   tools/                 desktop tools (apps, processes, terminal, files, screen capture, computer, browser)
+  tools/phone.rs         Android phone tools (through plugins/tauri-plugin-igris-device)
   overlay.rs system/ state.rs logging.rs lib.rs
+src-tauri/gen/android/   generated Android project
+plugins/tauri-plugin-igris-device/   Android device capabilities (Kotlin)
 docs/ARCHITECTURE.md     design, per phase
+docs/ANDROID.md          the Android app: capabilities, build, limits, test results
 docs/SECURITY.md         threat model, controls, review findings
 ```

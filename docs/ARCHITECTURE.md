@@ -59,6 +59,18 @@ own); a platform adds behaviour by implementing a seam, never by copying core lo
 and the executor stay in the core so every platform gets the same security model. Test doubles (the fake
 driver, the scripted AI provider) are behind the core's `test-support` feature for platform tests.
 
+## Platforms: desktop and Android
+
+`src-tauri` is one Tauri app built for both platforms; `#[cfg(desktop)]` /
+`#[cfg(mobile)]` pick the platform parts at the seams above. On Android the
+computer driver is `Unsupported` and operator mode is not offered; the device
+layer is `plugins/tauri-plugin-igris-device` (Kotlin), reached only from IGRIS's
+Rust tools (`tools/phone.rs`) so every call goes through the executor. The core
+assembles the system prompt per `DeviceKind` (computer or phone) so IGRIS only
+claims what the device can do; HTTPS on Android uses bundled roots
+(`net::client_builder`). Details, limits and test results:
+[ANDROID.md](ANDROID.md).
+
 ## Runtime
 
 ```
