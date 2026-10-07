@@ -241,10 +241,10 @@ notified, and the PC must have IGRIS running to receive tasks.
 | Crypto, pairing, approvals, replay, registry, sync, targeting (unit) | `cargo test -p igris-core device::` | PASS |
 | Relay over real sockets: auth, mutual routing, presence, offline queue, pairing limits, floods | `igris-relay/tests/relay.rs` | PASS (6) |
 | Two IGRIS hubs through an ntfy-compatible server on loopback (`device/ntfy_mock.rs`): pairing with only the code (cross-device switched on by pairing itself) and a task with a signed remote approval, with a check that every post is ciphertext; a closed PC gets the task when it opens; a 60-memory sync split into parts | `igris-core/src/device/e2e_tests.rs` (`over_ntfy_*`) | PASS (3) |
-| The same against the real **ntfy.sh** | `live_ntfy_sh_pairing_and_a_task` (CI job `ntfy-live`; can't run from the development sandbox, whose network blocks ntfy.sh) | see CI |
+| The same against the real **ntfy.sh** | `live_ntfy_sh_pairing_and_a_task` (CI job `ntfy-live`, CI run 37655571162) | PASS |
 | Two IGRIS hubs + real relay on loopback: pairing with confirmation; a task from the "phone" run on the "PC" through the real chat → orchestrator → executor path (scripted model) with a signed remote approval, verified by the PC's read-back; remote deny; remote stop; offline PC gets the queued task on reconnect; memory sync both ways incl. delete; revocation; wrong code / denied pairing; no relay | `igris-core/src/device/e2e_tests.rs` | PASS (7) |
 | DPAPI seal/unseal round trip | Windows CI runner | PASS |
-| **Real Android runtime (ntfy.sh, the default):** the same flow as below, but the phone types only the code and taps **Join** — no address | `scripts/android-cross-device.sh` | see Android workflow |
+| **Real Android runtime (ntfy.sh, the default):** the same flow as below, but the phone types only the code and taps **Join** — no address | `scripts/android-cross-device.sh`, Android workflow run 37655571119 | PASS |
 | **Real Android runtime (relay, before ntfy):** the APK on an Android 14 emulator seals its device keys with the Android Keystore, connects to a real relay on the CI host, pairs with a real IGRIS device hub ("CI PC", `igris-core/examples/device_peer.rs`) by typing the code in the phone UI, sends a task from the phone UI, approves the PC's action on the phone (signed approval verified on the PC) and shows "Done — completed on CI PC" | `scripts/android-cross-device.sh`, Android workflow run 37605750133 | PASS |
 
 The CI PC's task runner stands in for the AI model (it asks for one approval and
