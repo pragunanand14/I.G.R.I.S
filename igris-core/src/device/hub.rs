@@ -47,7 +47,7 @@ pub const APPROVAL_WAIT: Duration = Duration::from_secs(5 * 60);
 pub const MAX_INCOMING: usize = 2;
 const OUTBOX_MAX: usize = 200;
 const JOIN_WAIT: Duration = Duration::from_secs(3 * 60);
-const SYNC_RETRY: Duration = Duration::from_secs(120);
+const SYNC_RETRY: Duration = Duration::from_secs(600);
 
 /// Runs a task another device asked for, through the app's normal chat path.
 #[async_trait::async_trait]
@@ -329,13 +329,12 @@ impl DeviceHub {
 
     /// Set (or clear) the relay and connect or disconnect accordingly.
     pub fn configure(self: &Arc<Self>, relay_url: Option<&str>, enabled: bool, sync_memory: bool) -> AppResult<DeviceSettings> {
+        // Empty: the free ntfy.sh service. ws(s):// is your own relay; http(s):// your own ntfy server.
         let url = match relay_url.map(str::trim).filter(|u| !u.is_empty()) {
+            Some(u) if u.to_ascii_lowercase().starts_with("http") => Some(super::ntfy::validate_server(u)?),
             Some(u) => Some(link::validate_url(u)?),
             None => None,
         };
-        if enabled && url.is_none() {
-            return Err(AppError::validation("Enter the relay address first."));
-        }
         self.db.conn()?.execute(
             "UPDATE device_settings SET relay_url = ?1, enabled = ?2, sync_memory = ?3 WHERE id = 1",
             rusqlite::params![url, enabled as i64, sync_memory as i64],
@@ -402,25 +401,36 @@ impl DeviceHub {
             }
         };
         lock(&self.status).relay_url = s.relay_url.clone();
-        let Some(url) = s.relay_url.filter(|_| s.enabled) else {
+        if !s.enabled {
             self.set_status("off", None);
             return;
-        };
+        }
         let (tx, out) = mpsc::unbounded_channel();
         let (peers_tx, peers_rx) = watch::channel(self.peer_ids());
         let (ev_tx, mut ev_rx) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
-        let creds = {
-            let id = self.identity.clone();
-            let me = self.identity.read().unwrap_or_else(|p| p.into_inner());
-            Credentials {
-                device_id: me.device_id.clone(),
-                signing_key_b64: me.public().signing_key,
-                sign: Arc::new(move |msg: &[u8]| id.read().unwrap_or_else(|p| p.into_inner()).sign(msg)),
-            }
-        };
         *lock(&self.link) = Some(LinkCtl { tx, peers: peers_tx, cancel: cancel.clone(), up: false });
-        tokio::spawn(link::run(url, creds, peers_rx, out, ev_tx, cancel.clone()));
+        match s.relay_url.filter(|u| u.to_ascii_lowercase().starts_with("ws")) {
+            // Your own relay.
+            Some(url) => {
+                let creds = {
+                    let id = self.identity.clone();
+                    let me = self.identity.read().unwrap_or_else(|p| p.into_inner());
+                    Credentials {
+                        device_id: me.device_id.clone(),
+                        signing_key_b64: me.public().signing_key,
+                        sign: Arc::new(move |msg: &[u8]| id.read().unwrap_or_else(|p| p.into_inner()).sign(msg)),
+                    }
+                };
+                tokio::spawn(link::run(url, creds, peers_rx, out, ev_tx, cancel.clone()));
+            }
+            // The default: ntfy.sh (or your own ntfy server).
+            None => {
+                let server = self.settings().ok().and_then(|s| s.relay_url).unwrap_or_else(|| super::ntfy::DEFAULT_SERVER.to_string());
+                let (device_id, owner_id) = self.identity.read().map(|i| (i.device_id.clone(), i.owner_id.clone())).unwrap_or_default();
+                tokio::spawn(super::ntfy::run(server, device_id, owner_id, peers_rx, out, ev_tx, cancel.clone()));
+            }
+        }
         let hub = self.clone();
         tokio::spawn(async move {
             loop {
@@ -620,6 +630,8 @@ impl DeviceHub {
                 tracing::debug!(event = "DEVICE_MESSAGE_RECEIVED", kind = msg.kind());
                 self.dispatch(dev, msg);
             }
+            // Re-delivered after a reconnect: already handled, nothing to report.
+            Err(why) if why.contains("replay") => tracing::debug!(event = "DEVICE_MESSAGE_DUPLICATE"),
             Err(why) => {
                 tracing::warn!(event = "DEVICE_MESSAGE_REFUSED", reason = %why);
                 if let Ok(c) = self.db.conn() {
@@ -1249,12 +1261,30 @@ impl DeviceHub {
 
     // ── Pairing ────────────────────────────────────────────────────────────
 
-    /// Show a one-time code for a new device (needs the relay connection).
-    /// Returns once the relay has the code open, so it works as soon as it's shown.
-    pub async fn start_pairing(&self) -> AppResult<PairingCode> {
-        if !self.link_up() {
-            return Err(AppError::validation("Connect to your relay first (Settings → Devices)."));
+    /// Turn cross-device on (if it isn't) and wait for the connection.
+    async fn ensure_connected(self: &Arc<Self>) -> AppResult<()> {
+        if self.link_up() {
+            return Ok(());
         }
+        let s = self.settings()?;
+        if !s.enabled || lock(&self.link).is_none() {
+            self.db.conn()?.execute("UPDATE device_settings SET enabled = 1 WHERE id = 1", [])?;
+            self.restart();
+        }
+        for _ in 0..100 {
+            if self.link_up() {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        let why = self.status().detail.unwrap_or_else(|| "no answer".into());
+        Err(AppError::validation(format!("Couldn't connect: {why} Check the internet connection and try again.")))
+    }
+
+    /// Show a one-time code for a new device (connects first if needed).
+    /// Returns once the code is open, so it works as soon as it's shown.
+    pub async fn start_pairing(self: &Arc<Self>) -> AppResult<PairingCode> {
+        self.ensure_connected().await?;
         let has_devices = !self.db.conn().and_then(|c| registry::active(&c))?.is_empty();
         if !Self::is_manager(self.me_platform()) && has_devices {
             return Err(AppError::validation("Add new devices from your computer."));
@@ -1375,10 +1405,8 @@ impl DeviceHub {
     }
 
     /// Join another device's IGRIS with the code it shows.
-    pub async fn join(&self, code: &str) -> AppResult<Device> {
-        if !self.link_up() {
-            return Err(AppError::validation("Connect to your relay first (Settings → Devices)."));
-        }
+    pub async fn join(self: &Arc<Self>, code: &str) -> AppResult<Device> {
+        self.ensure_connected().await?;
         if !self.db.conn().and_then(|c| registry::active(&c))?.is_empty() {
             return Err(AppError::validation("This device is already paired with other devices. Remove them first to join a different IGRIS."));
         }
@@ -1418,7 +1446,8 @@ impl DeviceHub {
             registry::audit(&c, Some(&inviter.device_id), "device_paired", Some(&inviter.name));
             inviter
         };
-        self.refresh_peers();
+        // The inbox (ntfy) depends on the owner id just adopted: reconnect.
+        self.restart();
         tracing::info!(event = "DEVICE_PAIRED", role = "joiner");
         self.emit(HubEvent::PairingDone { ok: true, message: format!("Connected to {}.", inviter.name) });
         Ok(inviter)

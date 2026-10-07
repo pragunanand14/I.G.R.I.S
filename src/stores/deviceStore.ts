@@ -2,7 +2,13 @@ import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { api } from "@/services/api";
 import { BackendError, hasBackend } from "@/services/backend";
-import type { DeviceEvent, DevicesOverview, PairingCode, Platform, RemoteTask } from "@/types/devices";
+import type {
+  DeviceEvent,
+  DevicesOverview,
+  PairingCode,
+  Platform,
+  RemoteTask,
+} from "@/types/devices";
 import type { TaskControl } from "@/types/task";
 
 export interface PairingRequest {
@@ -39,7 +45,11 @@ interface DeviceStore {
   notices: Notice[];
   connect: () => () => void;
   refresh: () => Promise<void>;
-  configure: (relayUrl: string | null, enabled: boolean, syncMemory: boolean) => Promise<boolean>;
+  configure: (
+    relayUrl: string | null,
+    enabled: boolean,
+    syncMemory: boolean,
+  ) => Promise<boolean>;
   startPairing: () => Promise<void>;
   cancelPairing: () => Promise<void>;
   confirmPairing: (pairingId: string, allow: boolean) => Promise<void>;
@@ -79,19 +89,38 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
   const onEvent = (e: DeviceEvent) => {
     switch (e.type) {
       case "notice":
-        set({ notices: [...get().notices, { id: ++noticeId, title: e.title, body: e.body }].slice(-4) });
+        set({
+          notices: [
+            ...get().notices,
+            { id: ++noticeId, title: e.title, body: e.body },
+          ].slice(-4),
+        });
         return;
       case "pairing_request":
-        set({ pairingRequests: [...get().pairingRequests.filter((p) => p.pairingId !== e.pairingId), e] });
+        set({
+          pairingRequests: [
+            ...get().pairingRequests.filter((p) => p.pairingId !== e.pairingId),
+            e,
+          ],
+        });
         return;
       case "pairing_done":
         set({ pairingResult: { ok: e.ok, message: e.message }, pairing: null });
         break;
       case "local_approval":
-        set({ localApprovals: [...get().localApprovals.filter((a) => a.callId !== e.callId), e] });
+        set({
+          localApprovals: [
+            ...get().localApprovals.filter((a) => a.callId !== e.callId),
+            e,
+          ],
+        });
         return;
       case "approval_closed":
-        set({ localApprovals: get().localApprovals.filter((a) => a.callId !== e.callId) });
+        set({
+          localApprovals: get().localApprovals.filter(
+            (a) => a.callId !== e.callId,
+          ),
+        });
         break;
     }
     clearTimeout(refreshTimer);
@@ -112,10 +141,12 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
       if (!hasBackend()) return () => undefined;
       let unlisten: (() => void) | undefined;
       let closed = false;
-      void listen<DeviceEvent>("device-event", (e) => onEvent(e.payload)).then((u) => {
-        if (closed) u();
-        else unlisten = u;
-      });
+      void listen<DeviceEvent>("device-event", (e) => onEvent(e.payload)).then(
+        (u) => {
+          if (closed) u();
+          else unlisten = u;
+        },
+      );
       void get().refresh();
       return () => {
         closed = true;
@@ -133,7 +164,9 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
       }
     },
 
-    configure: async (relayUrl, enabled, syncMemory) => (await run(() => api.devicesConfigure(relayUrl, enabled, syncMemory))) !== null,
+    configure: async (relayUrl, enabled, syncMemory) =>
+      (await run(() => api.devicesConfigure(relayUrl, enabled, syncMemory))) !==
+      null,
 
     startPairing: async () => {
       set({ pairingResult: null });
@@ -147,7 +180,12 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
     },
 
     confirmPairing: async (pairingId, allow) => {
-      set({ pairingRequests: get().pairingRequests.filter((p) => p.pairingId !== pairingId), pairing: null });
+      set({
+        pairingRequests: get().pairingRequests.filter(
+          (p) => p.pairingId !== pairingId,
+        ),
+        pairing: null,
+      });
       await run(() => api.devicesConfirmPairing(pairingId, allow));
     },
 
@@ -159,36 +197,51 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
 
     connectAndJoin: async (relayUrl, code) => {
       set({ pairingResult: null });
+      // A custom server only when one was entered; joining connects by itself.
       const s = get().overview?.settings;
-      if (!s || !s.enabled || s.relayUrl !== relayUrl || get().overview?.status.state !== "connected") {
-        if (!(await get().configure(relayUrl, true, s?.syncMemory ?? true))) return false;
-        // Wait (up to 20 s) for the relay connection before sending the code.
-        for (let i = 0; i < 40 && get().overview?.status.state !== "connected"; i++) {
-          await new Promise((r) => setTimeout(r, 500));
-          await get().refresh();
-        }
-        if (get().overview?.status.state !== "connected") {
-          set({ error: `Couldn't connect to the relay: ${get().overview?.status.detail ?? "no answer"}` });
+      const url = relayUrl.trim() || null;
+      if ((url ?? null) !== (s?.relayUrl ?? null)) {
+        if (
+          !(await get().configure(
+            url,
+            s?.enabled ?? false,
+            s?.syncMemory ?? true,
+          ))
+        )
           return false;
-        }
       }
       return get().join(code);
     },
 
-    revoke: async (deviceId) => void (await run(() => api.devicesRevoke(deviceId))),
-    forget: async (deviceId) => void (await run(() => api.devicesForget(deviceId))),
-    renameThis: async (name) => void (await run(() => api.devicesRenameThis(name))),
-    sendTask: (deviceId, objective) => run(() => api.devicesSendTask(deviceId, objective)),
-    control: async (requestId, action) => void (await run(() => api.devicesControlTask(requestId, action))),
-    answer: async (callId, approve) => void (await run(() => api.devicesAnswerApproval(callId, approve))),
+    revoke: async (deviceId) =>
+      void (await run(() => api.devicesRevoke(deviceId))),
+    forget: async (deviceId) =>
+      void (await run(() => api.devicesForget(deviceId))),
+    renameThis: async (name) =>
+      void (await run(() => api.devicesRenameThis(name))),
+    sendTask: (deviceId, objective) =>
+      run(() => api.devicesSendTask(deviceId, objective)),
+    control: async (requestId, action) =>
+      void (await run(() => api.devicesControlTask(requestId, action))),
+    answer: async (callId, approve) =>
+      void (await run(() => api.devicesAnswerApproval(callId, approve))),
 
     answerLocal: async (callId, approve) => {
-      set({ localApprovals: get().localApprovals.filter((a) => a.callId !== callId) });
-      const delivered = await run(() => api.respondToolApproval(callId, approve));
-      if (delivered === false) set({ error: "That request already ended (answered on the other device, or it expired)." });
+      set({
+        localApprovals: get().localApprovals.filter((a) => a.callId !== callId),
+      });
+      const delivered = await run(() =>
+        api.respondToolApproval(callId, approve),
+      );
+      if (delivered === false)
+        set({
+          error:
+            "That request already ended (answered on the other device, or it expired).",
+        });
     },
 
-    dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),
+    dismissNotice: (id) =>
+      set({ notices: get().notices.filter((n) => n.id !== id) }),
     clearResult: () => set({ pairingResult: null }),
   };
 });

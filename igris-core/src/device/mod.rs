@@ -6,7 +6,8 @@
 //! * [`envelope`] — end-to-end encrypted, signed, replay-protected messages.
 //! * [`approval`] — signed, single-use approvals for actions on another device.
 //! * [`protocol`] — the typed messages devices exchange (inside envelopes).
-//! * [`link`] — the outbound, authenticated connection to the relay.
+//! * [`ntfy`] — the default transport: the free ntfy.sh service (no setup).
+//! * [`link`] — the alternative: an outbound, authenticated connection to your own relay.
 //! * [`hub`] — routing: remote tasks through the existing orchestrator,
 //!   control, approvals, presence, memory sync.
 //! * [`remote`] — the record of tasks sent to / received from other devices.
@@ -22,6 +23,9 @@ pub mod envelope;
 pub mod hub;
 pub mod identity;
 pub mod link;
+pub mod ntfy;
+#[cfg(any(test, feature = "test-support"))]
+pub mod ntfy_mock;
 pub mod pairing;
 pub mod protocol;
 pub mod registry;

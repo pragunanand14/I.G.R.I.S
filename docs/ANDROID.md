@@ -122,4 +122,6 @@ Android workflow run `37605750133` (commit `be90ffd`): after the smoke checks
 (now including "device keys sealed by the Android Keystore"), the phone UI
 connected to a relay on the CI host, joined a real IGRIS device hub with its
 pairing code, sent it a task, approved its action with a signed approval and
-showed "Done — completed on CI PC". See [CROSS_DEVICE.md](CROSS_DEVICE.md#test-results).
+showed "Done — completed on CI PC". The test now uses the default transport
+(ntfy.sh): the phone types only the pairing code and taps **Join**. See
+[CROSS_DEVICE.md](CROSS_DEVICE.md#test-results).

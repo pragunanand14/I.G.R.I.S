@@ -432,3 +432,139 @@ async fn local_use_works_without_any_relay() {
     // Memory still works locally.
     crate::memory::add(&pc.db.conn().unwrap(), crate::memory::MemoryKind::LongTerm, "Local still works", crate::memory::MemorySource::User, None).unwrap();
 }
+
+// ── The default transport: ntfy (here a local stand-in following ntfy's API) ──
+
+/// A device set to use the given ntfy server, not connected yet: pairing connects it.
+fn ntfy_node(name: &str, platform: Platform, server: &str) -> Node {
+    let n = node(name, platform);
+    n.hub.configure(Some(server), false, true).unwrap();
+    n
+}
+
+async fn pair_without_connecting_first(pc: &mut Node, phone: &mut Node) {
+    // No "Connect" step: showing or typing a code connects by itself.
+    let code = pc.hub.start_pairing().await.unwrap();
+    let hub = phone.hub.clone();
+    let join = tokio::spawn(async move { hub.join(&code.code).await });
+    let pid = expect(&mut pc.events, "pairing request", |e| match e {
+        HubEvent::PairingRequest { pairing_id, .. } => Some(pairing_id.clone()),
+        _ => None,
+    })
+    .await;
+    pc.hub.confirm_pairing(&pid, true).unwrap();
+    join.await.unwrap().unwrap();
+    let (a, b, pc_id, phone_id) = (pc.hub.clone(), phone.hub.clone(), pc.id.clone(), phone.id.clone());
+    until("both online over ntfy", || a.is_online(&phone_id) && b.is_online(&pc_id)).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn over_ntfy_a_code_is_all_it_takes_and_tasks_and_approvals_work() {
+    let ntfy = super::ntfy_mock::MockNtfy::start().await;
+    let mut pc = ntfy_node("My PC", Platform::Windows, &ntfy.url);
+    let mut phone = ntfy_node("Pixel", Platform::Android, &ntfy.url);
+    pair_without_connecting_first(&mut pc, &mut phone).await;
+
+    let ai = MockServer::start(vec![
+        (200, "text/event-stream", sse::tool("call_1", "write_file", json!({"path": "notes.txt", "content": "hi"}))),
+        (200, "text/event-stream", sse::text("Saved notes.txt.")),
+    ])
+    .await;
+    let tool = writer(PermissionLevel::Sensitive, Duration::ZERO);
+    let mut reg = ToolRegistry::default();
+    reg.register(tool.clone());
+    reg.register(Arc::new(Reader));
+    pc.hub.set_runner(Arc::new(ChatRunner { db: pc.db.clone(), registry: Arc::new(reg), orchestrator: pc.orchestrator.clone(), ai_url: ai.url() }));
+
+    let rid = phone.hub.send_task(&pc.id, "save a note called notes.txt on my pc").unwrap().task.request_id;
+    let call_id = expect(&mut phone.events, "approval request", |e| match e {
+        HubEvent::ApprovalNeeded(v) => Some(v.request.call_id.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(*tool.runs.lock().unwrap(), 0);
+    phone.hub.answer_approval(&call_id, true).unwrap();
+    let p = phone.hub.clone();
+    let r = rid.clone();
+    until("completed", || p.task(&r).unwrap().unwrap().task.status.is_final()).await;
+    let done = phone.hub.task(&rid).unwrap().unwrap();
+    assert_eq!(done.task.status, RemoteStatus::Completed, "{:?}", done.task.detail);
+    assert_eq!(*tool.runs.lock().unwrap(), 1);
+    // The service only ever saw ciphertext.
+    assert!(ntfy.bodies().iter().all(|b| !b.contains("notes.txt") && !b.contains("save a note")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn over_ntfy_a_closed_pc_gets_the_task_when_it_opens() {
+    let ntfy = super::ntfy_mock::MockNtfy::start().await;
+    let mut pc = ntfy_node("My PC", Platform::Windows, &ntfy.url);
+    let mut phone = ntfy_node("Pixel", Platform::Android, &ntfy.url);
+    pair_without_connecting_first(&mut pc, &mut phone).await;
+
+    pc.hub.shutdown();
+    let rid = phone.hub.send_task(&pc.id, "what time is it there").unwrap().task.request_id;
+    let p = phone.hub.clone();
+    let r = rid.clone();
+    until("sent", || p.task(&r).unwrap().unwrap().task.status == RemoteStatus::Sent).await;
+
+    let ai = MockServer::start(vec![(200, "text/event-stream", sse::text("It's 10:00."))]).await;
+    pc.hub.set_runner(Arc::new(ChatRunner {
+        db: pc.db.clone(),
+        registry: Arc::new(ToolRegistry::default()),
+        orchestrator: pc.orchestrator.clone(),
+        ai_url: ai.url(),
+    }));
+    pc.hub.configure(Some(&ntfy.url), true, true).unwrap();
+    let p = phone.hub.clone();
+    let r = rid.clone();
+    until("completed after the PC opened", || p.task(&r).unwrap().unwrap().task.status == RemoteStatus::Completed).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn over_ntfy_large_memory_syncs_are_split_and_arrive_whole() {
+    let ntfy = super::ntfy_mock::MockNtfy::start().await;
+    let mut pc = ntfy_node("My PC", Platform::Windows, &ntfy.url);
+    let mut phone = ntfy_node("Pixel", Platform::Android, &ntfy.url);
+    use crate::memory::{self, MemoryKind, MemorySource};
+    // ~60 long memories: far more than one ntfy message holds.
+    for i in 0..60 {
+        memory::add(
+            &phone.db.conn().unwrap(),
+            MemoryKind::Knowledge,
+            &format!("Note {i}: {}", "the quick brown fox jumps over the lazy dog ".repeat(10)),
+            MemorySource::User,
+            None,
+        )
+        .unwrap();
+    }
+    pair_without_connecting_first(&mut pc, &mut phone).await;
+    let db = pc.db.clone();
+    until("all 60 on the PC", || memory::all(&db.conn().unwrap()).unwrap().len() == 60).await;
+    assert!(ntfy.bodies().iter().any(|b| b.contains("\"k\":\"part\"")), "large batches were split");
+}
+
+/// Against the real ntfy.sh (needs internet): `IGRIS_NTFY_LIVE=1 cargo test -p igris-core --lib live_ntfy -- --ignored`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "talks to the real ntfy.sh; run with IGRIS_NTFY_LIVE=1 and --ignored"]
+async fn live_ntfy_sh_pairing_and_a_task() {
+    if std::env::var("IGRIS_NTFY_LIVE").as_deref() != Ok("1") {
+        eprintln!("IGRIS_NTFY_LIVE is not 1; skipping");
+        return;
+    }
+    // Default settings: nothing configured at all.
+    let mut pc = node("My PC", Platform::Windows);
+    let mut phone = node("Pixel", Platform::Android);
+    pair_without_connecting_first(&mut pc, &mut phone).await;
+    let ai = MockServer::start(vec![(200, "text/event-stream", sse::text("Hello from the PC."))]).await;
+    pc.hub.set_runner(Arc::new(ChatRunner {
+        db: pc.db.clone(),
+        registry: Arc::new(ToolRegistry::default()),
+        orchestrator: pc.orchestrator.clone(),
+        ai_url: ai.url(),
+    }));
+    let rid = phone.hub.send_task(&pc.id, "say hello").unwrap().task.request_id;
+    let p = phone.hub.clone();
+    let r = rid.clone();
+    until("completed over ntfy.sh", || p.task(&r).unwrap().unwrap().task.status == RemoteStatus::Completed).await;
+    eprintln!("LIVE ntfy.sh: {:?}", phone.hub.task(&rid).unwrap().unwrap().task.detail);
+}

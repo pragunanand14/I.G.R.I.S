@@ -580,7 +580,7 @@ through `chat::generate` → orchestrator → executor with that device's own
 policy; orchestrator events become ordered `task_update`s; pause/resume/stop
 use `Orchestrator::control`; approvals race the local UI against a signed
 remote approval verified by the executor. Memories sync with revisions and
-tombstones. The separate `igris-relay` crate only authenticates and routes.
+tombstones. Envelopes travel over ntfy (ntfy.sh by default, `device/ntfy.rs`) or the optional separate `igris-relay` crate, which only authenticates and routes.
 Details, protocol and limits: [CROSS_DEVICE.md](CROSS_DEVICE.md).
 
 ## Possible next steps

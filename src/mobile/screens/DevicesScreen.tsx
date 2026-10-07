@@ -41,6 +41,7 @@ export function DevicesScreen() {
   const [code, setCode] = useState("");
   const [text, setText] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -75,20 +76,9 @@ export function DevicesScreen() {
         <Section title="Connect to your computer">
           <div className="m-card space-y-3 p-4">
             <p className="m-muted text-sm">
-              On your computer: Settings → Devices → "Show a pairing code". Then
-              enter your relay address and that code here.
+              On your computer, open IGRIS → Settings → Devices → "Show a
+              pairing code". Type that code here.
             </p>
-            <input
-              aria-label="Relay address"
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              className="m-input"
-              placeholder="wss://relay.example.com"
-              value={relay}
-              onChange={(e) => setUrl(e.target.value)}
-            />
             <input
               aria-label="Pairing code"
               className="m-input font-mono tracking-wider uppercase"
@@ -96,31 +86,23 @@ export function DevicesScreen() {
               value={code}
               autoCapitalize="characters"
               autoCorrect="off"
+              spellCheck={false}
               onChange={(e) => setCode(e.target.value)}
             />
             <button
               type="button"
               className="m-button m-button-primary w-full"
-              disabled={
-                busy ||
-                !relay.trim() ||
-                code.replace(/[^0-9a-z]/gi, "").length < 24
-              }
+              disabled={busy || code.replace(/[^0-9a-z]/gi, "").length < 24}
               onClick={() =>
-                void connectAndJoin(relay.trim(), code.trim()).then(
-                  (ok) => ok && setCode(""),
-                )
+                void connectAndJoin(
+                  advanced ? relay.trim() : (s.relayUrl ?? ""),
+                  code.trim(),
+                ).then((ok) => ok && setCode(""))
               }
             >
               <Link2 className="size-4" />{" "}
-              {busy
-                ? "Waiting for your computer to allow it…"
-                : "Connect and join"}
+              {busy ? "Waiting for your computer to allow it…" : "Join"}
             </button>
-            <div className="flex items-center gap-2 text-sm">
-              <Dot tone={link.tone} />
-              <span className="m-muted">{link.text}</span>
-            </div>
             {pairingResult && (
               <p
                 className="text-sm"
@@ -130,6 +112,33 @@ export function DevicesScreen() {
               >
                 {pairingResult.message}
               </p>
+            )}
+            <button
+              type="button"
+              className="m-muted text-sm underline"
+              onClick={() => setAdvanced(!advanced)}
+            >
+              {advanced ? "Hide advanced" : "Advanced: use my own server"}
+            </button>
+            {advanced && (
+              <>
+                <p className="m-muted text-sm">
+                  Leave empty to use ntfy.sh (the default). Or enter your own
+                  ntfy server (https://…) or IGRIS relay (wss://…) — the same
+                  one your computer uses.
+                </p>
+                <input
+                  aria-label="Server address"
+                  inputMode="url"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="m-input"
+                  placeholder="https://ntfy.sh"
+                  value={relay}
+                  onChange={(e) => setUrl(e.target.value)}
+                />
+              </>
             )}
           </div>
         </Section>
@@ -292,13 +301,13 @@ export function DevicesScreen() {
               <span className="text-[15px]">{link.text}</span>
             </div>
             <input
-              aria-label="Relay address"
+              aria-label="Server address"
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               className="m-input"
-              placeholder="wss://relay.example.com"
+              placeholder="Default: ntfy.sh"
               value={relay}
               onChange={(e) => setUrl(e.target.value)}
             />
@@ -306,8 +315,10 @@ export function DevicesScreen() {
               <button
                 type="button"
                 className="m-button m-button-primary flex-1"
-                disabled={busy || !relay.trim()}
-                onClick={() => void configure(relay.trim(), true, s.syncMemory)}
+                disabled={busy}
+                onClick={() =>
+                  void configure(relay.trim() || null, true, s.syncMemory)
+                }
               >
                 {s.enabled ? "Reconnect" : "Connect"}
               </button>
@@ -325,8 +336,8 @@ export function DevicesScreen() {
               )}
             </div>
             <p className="m-muted text-sm">
-              The same address as on your computer. Messages are end-to-end
-              encrypted; the relay can't read them.
+              Leave the address empty to use ntfy.sh (free, nothing to set up).
+              Messages are end-to-end encrypted; the service can't read them.
             </p>
           </div>
         </Section>
@@ -365,7 +376,7 @@ export function DevicesScreen() {
               <button
                 type="button"
                 className="m-button w-full"
-                disabled={busy || !connected}
+                disabled={busy}
                 onClick={() => void startPairing()}
               >
                 Show a pairing code

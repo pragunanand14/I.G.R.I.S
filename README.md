@@ -62,7 +62,7 @@ audited tools — there is no shell access.
 | 13 — Operator hardening | Real-Windows desktop test suite on CI, structured expected outcomes + change detection, window-verified launches, Chromium DevTools browser control, Windows OCR fallback, focused tool sets + `request_tools`, crash-safe task activity log, live-provider harness | ✅ v1 |
 | 14 — Shared core | `igris-core` crate: the platform-independent IGRIS (no Tauri/OS code, CI-guarded); the app supplies device behaviour through seams | ✅ Done |
 | 15 — Android | The same app on Android ([docs/ANDROID.md](docs/ANDROID.md)): phone tool set (apps, opening apps, battery/network) via a Kotlin plugin, phone-aware prompt and UI, emulator smoke test on CI | ✅ First slice |
-| 16 — Cross-device | Phone ↔ PC for one user ([docs/CROSS_DEVICE.md](docs/CROSS_DEVICE.md)): key-based device identity (DPAPI / Android Keystore), code + confirmation pairing, end-to-end encrypted signed messages through a minimal relay (`igris-relay`), tasks sent to another device run through its own orchestrator and permissions, signed single-use remote approvals, pause/resume/stop, memory sync, revocation | ✅ v1 (not yet tried on physical devices) |
+| 16 — Cross-device | Phone ↔ PC for one user ([docs/CROSS_DEVICE.md](docs/CROSS_DEVICE.md)): key-based device identity (DPAPI / Android Keystore), code + confirmation pairing, end-to-end encrypted signed messages carried by the free ntfy.sh service by default (nothing to set up — just a pairing code) or your own ntfy server / minimal relay (`igris-relay`), tasks sent to another device run through its own orchestrator and permissions, signed single-use remote approvals, pause/resume/stop, memory sync, revocation | ✅ v1 (not yet tried on physical devices) |
 
 **Not implemented** (and IGRIS says so if asked): operator mode on macOS/Linux, arbitrary shell commands (only
 allowlisted developer tools via `run_command`), long-running background processes, calendar sync with Google/Outlook,
@@ -171,7 +171,7 @@ igris-core/src/          shared IGRIS core (no Tauri, no OS APIs) — see docs/A
   operator/ computer/    operator task engine; the computer Driver abstraction and safety policy
   tools/                 registry, schema validation, executor (permissions + audit), neutral tools
   memory/ files/ projects/ productivity/ attachments/ voice/
-  device/                cross-device: identity, pairing, envelopes, approvals, relay link, hub, memory sync
+  device/                cross-device: identity, pairing, envelopes, approvals, ntfy + relay transports, hub, memory sync
   conversations/ db/ settings/ config.rs error.rs
 src-tauri/src/           the IGRIS app (Tauri) for desktop and Android
   commands/              thin IPC handlers — the entire UI-facing surface
@@ -181,9 +181,9 @@ src-tauri/src/           the IGRIS app (Tauri) for desktop and Android
   overlay.rs system/ state.rs logging.rs lib.rs
 src-tauri/gen/android/   generated Android project
 plugins/tauri-plugin-igris-device/   Android device capabilities (Kotlin), Keystore key sealing
-igris-relay/             minimal relay between one user's devices (routing only)
+igris-relay/             optional self-hosted relay between one user's devices (routing only)
 docs/ARCHITECTURE.md     design, per phase
 docs/ANDROID.md          the Android app: capabilities, build, limits, test results
-docs/CROSS_DEVICE.md     phone ↔ PC: trust model, protocol, relay setup, limits
+docs/CROSS_DEVICE.md     phone ↔ PC: trust model, protocol, transports, limits
 docs/SECURITY.md         threat model, controls, review findings
 ```

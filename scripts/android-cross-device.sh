@@ -1,29 +1,23 @@
 #!/usr/bin/env bash
 # Cross-device on a real Android runtime: the IGRIS APK on the emulator pairs
 # with a real IGRIS device hub on the CI host ("CI PC", examples/device_peer.rs)
-# through a real relay (igris-relay), using only the phone's own UI:
-# connect → join with the code → send a task → approve the PC's action with a
-# signed approval → see "Done — completed on CI PC". Runs after
-# android-smoke.sh (the app is installed and open). Artifacts: android-artifacts/.
+# through the default transport (the public ntfy.sh service, end-to-end
+# encrypted), using only the phone's own UI exactly as a user would:
+# type the code → Join → send a task → approve the PC's action with a signed
+# approval → see "Done — completed on CI PC". Runs after android-smoke.sh (the
+# app is installed and open). Artifacts: android-artifacts/.
 set -uo pipefail
 
 PKG=dev.igris.app
 OUT=android-artifacts/cross-device
-PORT=8787
+SERVER=${IGRIS_CROSS_SERVER:-https://ntfy.sh}
 mkdir -p "$OUT"
 
 export RUST_BACKTRACE=1
-for b in target/debug/igris-relay target/debug/examples/device_peer; do
-  [ -x "$b" ] || { echo "::error::$b wasn't built"; exit 1; }
-done
-target/debug/igris-relay --listen "127.0.0.1:$PORT" > "$OUT/relay.log" 2>&1 &
-RELAY=$!
-sleep 1
-target/debug/examples/device_peer "ws://127.0.0.1:$PORT" "$OUT/peer" > "$OUT/peer.out" 2>&1 &
+[ -x target/debug/examples/device_peer ] || { echo "::error::device_peer wasn't built"; exit 1; }
+target/debug/examples/device_peer "$SERVER" "$OUT/peer" > "$OUT/peer.out" 2>&1 &
 PEER=$!
-# The phone reaches the host's relay at its own 127.0.0.1 (loopback, so ws:// is allowed).
-adb reverse "tcp:$PORT" "tcp:$PORT"
-trap 'kill $RELAY $PEER 2>/dev/null' EXIT
+trap 'kill $PEER 2>/dev/null' EXIT
 
 dump() {
   rm -f "$OUT/ui.xml"
@@ -150,18 +144,16 @@ CODE=$(cat "$OUT/peer/code.txt" 2>/dev/null)
 check "CI PC is connected and shows a pairing code" '[ -n "$CODE" ]'
 if [ -z "$CODE" ]; then
   echo "--- CI PC output ---"; tail -40 "$OUT/peer.out"
-  echo "--- relay log ---"; tail -20 "$OUT/relay.log"
 fi
 
 adb shell am start -n "$PKG/.MainActivity" > /dev/null
 sleep 3
 tap "More" && tap "Phone and computer"
-tap_field 1 && type_text "ws://127.0.0.1:$PORT"
-adb shell input keyevent 111
-tap_field 2 && type_text "$CODE"
+# The default needs no address: only the code.
+tap_field 1 && type_text "$CODE"
 adb shell input keyevent 111
 adb exec-out screencap -p > "$OUT/join-form.png" || true
-tap "Connect and join"
+tap "Join"
 check "the PC allowed the phone (pairing)" 'for _ in $(seq 1 60); do grep -q "^PAIRED " "$OUT/peer/events.log" && break; sleep 1; done; grep -q "^PAIRED Pixel\|^PAIRED My phone\|^PAIRED " "$OUT/peer/events.log"'
 check "phone lists CI PC as paired" 'wait_screen "Send to CI PC" 60'
 adb exec-out screencap -p > "$OUT/paired.png" || true
@@ -183,5 +175,5 @@ echo "--- phone device events ---"
 grep -o '"event":"\(DEVICE\|REMOTE\|PAIRING\)[A-Z_]*"[^}]\{0,120\}' "$OUT/igris.log" 2>/dev/null | head -30 || true
 echo "--- CI PC events ---"
 grep -v '^EVENT' "$OUT/peer/events.log" || true
-[ "$fail" = 0 ] || { echo "--- CI PC output (tail) ---"; tail -30 "$OUT/peer.out"; echo "--- relay log (tail) ---"; tail -20 "$OUT/relay.log"; }
+[ "$fail" = 0 ] || { echo "--- CI PC output (tail) ---"; tail -30 "$OUT/peer.out"; }
 exit $fail

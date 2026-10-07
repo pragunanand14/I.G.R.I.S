@@ -79,6 +79,21 @@ jobs:
       - name: Tests
         run: cargo test --workspace --locked
 
+  ntfy-live:
+    name: Cross-device over the real ntfy.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: ntfy-live
+      - name: Two IGRIS devices pair and run a task through ntfy.sh
+        env:
+          IGRIS_NTFY_LIVE: "1"
+        run: cargo test -p igris-core --lib --locked live_ntfy -- --ignored --nocapture
+
   audit:
     name: Rust dependency audit
     runs-on: ubuntu-latest

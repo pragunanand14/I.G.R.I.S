@@ -34,7 +34,8 @@ export function DevicesPanel({ disabled }: { disabled: boolean }) {
         <div className="space-y-5">
           <p className="text-xs text-muted">
             Use IGRIS across your own devices: send a task from your phone to this PC, approve actions from either one, keep memories in sync.
-            Devices connect out to a relay you run; messages are end-to-end encrypted, and the relay can't read them or run anything.
+            Pair with a code — nothing else to set up. Messages are end-to-end encrypted on your devices; the service that carries them (ntfy.sh by
+            default) can't read them or run anything.
           </p>
           <ThisDeviceSection overview={overview} disabled={disabled} />
           <ConnectionSection overview={overview} disabled={disabled} />
@@ -89,33 +90,24 @@ function ThisDeviceSection({ overview, disabled }: { overview: DevicesOverview; 
 function ConnectionSection({ overview, disabled }: { overview: DevicesOverview; disabled: boolean }) {
   const configure = useDeviceStore((s) => s.configure);
   const busy = useDeviceStore((s) => s.busy);
-  const [url, setUrl] = useState(overview.settings.relayUrl ?? "");
-  const l = linkText(overview.status);
   const s = overview.settings;
+  const [url, setUrl] = useState(s.relayUrl ?? "");
+  const [advanced, setAdvanced] = useState(Boolean(s.relayUrl));
+  const l = linkText(overview.status);
   return (
     <section>
       <Heading>Connection</Heading>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          aria-label="Relay address"
-          className={`${INPUT} min-w-0 flex-1`}
-          placeholder="wss://relay.example.com"
-          value={url}
-          disabled={disabled}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <button type="button" className={PRIMARY} disabled={disabled || busy || !url.trim()} onClick={() => void configure(url.trim(), true, s.syncMemory)}>
-          {s.enabled && url.trim() === (s.relayUrl ?? "") ? "Reconnect" : "Connect"}
-        </button>
-        {s.enabled && (
-          <button type="button" className={BUTTON} disabled={disabled || busy} onClick={() => void configure(s.relayUrl, false, s.syncMemory)}>
-            Turn off
-          </button>
-        )}
-      </div>
-      <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
-        <StatusDot tone={toneDot(l.tone)} /> {l.text}
+      <p className="flex items-center gap-1.5 text-xs text-muted">
+        <StatusDot tone={toneDot(l.tone)} />{" "}
+        {overview.status.state === "off"
+          ? "Off — it turns on by itself when you pair a device."
+          : `${l.text}${s.relayUrl ? "" : " (through ntfy.sh, free — nothing to set up)"}`}
       </p>
+      {s.enabled && (
+        <button type="button" className={`${BUTTON} mt-2`} disabled={disabled || busy} onClick={() => void configure(s.relayUrl, false, s.syncMemory)}>
+          Turn off
+        </button>
+      )}
       <div className="mt-2 flex items-center justify-between gap-4 text-sm">
         <div>
           <div className="text-fg">Sync memories</div>
@@ -123,6 +115,29 @@ function ConnectionSection({ overview, disabled }: { overview: DevicesOverview; 
         </div>
         <Toggle label="Sync memories" checked={s.syncMemory} disabled={disabled || busy} onChange={(on) => void configure(s.relayUrl, s.enabled, on)} />
       </div>
+      <button type="button" className="mt-2 text-xs text-muted underline" onClick={() => setAdvanced(!advanced)}>
+        {advanced ? "Hide advanced" : "Advanced: use my own server"}
+      </button>
+      {advanced && (
+        <div className="mt-2">
+          <p className="mb-1.5 text-xs text-muted">
+            Empty = ntfy.sh (default). Or your own ntfy server (https://…) or IGRIS relay (wss://…). Use the same on all your devices.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              aria-label="Server address"
+              className={`${INPUT} min-w-0 flex-1`}
+              placeholder="https://ntfy.sh"
+              value={url}
+              disabled={disabled}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <button type="button" className={PRIMARY} disabled={disabled || busy} onClick={() => void configure(url.trim() || null, true, s.syncMemory)}>
+              Save and connect
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -216,12 +231,10 @@ function PairedSection({ overview, disabled }: { overview: DevicesOverview; disa
 function PairingSection({ overview, disabled }: { overview: DevicesOverview; disabled: boolean }) {
   const { pairing, startPairing, cancelPairing, join, busy, pairingResult } = useDeviceStore();
   const [code, setCode] = useState("");
-  const connected = overview.status.state === "connected";
   const hasDevices = overview.devices.some((d) => d.trusted && !d.revokedAt);
   return (
     <section>
       <Heading>Pair a device</Heading>
-      {!connected && <p className="mb-2 text-xs text-muted">Connect to your relay first.</p>}
       {pairing ? (
         <div className="rounded-lg border border-accent/40 bg-accent/5 p-3">
           <div className="text-xs text-muted">On the other device, open IGRIS → Devices → "Join with a code" and enter:</div>
@@ -237,17 +250,17 @@ function PairingSection({ overview, disabled }: { overview: DevicesOverview; dis
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={PRIMARY} disabled={disabled || busy || !connected} onClick={() => void startPairing()}>
+          <button type="button" className={PRIMARY} disabled={disabled || busy} onClick={() => void startPairing()}>
             <Link2 className="mr-1 inline size-3.5" /> Show a pairing code
           </button>
           {!hasDevices && (
             <>
               <span className="text-xs text-faint">or</span>
-              <input aria-label="Pairing code" className={`${INPUT} w-60 font-mono`} placeholder="Code from your other device" value={code} disabled={disabled || !connected} onChange={(e) => setCode(e.target.value)} />
+              <input aria-label="Pairing code" className={`${INPUT} w-60 font-mono`} placeholder="Code from your other device" value={code} disabled={disabled} onChange={(e) => setCode(e.target.value)} />
               <button
                 type="button"
                 className={BUTTON}
-                disabled={disabled || busy || !connected || code.trim().length < 24}
+                disabled={disabled || busy || code.trim().length < 24}
                 onClick={() => void join(code.trim()).then((ok) => ok && setCode(""))}
               >
                 {busy ? "Waiting for the other device…" : "Join"}

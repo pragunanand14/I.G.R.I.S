@@ -1,10 +1,10 @@
 //! A stand-in "PC" for testing cross-device IGRIS against a real phone or
-//! emulator: a real device hub (real identity, relay link, pairing, envelopes,
+//! emulator: a real device hub (real identity, ntfy or relay link, pairing, envelopes,
 //! signed approvals) whose task runner, instead of an AI model, asks the phone
 //! to approve one action and then reports what happened.
 //!
 //! ```text
-//! cargo run -p igris-core --example device_peer -- ws://127.0.0.1:8787 OUT_DIR
+//! cargo run -p igris-core --example device_peer -- https://ntfy.sh OUT_DIR   # or ws://127.0.0.1:8787 (relay)
 //! ```
 //! Writes `OUT_DIR/code.txt` (the pairing code) and `OUT_DIR/events.log`
 //! (one line per event). The pairing request is allowed automatically, as a
@@ -73,7 +73,7 @@ impl TaskRunner for ApprovalRunner {
 #[tokio::main]
 async fn main() {
     let mut args = std::env::args().skip(1);
-    let url = args.next().expect("relay url");
+    let url = args.next().expect("server address (https://ntfy.sh or ws://relay)");
     let out = std::path::PathBuf::from(args.next().expect("output dir"));
     std::fs::create_dir_all(&out).unwrap();
     let log = Arc::new(Log(Mutex::new(std::fs::File::create(out.join("events.log")).unwrap())));
