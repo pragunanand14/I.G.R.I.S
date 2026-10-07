@@ -495,6 +495,25 @@ async fn over_ntfy_a_code_is_all_it_takes_and_tasks_and_approvals_work() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn over_ntfy_a_code_still_works_after_the_pc_reconnects() {
+    let ntfy = super::ntfy_mock::MockNtfy::start().await;
+    let mut pc = ntfy_node("My PC", Platform::Windows, &ntfy.url);
+    let phone = ntfy_node("Pixel", Platform::Android, &ntfy.url);
+    let code = pc.hub.start_pairing().await.unwrap();
+    // E.g. the user saves the connection settings while the code is shown.
+    pc.hub.configure(Some(&ntfy.url), true, true).unwrap();
+    let hub = phone.hub.clone();
+    let join = tokio::spawn(async move { hub.join(&code.code).await });
+    let pid = expect(&mut pc.events, "pairing request after reconnecting", |e| match e {
+        HubEvent::PairingRequest { pairing_id, .. } => Some(pairing_id.clone()),
+        _ => None,
+    })
+    .await;
+    pc.hub.confirm_pairing(&pid, true).unwrap();
+    join.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn over_ntfy_a_closed_pc_gets_the_task_when_it_opens() {
     let ntfy = super::ntfy_mock::MockNtfy::start().await;
     let mut pc = ntfy_node("My PC", Platform::Windows, &ntfy.url);

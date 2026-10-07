@@ -229,7 +229,7 @@ function PairedSection({ overview, disabled }: { overview: DevicesOverview; disa
 }
 
 function PairingSection({ overview, disabled }: { overview: DevicesOverview; disabled: boolean }) {
-  const { pairing, startPairing, cancelPairing, join, busy, pairingResult } = useDeviceStore();
+  const { pairing, startPairing, cancelPairing, join, busy, pairingResult, pairingRequests, confirmPairing } = useDeviceStore();
   const [code, setCode] = useState("");
   const hasDevices = overview.devices.some((d) => d.trusted && !d.revokedAt);
   return (
@@ -237,7 +237,7 @@ function PairingSection({ overview, disabled }: { overview: DevicesOverview; dis
       <Heading>Pair a device</Heading>
       {pairing ? (
         <div className="rounded-lg border border-accent/40 bg-accent/5 p-3">
-          <div className="text-xs text-muted">On the other device, open IGRIS → Devices → "Join with a code" and enter:</div>
+          <div className="text-xs text-muted">On your phone, open IGRIS → More → Phone and computer, type this code and tap Join:</div>
           <div className="my-2 font-mono text-xl tracking-wider text-fg" data-selectable>
             {pairing.code}
           </div>
@@ -247,6 +247,19 @@ function PairingSection({ overview, disabled }: { overview: DevicesOverview; dis
               Cancel
             </button>
           </div>
+          {pairingRequests.map((p) => (
+            <div key={p.pairingId} className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-sm text-fg">
+              <span className="flex-1">
+                Allow "{p.deviceName}" ({platformLabel(p.platform)}) to join your IGRIS?
+              </span>
+              <button type="button" className={BUTTON} onClick={() => void confirmPairing(p.pairingId, false)}>
+                Deny
+              </button>
+              <button type="button" className={PRIMARY} onClick={() => void confirmPairing(p.pairingId, true)}>
+                Allow
+              </button>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">

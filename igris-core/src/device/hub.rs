@@ -480,6 +480,11 @@ impl DeviceHub {
                     l.up = true;
                 }
                 self.set_status("connected", None);
+                // A code shown before a reconnect keeps working: listen for it again.
+                let open: Vec<String> = lock(&self.invites).iter().filter(|(_, s)| !s.invite.expired() && s.opened.is_none()).map(|(p, _)| p.clone()).collect();
+                for pid in open {
+                    self.frame(ClientFrame::PairOpen { pid });
+                }
                 self.flush_outbox();
             }
             LinkEvent::Down { reason } => {
@@ -1350,11 +1355,20 @@ impl DeviceHub {
                 if let Ok(c) = self.db.conn() {
                     registry::audit(&c, Some(from), "pairing_requested", Some(&req.device.name));
                 }
+                tracing::info!(event = "PAIRING_REQUESTED", platform = req.device.platform.as_str());
+                self.emit(HubEvent::Notice { title: "A device wants to join".into(), body: format!("Allow \"{}\" in IGRIS to connect it.", req.device.name) });
                 self.emit(HubEvent::PairingRequest { pairing_id: pid.to_string(), device_name: req.device.name.clone(), platform: req.device.platform });
             }
             Err(e) => {
                 if let Ok(c) = self.db.conn() {
                     registry::audit(&c, Some(from), "pairing_attempt_failed", Some(&e.to_string()));
+                }
+                tracing::warn!(event = "PAIRING_ATTEMPT_FAILED", error = %e);
+                if !expired {
+                    self.emit(HubEvent::Notice {
+                        title: "A device couldn't join".into(),
+                        body: "A device tried to join with this code, but the code didn't match. Check it and try again.".into(),
+                    });
                 }
                 if expired {
                     lock(&self.invites).remove(pid);
