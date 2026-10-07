@@ -80,6 +80,10 @@ export function DevicesScreen() {
             </p>
             <input
               aria-label="Relay address"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="m-input"
               placeholder="wss://relay.example.com"
               value={relay}
@@ -289,6 +293,10 @@ export function DevicesScreen() {
             </div>
             <input
               aria-label="Relay address"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="m-input"
               placeholder="wss://relay.example.com"
               value={relay}
