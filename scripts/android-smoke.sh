@@ -19,8 +19,14 @@ adb shell am start -W -n "$PKG/.MainActivity"
 sleep 30
 
 pid=$(adb shell pidof "$PKG" | tr -d '\r' || true)
-# What is on screen (the webview's text is in the accessibility tree).
-adb shell uiautomator dump /sdcard/igris-ui.xml >/dev/null 2>&1 && adb pull /sdcard/igris-ui.xml "$OUT/ui.xml" >/dev/null 2>&1 || : > "$OUT/ui.xml"
+# What is on screen. The webview builds its accessibility tree on first use,
+# so dump once to wake it, wait, and dump again.
+adb shell uiautomator dump /sdcard/igris-ui.xml >/dev/null 2>&1 || true
+sleep 5
+adb shell uiautomator dump /sdcard/igris-ui.xml 2>&1 | tail -1
+adb pull /sdcard/igris-ui.xml "$OUT/ui.xml" >/dev/null 2>&1 || : > "$OUT/ui.xml"
+echo "--- on-screen text ($(wc -c < "$OUT/ui.xml") bytes of UI dump) ---"
+grep -o -E '(text|content-desc)="[^"]+"' "$OUT/ui.xml" | sort -u | head -40 || true
 adb exec-out screencap -p > "$OUT/screen.png" || true
 adb logcat -d > "$OUT/logcat.txt" || true
 log=$(adb shell run-as "$PKG" find . -name 'igris.log*' 2>/dev/null | tr -d '\r' | head -1)
