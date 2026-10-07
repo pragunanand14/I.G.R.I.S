@@ -96,6 +96,38 @@ PY
   return 1
 }
 
+# Tap the Nth text field on screen (WebView inputs don't expose their placeholder or label).
+tap_field() {
+  for _ in $(seq 1 10); do
+    dump
+    xy=$(python3 - "$1" "$OUT/ui.xml" <<'PY'
+import re, sys
+n, path = int(sys.argv[1]), sys.argv[2]
+xml = open(path, encoding="utf-8", errors="replace").read()
+fields = []
+for node in re.findall(r"<node [^>]*>", xml):
+    a = dict(re.findall(r'([\w-]+)="([^"]*)"', node))
+    if a.get("class") == "android.widget.EditText":
+        b = list(map(int, re.findall(r"\d+", a.get("bounds", ""))))
+        if len(b) == 4 and b[2] > b[0] and b[3] > b[1]:
+            fields.append(f"{(b[0] + b[2]) // 2} {(b[1] + b[3]) // 2}")
+if len(fields) >= n:
+    print(fields[n - 1])
+PY
+)
+    if [ -n "$xy" ]; then
+      adb shell input tap $xy
+      sleep 1
+      return 0
+    fi
+    sleep 2
+  done
+  echo "::error::Couldn't find text field #$1 on screen"
+  grep -o '<node [^>]*EditText[^>]*>' "$OUT/ui.xml" | head -5 | sed 's/^/  /'
+  show
+  return 1
+}
+
 type_text() { adb shell input text "$(printf '%s' "$1" | sed 's/ /%s/g')"; sleep 1; }
 
 # Wait (up to $2 s) until the screen shows $1.
@@ -124,9 +156,9 @@ fi
 adb shell am start -n "$PKG/.MainActivity" > /dev/null
 sleep 3
 tap "More" && tap "Phone and computer"
-tap "wss://relay.example.com" && type_text "ws://127.0.0.1:$PORT"
+tap_field 1 && type_text "ws://127.0.0.1:$PORT"
 adb shell input keyevent 111
-tap "XXXX-XXXX" && type_text "$CODE"
+tap_field 2 && type_text "$CODE"
 adb shell input keyevent 111
 adb exec-out screencap -p > "$OUT/join-form.png" || true
 tap "Connect and join"
@@ -134,7 +166,7 @@ check "the PC allowed the phone (pairing)" 'for _ in $(seq 1 60); do grep -q "^P
 check "phone lists CI PC as paired" 'wait_screen "Send to CI PC" 60'
 adb exec-out screencap -p > "$OUT/paired.png" || true
 
-tap "Open Notepad" && type_text "say hello from the emulator"
+tap_field 1 && type_text "say hello from the emulator"
 adb shell input keyevent 111
 tap "Send to CI PC"
 check "CI PC received the task" 'for _ in $(seq 1 60); do grep -q "^TASK_RECEIVED" "$OUT/peer/events.log" && break; sleep 1; done; grep -q "^TASK_RECEIVED from=.* objective=say hello from the emulator" "$OUT/peer/events.log"'
