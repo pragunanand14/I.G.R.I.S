@@ -18,10 +18,11 @@ and the same React UI, adapted for phones. What changes is the device layer.
 | List the phone's apps, open one | ✅ | `list_phone_apps`, `open_phone_app` (LOW: runs with the usual policy) |
 | Battery, network, device model | ✅ | `device_status`; also feeds the System page battery |
 | Open links | ✅ | `open_url` through Android's opener |
+| Your other devices (phone ↔ PC) | ✅ | pair with your PC, send it tasks, approve its actions, memory sync — see [CROSS_DEVICE.md](CROSS_DEVICE.md). Device keys sealed by the Android Keystore. Reachable only while IGRIS is open (no push service). |
 | Files, terminal, screenshots, operator mode (controlling the screen) | ❌ | not offered to the model and not claimed in its prompt |
 
 The phone tool list is built in `src-tauri/src/tools/standard.rs` (`#[cfg(mobile)]`
-registry, 25 tools). The system prompt has a phone variant
+registry, 29 tools including the 4 cross-device tools). The system prompt has a phone variant
 (`igris-core/src/core/prompt.rs`, `DeviceKind::Phone`) that describes exactly
 these capabilities and says what the phone app can't do.
 
