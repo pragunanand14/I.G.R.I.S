@@ -19,6 +19,8 @@ adb shell am start -W -n "$PKG/.MainActivity"
 sleep 30
 
 pid=$(adb shell pidof "$PKG" | tr -d '\r' || true)
+# What is on screen (the webview's text is in the accessibility tree).
+adb shell uiautomator dump /sdcard/igris-ui.xml >/dev/null 2>&1 && adb pull /sdcard/igris-ui.xml "$OUT/ui.xml" >/dev/null 2>&1 || : > "$OUT/ui.xml"
 adb exec-out screencap -p > "$OUT/screen.png" || true
 adb logcat -d > "$OUT/logcat.txt" || true
 log=$(adb shell run-as "$PKG" find . -name 'igris.log*' 2>/dev/null | tr -d '\r' | head -1)
@@ -40,5 +42,8 @@ check "app process is running (pid ${pid:-none})" '[ -n "$pid" ]'
 check "IGRIS started (APP_STARTED)" 'grep -q "\"event\":\"APP_STARTED\"" "$OUT/igris.log"'
 check "phone tool set registered ($EXPECTED_TOOLS tools)" 'grep -q "\"event\":\"TOOLS_REGISTERED\",\"count\":$EXPECTED_TOOLS" "$OUT/igris.log"'
 check "device plugin answered (PHONE_READY)" 'grep -q "\"event\":\"PHONE_READY\"" "$OUT/igris.log"'
+# Text only the backend can supply proves the UI is up and its IPC reaches Rust.
+check "UI rendered and reached the backend (AI status from Rust on screen)" 'grep -q "No AI provider configured" "$OUT/ui.xml"'
+check "UI did not report the backend as unavailable" '! grep -q "backend is unavailable" "$OUT/ui.xml"'
 check "no crash in logcat" '! grep -qE "FATAL EXCEPTION.*|panicked at" "$OUT/logcat.txt"'
 exit $fail
