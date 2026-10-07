@@ -45,8 +45,6 @@ export function MoreScreen() {
         </div>
       </Section>
 
-      <AiSection />
-
       <Section title="Your devices">
         <div className="m-card">
           <Link to="/more/devices" className="m-row">
@@ -61,6 +59,8 @@ export function MoreScreen() {
           </Link>
         </div>
       </Section>
+
+      <AiSection />
 
       <Section title="Appearance">
         <div className="m-card space-y-4 p-4">

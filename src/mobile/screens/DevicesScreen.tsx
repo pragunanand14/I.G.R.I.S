@@ -1,12 +1,42 @@
-import { Laptop, Link2, Pause, Play, ShieldCheck, Smartphone, Square } from "lucide-react";
+import {
+  Laptop,
+  Link2,
+  Pause,
+  Play,
+  ShieldCheck,
+  Smartphone,
+  Square,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useDeviceStore } from "@/stores/deviceStore";
-import { CAPABILITY_LABEL, isActive, keyProtectionText, linkText, platformLabel, taskStatusText, taskTone } from "@/components/devices/deviceText";
+import {
+  CAPABILITY_LABEL,
+  isActive,
+  keyProtectionText,
+  linkText,
+  platformLabel,
+  taskStatusText,
+  taskTone,
+} from "@/components/devices/deviceText";
 import { Dot, Screen, Section, Switch } from "../ui";
 
 /** More → Your devices: connect, pair with your PC, send tasks, see what's happening. */
 export function DevicesScreen() {
-  const { overview, error, busy, refresh, configure, join, startPairing, cancelPairing, pairing, pairingResult, revoke, sendTask, control } = useDeviceStore();
+  const {
+    overview,
+    error,
+    busy,
+    refresh,
+    configure,
+    connectAndJoin,
+    startPairing,
+    cancelPairing,
+    pairing,
+    pairingResult,
+    revoke,
+    sendTask,
+    control,
+  } = useDeviceStore();
   const [url, setUrl] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [text, setText] = useState("");
@@ -30,11 +60,75 @@ export function DevicesScreen() {
   const target = devices.find((d) => d.platform !== "android") ?? devices[0];
 
   return (
-    <Screen title="Your devices" subtitle="Use IGRIS on your phone and your computer together." back="/more">
+    <Screen
+      title="Your devices"
+      subtitle="Use IGRIS on your phone and your computer together."
+      back="/more"
+    >
       {error && (
         <p role="alert" className="text-sm" style={{ color: "var(--m-bad)" }}>
           {error}
         </p>
+      )}
+
+      {devices.length === 0 && (
+        <Section title="Connect to your computer">
+          <div className="m-card space-y-3 p-4">
+            <p className="m-muted text-sm">
+              On your computer: Settings → Devices → "Show a pairing code". Then
+              enter your relay address and that code here.
+            </p>
+            <input
+              aria-label="Relay address"
+              className="m-input"
+              placeholder="wss://relay.example.com"
+              value={relay}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <input
+              aria-label="Pairing code"
+              className="m-input font-mono tracking-wider uppercase"
+              placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+              value={code}
+              autoCapitalize="characters"
+              autoCorrect="off"
+              onChange={(e) => setCode(e.target.value)}
+            />
+            <button
+              type="button"
+              className="m-button m-button-primary w-full"
+              disabled={
+                busy ||
+                !relay.trim() ||
+                code.replace(/[^0-9a-z]/gi, "").length < 24
+              }
+              onClick={() =>
+                void connectAndJoin(relay.trim(), code.trim()).then(
+                  (ok) => ok && setCode(""),
+                )
+              }
+            >
+              <Link2 className="size-4" />{" "}
+              {busy
+                ? "Waiting for your computer to allow it…"
+                : "Connect and join"}
+            </button>
+            <div className="flex items-center gap-2 text-sm">
+              <Dot tone={link.tone} />
+              <span className="m-muted">{link.text}</span>
+            </div>
+            {pairingResult && (
+              <p
+                className="text-sm"
+                style={{
+                  color: pairingResult.ok ? "var(--m-ok)" : "var(--m-bad)",
+                }}
+              >
+                {pairingResult.message}
+              </p>
+            )}
+          </div>
+        </Section>
       )}
 
       {devices.length > 0 && target && (
@@ -52,11 +146,20 @@ export function DevicesScreen() {
               type="button"
               className="m-button m-button-primary w-full"
               disabled={busy || !text.trim()}
-              onClick={() => void sendTask(target.deviceId, text.trim()).then((t) => t && setText(""))}
+              onClick={() =>
+                void sendTask(target.deviceId, text.trim()).then(
+                  (t) => t && setText(""),
+                )
+              }
             >
               Send to {target.name}
             </button>
-            {!connected && <p className="m-muted text-sm">Not connected right now — it will be sent when the connection is back (within 10 minutes).</p>}
+            {!connected && (
+              <p className="m-muted text-sm">
+                Not connected right now — it will be sent when the connection is
+                back (within 10 minutes).
+              </p>
+            )}
           </div>
         </Section>
       )}
@@ -72,19 +175,35 @@ export function DevicesScreen() {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium break-words">{t.objective}</div>
                   <div className="m-muted text-sm">{taskStatusText(t)}</div>
-                  {t.detail && !t.detail.startsWith(taskStatusText(t)) && <div className="m-faint mt-0.5 text-sm break-words">{t.detail}</div>}
+                  {t.detail && !t.detail.startsWith(taskStatusText(t)) && (
+                    <div className="m-faint mt-0.5 text-sm break-words">
+                      {t.detail}
+                    </div>
+                  )}
                   {t.direction === "outgoing" && isActive(t) && (
                     <div className="mt-2 flex gap-2">
                       {t.status === "paused" ? (
-                        <button type="button" className="m-button" onClick={() => void control(t.requestId, "resume")}>
+                        <button
+                          type="button"
+                          className="m-button"
+                          onClick={() => void control(t.requestId, "resume")}
+                        >
                           <Play className="size-4" /> Resume
                         </button>
                       ) : (
-                        <button type="button" className="m-button" onClick={() => void control(t.requestId, "pause")}>
+                        <button
+                          type="button"
+                          className="m-button"
+                          onClick={() => void control(t.requestId, "pause")}
+                        >
                           <Pause className="size-4" /> Pause
                         </button>
                       )}
-                      <button type="button" className="m-button" onClick={() => void control(t.requestId, "stop")}>
+                      <button
+                        type="button"
+                        className="m-button"
+                        onClick={() => void control(t.requestId, "stop")}
+                      >
                         <Square className="size-4" /> Stop
                       </button>
                     </div>
@@ -98,21 +217,40 @@ export function DevicesScreen() {
 
       <Section title="Paired">
         <div className="m-card">
-          {devices.length === 0 && <p className="m-row m-muted text-sm">No devices yet. Connect, then join with the code your computer shows.</p>}
+          {devices.length === 0 && (
+            <p className="m-row m-muted text-sm">No devices yet.</p>
+          )}
           {devices.map((d) => (
             <div key={d.deviceId} className="m-row items-start">
-              <span className="m-icon-badge">{d.platform === "android" ? <Smartphone className="size-5" /> : <Laptop className="size-5" />}</span>
+              <span className="m-icon-badge">
+                {d.platform === "android" ? (
+                  <Smartphone className="size-5" />
+                ) : (
+                  <Laptop className="size-5" />
+                )}
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 font-medium">
                   {d.name} <Dot tone={d.online ? "ok" : "warn"} />
                 </div>
                 <div className="m-muted text-sm">
-                  {platformLabel(d.platform)} · {d.online ? "online" : `${d.name} is offline`}
+                  {platformLabel(d.platform)} ·{" "}
+                  {d.online ? "online" : `${d.name} is offline`}
                 </div>
-                {d.capabilities.length > 0 && <div className="m-faint mt-1 text-sm">{d.capabilities.map((c) => CAPABILITY_LABEL[c] ?? c).join(" · ")}</div>}
+                {d.capabilities.length > 0 && (
+                  <div className="m-faint mt-1 text-sm">
+                    {d.capabilities
+                      .map((c) => CAPABILITY_LABEL[c] ?? c)
+                      .join(" · ")}
+                  </div>
+                )}
                 {confirm === d.deviceId ? (
                   <div className="mt-2 flex gap-2">
-                    <button type="button" className="m-button flex-1" onClick={() => setConfirm(null)}>
+                    <button
+                      type="button"
+                      className="m-button flex-1"
+                      onClick={() => setConfirm(null)}
+                    >
                       Keep
                     </button>
                     <button
@@ -128,7 +266,11 @@ export function DevicesScreen() {
                     </button>
                   </div>
                 ) : (
-                  <button type="button" className="m-muted mt-1 text-sm underline" onClick={() => setConfirm(d.deviceId)}>
+                  <button
+                    type="button"
+                    className="m-muted mt-1 text-sm underline"
+                    onClick={() => setConfirm(d.deviceId)}
+                  >
                     Remove from this phone
                   </button>
                 )}
@@ -138,26 +280,52 @@ export function DevicesScreen() {
         </div>
       </Section>
 
-      <Section title="Connection">
-        <div className="m-card space-y-3 p-4">
-          <div className="flex items-center gap-2">
-            <Dot tone={link.tone} />
-            <span className="text-[15px]">{link.text}</span>
-          </div>
-          <input aria-label="Relay address" className="m-input" placeholder="wss://relay.example.com" value={relay} onChange={(e) => setUrl(e.target.value)} />
-          <div className="flex gap-2">
-            <button type="button" className="m-button m-button-primary flex-1" disabled={busy || !relay.trim()} onClick={() => void configure(relay.trim(), true, s.syncMemory)}>
-              {s.enabled ? "Reconnect" : "Connect"}
-            </button>
-            {s.enabled && (
-              <button type="button" className="m-button flex-1" disabled={busy} onClick={() => void configure(s.relayUrl, false, s.syncMemory)}>
-                Turn off
+      {devices.length > 0 && (
+        <Section title="Connection">
+          <div className="m-card space-y-3 p-4">
+            <div className="flex items-center gap-2">
+              <Dot tone={link.tone} />
+              <span className="text-[15px]">{link.text}</span>
+            </div>
+            <input
+              aria-label="Relay address"
+              className="m-input"
+              placeholder="wss://relay.example.com"
+              value={relay}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="m-button m-button-primary flex-1"
+                disabled={busy || !relay.trim()}
+                onClick={() => void configure(relay.trim(), true, s.syncMemory)}
+              >
+                {s.enabled ? "Reconnect" : "Connect"}
               </button>
-            )}
+              {s.enabled && (
+                <button
+                  type="button"
+                  className="m-button flex-1"
+                  disabled={busy}
+                  onClick={() =>
+                    void configure(s.relayUrl, false, s.syncMemory)
+                  }
+                >
+                  Turn off
+                </button>
+              )}
+            </div>
+            <p className="m-muted text-sm">
+              The same address as on your computer. Messages are end-to-end
+              encrypted; the relay can't read them.
+            </p>
           </div>
-          <p className="m-muted text-sm">The same address as on your computer. Messages are end-to-end encrypted; the relay can't read them.</p>
-        </div>
-        <div className="m-card mt-3">
+        </Section>
+      )}
+
+      <Section title="Memory sync">
+        <div className="m-card">
           <Switch
             label="Sync memories"
             description="Keep what IGRIS remembers the same on your devices. Chats, files, settings and keys are never synced."
@@ -168,50 +336,46 @@ export function DevicesScreen() {
         </div>
       </Section>
 
-      <Section title={devices.length === 0 ? "Join your computer" : "Add a device"}>
-        <div className="m-card space-y-3 p-4">
-          {devices.length === 0 ? (
-            <>
-              <p className="m-muted text-sm">On your computer: Settings → Devices → "Show a pairing code". Then type it here.</p>
-              <input
-                aria-label="Pairing code"
-                className="m-input font-mono tracking-wider uppercase"
-                placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-                value={code}
-                autoCapitalize="characters"
-                autoCorrect="off"
-                onChange={(e) => setCode(e.target.value)}
-              />
+      {devices.length > 0 && (
+        <Section title="Add a device">
+          <div className="m-card space-y-3 p-4">
+            {pairing ? (
+              <>
+                <p className="m-muted text-sm">On the new device, enter:</p>
+                <div className="font-mono text-xl tracking-wider">
+                  {pairing.code}
+                </div>
+                <button
+                  type="button"
+                  className="m-button w-full"
+                  onClick={() => void cancelPairing()}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                className="m-button m-button-primary w-full"
-                disabled={busy || !connected || code.replace(/[^0-9a-z]/gi, "").length < 24}
-                onClick={() => void join(code.trim()).then((ok) => ok && setCode(""))}
+                className="m-button w-full"
+                disabled={busy || !connected}
+                onClick={() => void startPairing()}
               >
-                <Link2 className="size-4" /> {busy ? "Waiting for your computer to allow it…" : "Join"}
+                Show a pairing code
               </button>
-              {!connected && <p className="m-muted text-sm">Connect first (above).</p>}
-            </>
-          ) : pairing ? (
-            <>
-              <p className="m-muted text-sm">On the new device, enter:</p>
-              <div className="font-mono text-xl tracking-wider">{pairing.code}</div>
-              <button type="button" className="m-button w-full" onClick={() => void cancelPairing()}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button type="button" className="m-button w-full" disabled={busy || !connected} onClick={() => void startPairing()}>
-              Show a pairing code
-            </button>
-          )}
-          {pairingResult && (
-            <p className="text-sm" style={{ color: pairingResult.ok ? "var(--m-ok)" : "var(--m-bad)" }}>
-              {pairingResult.message}
-            </p>
-          )}
-        </div>
-      </Section>
+            )}
+            {pairingResult && (
+              <p
+                className="text-sm"
+                style={{
+                  color: pairingResult.ok ? "var(--m-ok)" : "var(--m-bad)",
+                }}
+              >
+                {pairingResult.message}
+              </p>
+            )}
+          </div>
+        </Section>
+      )}
 
       <Section title="This phone">
         <div className="m-card">
@@ -220,8 +384,10 @@ export function DevicesScreen() {
               <ShieldCheck className="size-5" />
             </span>
             <div className="m-muted min-w-0 flex-1 text-sm">
-              "{overview.thisDevice.name}" · {keyProtectionText(overview.thisDevice.keyProtection)}. Its keys never leave the phone. Your computer decides what
-              it runs; this phone can only ask, approve, pause or stop its own requests.
+              "{overview.thisDevice.name}" ·{" "}
+              {keyProtectionText(overview.thisDevice.keyProtection)}. Its keys
+              never leave the phone. Your computer decides what it runs; this
+              phone can only ask, approve, pause or stop its own requests.
             </div>
           </div>
         </div>

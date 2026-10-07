@@ -44,6 +44,8 @@ interface DeviceStore {
   cancelPairing: () => Promise<void>;
   confirmPairing: (pairingId: string, allow: boolean) => Promise<void>;
   join: (code: string) => Promise<boolean>;
+  /** First pairing in one step: connect to the relay (if needed), then join with the code. */
+  connectAndJoin: (relayUrl: string, code: string) => Promise<boolean>;
   revoke: (deviceId: string) => Promise<void>;
   forget: (deviceId: string) => Promise<void>;
   renameThis: (name: string) => Promise<void>;
@@ -153,6 +155,24 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
       set({ pairingResult: null });
       const d = await run(() => api.devicesJoin(code));
       return d !== null;
+    },
+
+    connectAndJoin: async (relayUrl, code) => {
+      set({ pairingResult: null });
+      const s = get().overview?.settings;
+      if (!s || !s.enabled || s.relayUrl !== relayUrl || get().overview?.status.state !== "connected") {
+        if (!(await get().configure(relayUrl, true, s?.syncMemory ?? true))) return false;
+        // Wait (up to 20 s) for the relay connection before sending the code.
+        for (let i = 0; i < 40 && get().overview?.status.state !== "connected"; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          await get().refresh();
+        }
+        if (get().overview?.status.state !== "connected") {
+          set({ error: `Couldn't connect to the relay: ${get().overview?.status.detail ?? "no answer"}` });
+          return false;
+        }
+      }
+      return get().join(code);
     },
 
     revoke: async (deviceId) => void (await run(() => api.devicesRevoke(deviceId))),

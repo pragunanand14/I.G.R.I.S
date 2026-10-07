@@ -89,7 +89,8 @@ PY
     fi
     sleep 1
   done
-  echo "::error::Couldn't find \"$1\" on screen"
+  echo "::error::Couldn't find \"$1\" on screen (screen height $H)"
+  grep -o "<node [^>]*$1[^>]*>" "$OUT/ui.xml" | grep -o 'bounds="[^"]*"' | head -5 | sed 's/^/  match /'
   show
   adb exec-out screencap -p > "$OUT/missing-$(echo "$1" | tr -cd 'A-Za-z0-9').png" || true
   return 1
@@ -125,11 +126,10 @@ sleep 3
 tap "More" && tap "Phone and computer"
 tap "wss://relay.example.com" && type_text "ws://127.0.0.1:$PORT"
 adb shell input keyevent 111
-tap "Connect"
-check "phone connected to the relay" 'wait_screen "Connected" 45'
 tap "XXXX-XXXX" && type_text "$CODE"
 adb shell input keyevent 111
-tap "Join"
+adb exec-out screencap -p > "$OUT/join-form.png" || true
+tap "Connect and join"
 check "the PC allowed the phone (pairing)" 'for _ in $(seq 1 60); do grep -q "^PAIRED " "$OUT/peer/events.log" && break; sleep 1; done; grep -q "^PAIRED Pixel\|^PAIRED My phone\|^PAIRED " "$OUT/peer/events.log"'
 check "phone lists CI PC as paired" 'wait_screen "Send to CI PC" 60'
 adb exec-out screencap -p > "$OUT/paired.png" || true
