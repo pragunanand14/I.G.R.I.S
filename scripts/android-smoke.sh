@@ -6,7 +6,7 @@ set -uo pipefail
 
 PKG=dev.igris.app
 OUT=android-artifacts
-EXPECTED_TOOLS=25
+EXPECTED_TOOLS=29
 mkdir -p "$OUT"
 
 apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
@@ -48,6 +48,7 @@ check "app process is running (pid ${pid:-none})" '[ -n "$pid" ]'
 check "IGRIS started (APP_STARTED)" 'grep -q "\"event\":\"APP_STARTED\"" "$OUT/igris.log"'
 check "phone tool set registered ($EXPECTED_TOOLS tools)" 'grep -q "\"event\":\"TOOLS_REGISTERED\",\"count\":$EXPECTED_TOOLS" "$OUT/igris.log"'
 check "device plugin answered (PHONE_READY)" 'grep -q "\"event\":\"PHONE_READY\"" "$OUT/igris.log"'
+check "device keys sealed by the Android Keystore (DEVICE_IDENTITY_READY)" 'grep -q "\"event\":\"DEVICE_IDENTITY_READY\",\"protector\":\"android-keystore\"" "$OUT/igris.log"'
 # Text only the backend can supply proves the UI is up and its IPC reaches Rust.
 check "UI rendered and reached the backend (AI status from Rust on screen)" 'grep -q "No AI provider configured" "$OUT/ui.xml"'
 check "UI did not report the backend as unavailable" '! grep -q "backend is unavailable" "$OUT/ui.xml"'
