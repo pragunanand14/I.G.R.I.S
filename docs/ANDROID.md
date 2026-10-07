@@ -115,3 +115,11 @@ phone's real battery (via the plugin) shows on Home.
 Android; voice on a device; opening an app by voice/chat end to end; release
 (signed, minified) builds. The debug APK is large (≈600 MB: unstripped debug
 symbols for two architectures); release builds are much smaller.
+
+### Cross-device on the emulator
+
+Android workflow run `37605750133` (commit `be90ffd`): after the smoke checks
+(now including "device keys sealed by the Android Keystore"), the phone UI
+connected to a relay on the CI host, joined a real IGRIS device hub with its
+pairing code, sent it a task, approved its action with a signed approval and
+showed "Done — completed on CI PC". See [CROSS_DEVICE.md](CROSS_DEVICE.md#test-results).

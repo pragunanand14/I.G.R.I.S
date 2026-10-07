@@ -183,11 +183,21 @@ notified, and the PC must have IGRIS running to receive tasks.
 * Linux/macOS builds keep device keys without OS protection.
 * A device can be part of one IGRIS at a time; joining another requires
   removing its devices first.
-* Tested: unit tests, a real relay with two IGRIS hubs on loopback (pairing,
-  remote task through the real chat/orchestrator path, signed approval, deny,
-  stop, offline queue, memory sync, revocation), relay security tests, DPAPI on
-  the Windows CI runner. **Not yet tested on a physical Android phone talking to
-  a physical Windows PC over the internet.**
+* **Not yet tested on a physical Android phone talking to a physical Windows
+  PC over the internet** (see Test results for what has been run).
+
+## Test results
+
+| Test | Where | Result |
+|---|---|---|
+| Crypto, pairing, approvals, replay, registry, sync, targeting (unit) | `cargo test -p igris-core device::` | PASS |
+| Relay over real sockets: auth, mutual routing, presence, offline queue, pairing limits, floods | `igris-relay/tests/relay.rs` | PASS (6) |
+| Two IGRIS hubs + real relay on loopback: pairing with confirmation; a task from the "phone" run on the "PC" through the real chat → orchestrator → executor path (scripted model) with a signed remote approval, verified by the PC's read-back; remote deny; remote stop; offline PC gets the queued task on reconnect; memory sync both ways incl. delete; revocation; wrong code / denied pairing; no relay | `igris-core/src/device/e2e_tests.rs` | PASS (7) |
+| DPAPI seal/unseal round trip | Windows CI runner | PASS |
+| **Real Android runtime:** the APK on an Android 14 emulator seals its device keys with the Android Keystore, connects to a real relay on the CI host, pairs with a real IGRIS device hub ("CI PC", `igris-core/examples/device_peer.rs`) by typing the code in the phone UI, sends a task from the phone UI, approves the PC's action on the phone (signed approval verified on the PC) and shows "Done — completed on CI PC" | `scripts/android-cross-device.sh`, Android workflow run 37605750133 | PASS |
+
+The CI PC's task runner stands in for the AI model (it asks for one approval and
+reports the result); the real chat path is covered by the loopback tests above.
 
 ## Troubleshooting
 
