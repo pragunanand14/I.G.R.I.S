@@ -1,12 +1,27 @@
 name: Release
 
 # Builds the Windows installers (NSIS .exe and .msi). Pushing a tag like v0.2.0
-# creates a draft GitHub release with them; running it manually just uploads the
-# installers as workflow artifacts.
+# creates a draft GitHub release with them; a push to main that changes the app
+# (or running it manually) uploads the installers as workflow artifacts, so the
+# latest main always has a fresh installer.
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths:
+      - "igris-core/**"
+      - "igris-relay/**"
+      - "src-tauri/**"
+      - "plugins/**"
+      - "src/**"
+      - "package.json"
+      - "Cargo.lock"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
