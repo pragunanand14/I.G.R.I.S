@@ -1,5 +1,5 @@
-import { AlertTriangle, Settings as SettingsIcon, X } from "lucide-react";
-import { useEffect } from "react";
+import { AlertTriangle, History, Settings as SettingsIcon, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Composer } from "@/components/chat/Composer";
 import { ConversationList } from "@/components/chat/ConversationList";
@@ -7,9 +7,16 @@ import { MessageList } from "@/components/chat/MessageList";
 import { TaskCard } from "@/components/chat/TaskCard";
 import { AiCore } from "@/components/core/AiCore";
 import { useCoreState } from "@/hooks/useCoreState";
+import { isMobilePlatform } from "@/services/platform";
 import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useTaskStore } from "@/stores/taskStore";
+
+// What IGRIS can do on this device (the phone app can't see the screen or use files).
+const DESKTOP_ABILITIES =
+  "I can search the web, look at images, PDFs and your screen, work with files in folders you share, manage tasks and reminders, open apps you allow and remember what matters.";
+const PHONE_ABILITIES =
+  "I can search the web, look at images and PDFs, manage tasks and reminders, open your apps and links, check your battery and remember what matters.";
 
 export function ChatPage() {
   const backend = useAppStore((s) => s.backend);
@@ -28,6 +35,7 @@ export function ChatPage() {
     if (backend === "ready" && s.activeId) void loadTasks(s.activeId);
   }, [backend, s.activeId, loadTasks]);
 
+  const [historyOpen, setHistoryOpen] = useState(false);
   const active = s.conversations.find((c) => c.id === s.activeId) ?? null;
   const streamingHere = s.streaming !== null && (s.streaming.conversationId === s.activeId || s.streaming.conversationId === null);
   const streamingElsewhere = s.streaming !== null && !streamingHere;
@@ -43,19 +51,34 @@ export function ChatPage() {
           : undefined;
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       <ConversationList
         conversations={s.conversations}
         activeId={s.activeId}
         busyId={s.streaming?.conversationId ?? null}
-        onSelect={(id) => void s.openConversation(id)}
+        onSelect={(id) => {
+          setHistoryOpen(false);
+          void s.openConversation(id);
+        }}
         onRename={s.rename}
         onDelete={s.remove}
+        openOnNarrow={historyOpen}
       />
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line px-6">
-          <h1 className="truncate text-sm text-fg">{active?.title ?? "New conversation"}</h1>
+        <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line px-4 md:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              aria-label="Conversations"
+              title="Conversations"
+              className="grid size-8 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-hover hover:text-fg md:hidden"
+            >
+              <History className="size-4" />
+            </button>
+            <h1 className="truncate text-sm text-fg">{active?.title ?? "New conversation"}</h1>
+          </div>
           {s.aiStatus?.effectiveModel && (
             <span className="shrink-0 rounded-md border border-line px-2 py-0.5 font-mono text-[10px] text-muted" title="Model used for new messages">
               {s.aiStatus.provider} · {s.aiStatus.effectiveModel}
@@ -95,7 +118,7 @@ export function ChatPage() {
                 <AiCore state={coreState} size={140} />
                 <div>
                   <p className="text-base font-light text-fg">How can I help?</p>
-                  <p className="mt-1 text-xs text-faint">I can search the web, look at images, PDFs and your screen, work with files in folders you share, manage tasks and reminders, open apps you allow and remember what matters.</p>
+                  <p className="mt-1 text-xs text-faint">{isMobilePlatform() ? PHONE_ABILITIES : DESKTOP_ABILITIES}</p>
                 </div>
               </>
             )}
@@ -111,7 +134,7 @@ export function ChatPage() {
           />
         )}
 
-        <div className="mx-auto w-full max-w-3xl px-6 pb-5">
+        <div className="mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5">
           <TaskCard conversationId={s.activeId} busy={s.streaming !== null} onResume={(id, cid) => void s.resumeTask(id, cid)} />
           <Composer
             key={s.activeId ?? "new"}

@@ -23,15 +23,19 @@ interface Props {
   onSelect: (id: string | null) => void;
   onRename: (id: string, title: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
+  /** Narrow screens: the list is a panel over the chat, shown on request. Wide screens always show it. */
+  openOnNarrow?: boolean;
 }
 
-export function ConversationList({ conversations, activeId, busyId, onSelect, onRename, onDelete }: Props) {
+export function ConversationList({ conversations, activeId, busyId, onSelect, onRename, onDelete, openOnNarrow = false }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-bg/60">
+    <aside
+      className={`${openOnNarrow ? "absolute inset-0 z-20 flex w-full bg-bg" : "hidden"} shrink-0 flex-col border-r border-line md:static md:z-auto md:flex md:w-64 md:bg-bg/60`}
+    >
       <div className="p-3">
         <button
           type="button"

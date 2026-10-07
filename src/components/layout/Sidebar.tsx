@@ -2,6 +2,7 @@ import { NavLink } from "react-router";
 import { NAV_ITEMS } from "@/config/navigation";
 import { useAppStore } from "@/stores/appStore";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { DESKTOP_ONLY_PATHS, isMobilePlatform } from "@/services/platform";
 
 export function Sidebar() {
   const backend = useAppStore((s) => s.backend);
@@ -9,10 +10,15 @@ export function Sidebar() {
   const backendLabel =
     backend === "ready" ? "Backend connected" : backend === "connecting" ? "Connecting to backend" : "Backend unavailable";
 
+  const items = isMobilePlatform() ? NAV_ITEMS.filter((i) => !DESKTOP_ONLY_PATHS.includes(i.path)) : NAV_ITEMS;
+
   return (
-    <nav aria-label="Primary" className="flex w-[72px] shrink-0 flex-col items-center border-r border-line bg-bg py-3">
-      <ul className="flex flex-1 flex-col items-center gap-1">
-        {NAV_ITEMS.map((item) => {
+    <nav
+      aria-label="Primary"
+      className="flex w-full shrink-0 flex-row items-center border-t border-line bg-bg px-1 py-1 md:w-[72px] md:flex-col md:border-t-0 md:border-r md:px-0 md:py-3"
+    >
+      <ul className="flex min-w-0 flex-1 flex-row items-center gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+        {items.map((item) => {
           const Icon = item.icon;
           const planned = item.plannedPhase !== undefined;
           return (
@@ -29,7 +35,9 @@ export function Sidebar() {
               >
                 {({ isActive }) => (
                   <>
-                    {isActive && <span className="absolute top-2 bottom-2 -left-2 w-0.5 rounded-full bg-accent" />}
+                    {isActive && (
+                      <span className="absolute -top-1 right-3 left-3 h-0.5 rounded-full bg-accent md:top-2 md:right-auto md:bottom-2 md:-left-2 md:h-auto md:w-0.5" />
+                    )}
                     <Icon className="size-[18px]" strokeWidth={1.6} />
                     <span className="text-[10px] leading-none">{item.label}</span>
                     {planned && (
@@ -44,7 +52,7 @@ export function Sidebar() {
           );
         })}
       </ul>
-      <div className="flex flex-col items-center gap-1 pt-2" title={backendLabel} aria-label={backendLabel} role="status">
+      <div className="hidden flex-col items-center gap-1 pt-2 md:flex" title={backendLabel} aria-label={backendLabel} role="status">
         <StatusDot tone={tone} pulse={backend === "connecting"} />
         <span className="text-[9px] tracking-wider text-faint uppercase">Core</span>
       </div>

@@ -33,7 +33,7 @@ const INTERVALS = [
 
 function Field({ label, description, children }: { label: string; description?: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-6 border-b border-line py-3.5 last:border-0">
+    <div className="flex flex-col items-stretch gap-3 border-b border-line py-3.5 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
       <div className="min-w-0">
         <div className="text-sm text-fg">{label}</div>
         {description && <div className="mt-0.5 text-xs text-muted">{description}</div>}

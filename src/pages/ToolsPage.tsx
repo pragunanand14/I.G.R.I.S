@@ -7,12 +7,14 @@ import { PermissionBadge } from "@/components/ui/PermissionBadge";
 import { SharedFolders } from "@/components/tools/SharedFolders";
 import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
+import { isMobilePlatform } from "@/services/platform";
 import { useAppStore } from "@/stores/appStore";
 import type { AppCandidate, AppEntry, ToolInfo } from "@/types/tools";
 
 type Notice = { ok: boolean; text: string } | null;
 
 export function ToolsPage() {
+  const mobile = isMobilePlatform();
   const backend = useAppStore((s) => s.backend);
   const platform = useAppStore((s) => s.info?.platform);
   const [tools, setTools] = useState<ToolInfo[]>([]);
@@ -136,7 +138,7 @@ export function ToolsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-8">
+    <div className="mx-auto max-w-4xl p-4 md:p-8">
       <PageHeader
         title="Tools"
         description="The only actions IGRIS can take. Every call is validated, checked against your permission policy and written to the audit log."
@@ -171,131 +173,136 @@ export function ToolsPage() {
           </ul>
         </Panel>
 
-        <SharedFolders onNotice={onFolderNotice} />
+        {/* Shared folders and desktop applications don't exist on phones. */}
+        {!mobile && (
+          <>
+            <SharedFolders onNotice={onFolderNotice} />
 
-        <Panel
-          title="Applications IGRIS may open"
-          action={
-            <button
-              type="button"
-              onClick={() => void scan()}
-              disabled={scanning}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+            <Panel
+              title="Applications IGRIS may open"
+              action={
+                <button
+                  type="button"
+                  onClick={() => void scan()}
+                  disabled={scanning}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+                >
+                  <ScanSearch className="size-3.5" />
+                  {scanning ? "Scanning…" : "Find installed apps"}
+                </button>
+              }
             >
-              <ScanSearch className="size-3.5" />
-              {scanning ? "Scanning…" : "Find installed apps"}
-            </button>
-          }
-        >
-          <p className="mb-3 text-xs text-muted">
-            IGRIS can only open applications on this list, by name. It never receives paths, arguments or a command line.
-          </p>
+              <p className="mb-3 text-xs text-muted">
+                IGRIS can only open applications on this list, by name. It never receives paths, arguments or a command line.
+              </p>
 
-          {candidates && (
-            <div className="mb-4 rounded-lg border border-line bg-surface p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-label">Found on this computer</p>
-                {candidates.length > 1 && (
-                  <button type="button" onClick={() => void addAll()} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10">
-                    Add all ({candidates.length})
-                  </button>
-                )}
-              </div>
-              {candidates.length === 0 ? (
-                <p className="text-xs text-faint">No additional well-known apps found. Add one manually below.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {candidates.map((c) => (
-                    <button
-                      key={c.path}
-                      type="button"
-                      title={c.path}
-                      onClick={() => void add(c.name, c.path)}
-                      className="flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs text-fg hover:border-accent hover:text-accent"
-                    >
-                      <Plus className="size-3" /> {c.name}
-                    </button>
-                  ))}
+              {candidates && (
+                <div className="mb-4 rounded-lg border border-line bg-surface p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-label">Found on this computer</p>
+                    {candidates.length > 1 && (
+                      <button type="button" onClick={() => void addAll()} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10">
+                        Add all ({candidates.length})
+                      </button>
+                    )}
+                  </div>
+                  {candidates.length === 0 ? (
+                    <p className="text-xs text-faint">No additional well-known apps found. Add one manually below.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {candidates.map((c) => (
+                        <button
+                          key={c.path}
+                          type="button"
+                          title={c.path}
+                          onClick={() => void add(c.name, c.path)}
+                          className="flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs text-fg hover:border-accent hover:text-accent"
+                        >
+                          <Plus className="size-3" /> {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {apps.length === 0 ? (
-            <p className="py-2 text-sm text-faint">No applications yet.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {apps.map((a) => (
-                <li key={a.id} className="flex items-center gap-3 py-2.5">
-                  <AppWindow className="size-4 shrink-0 text-muted" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-fg">{a.name}</div>
-                    <div className="truncate font-mono text-[10px] text-faint" title={a.path} data-selectable>
-                      {a.path}
-                    </div>
+              {apps.length === 0 ? (
+                <p className="py-2 text-sm text-faint">No applications yet.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {apps.map((a) => (
+                    <li key={a.id} className="flex items-center gap-3 py-2.5">
+                      <AppWindow className="size-4 shrink-0 text-muted" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm text-fg">{a.name}</div>
+                        <div className="truncate font-mono text-[10px] text-faint" title={a.path} data-selectable>
+                          {a.path}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void launch(a)}
+                        disabled={busyId === a.id}
+                        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+                      >
+                        <Play className="size-3" /> {busyId === a.id ? "Opening…" : "Open"}
+                      </button>
+                      {confirmRemove === a.id ? (
+                        <button type="button" onClick={() => void remove(a)} onMouseLeave={() => setConfirmRemove(null)} className="rounded-md px-2 py-1 text-xs font-medium text-danger hover:bg-danger/10">
+                          Remove?
+                        </button>
+                      ) : (
+                        <button type="button" aria-label={`Remove ${a.name}`} onClick={() => setConfirmRemove(a.id)} className="rounded-md p-1.5 text-faint hover:text-danger">
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <form
+                className="mt-4 flex flex-wrap items-end gap-2 border-t border-line pt-4"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (await add(name, path)) {
+                    setName("");
+                    setPath("");
+                  }
+                }}
+              >
+                <label className="flex w-40 flex-col gap-1 text-[11px] text-muted">
+                  Name
+                  <input
+                    value={name}
+                    maxLength={60}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="VS Code"
+                    className="h-8 rounded-lg border border-line bg-surface px-2.5 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+                  />
+                </label>
+                <label className="flex min-w-48 flex-1 flex-col gap-1 text-[11px] text-muted">
+                  Executable path
+                  <div className="flex gap-1">
+                    <input
+                      value={path}
+                      onChange={(e) => setPath(e.target.value)}
+                      spellCheck={false}
+                      placeholder={platform === "windows" ? "C:\\Program Files\\App\\app.exe" : "/usr/bin/app"}
+                      className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 font-mono text-xs text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+                    />
+                    <button type="button" onClick={() => void browse()} className="flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs text-muted hover:bg-surface-hover hover:text-fg">
+                      <FolderOpen className="size-3.5" /> Browse…
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void launch(a)}
-                    disabled={busyId === a.id}
-                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
-                  >
-                    <Play className="size-3" /> {busyId === a.id ? "Opening…" : "Open"}
-                  </button>
-                  {confirmRemove === a.id ? (
-                    <button type="button" onClick={() => void remove(a)} onMouseLeave={() => setConfirmRemove(null)} className="rounded-md px-2 py-1 text-xs font-medium text-danger hover:bg-danger/10">
-                      Remove?
-                    </button>
-                  ) : (
-                    <button type="button" aria-label={`Remove ${a.name}`} onClick={() => setConfirmRemove(a.id)} className="rounded-md p-1.5 text-faint hover:text-danger">
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <form
-            className="mt-4 flex flex-wrap items-end gap-2 border-t border-line pt-4"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (await add(name, path)) {
-                setName("");
-                setPath("");
-              }
-            }}
-          >
-            <label className="flex w-40 flex-col gap-1 text-[11px] text-muted">
-              Name
-              <input
-                value={name}
-                maxLength={60}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="VS Code"
-                className="h-8 rounded-lg border border-line bg-surface px-2.5 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none"
-              />
-            </label>
-            <label className="flex min-w-48 flex-1 flex-col gap-1 text-[11px] text-muted">
-              Executable path
-              <div className="flex gap-1">
-                <input
-                  value={path}
-                  onChange={(e) => setPath(e.target.value)}
-                  spellCheck={false}
-                  placeholder={platform === "windows" ? "C:\\Program Files\\App\\app.exe" : "/usr/bin/app"}
-                  className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 font-mono text-xs text-fg placeholder:text-faint focus:border-accent focus:outline-none"
-                />
-                <button type="button" onClick={() => void browse()} className="flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs text-muted hover:bg-surface-hover hover:text-fg">
-                  <FolderOpen className="size-3.5" /> Browse…
+                </label>
+                <button type="submit" disabled={!name.trim() || !path.trim()} className="h-8 rounded-lg bg-accent px-3 text-xs font-semibold text-bg disabled:opacity-40">
+                  Add
                 </button>
-              </div>
-            </label>
-            <button type="submit" disabled={!name.trim() || !path.trim()} className="h-8 rounded-lg bg-accent px-3 text-xs font-semibold text-bg disabled:opacity-40">
-              Add
-            </button>
-          </form>
-        </Panel>
+              </form>
+            </Panel>
+          </>
+        )}
       </div>
     </div>
   );
