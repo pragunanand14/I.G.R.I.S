@@ -41,7 +41,7 @@ export function DevicesScreen() {
   const [code, setCode] = useState("");
   const [text, setText] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
-  const [advanced, setAdvanced] = useState(false);
+  const [advanced, setAdvanced] = useState<boolean | null>(null);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -59,6 +59,8 @@ export function DevicesScreen() {
   const devices = overview.devices.filter((d) => d.trusted && !d.revokedAt);
   const relay = url ?? s.relayUrl ?? "";
   const target = devices.find((d) => d.platform !== "android") ?? devices[0];
+  // A saved own-server address is always shown, so it can't silently differ from the PC's.
+  const showAdvanced = advanced ?? Boolean(s.relayUrl);
 
   return (
     <Screen
@@ -95,7 +97,7 @@ export function DevicesScreen() {
               disabled={busy || code.replace(/[^0-9a-z]/gi, "").length < 24}
               onClick={() =>
                 void connectAndJoin(
-                  advanced ? relay.trim() : (s.relayUrl ?? ""),
+                  showAdvanced ? relay.trim() : (s.relayUrl ?? ""),
                   code.trim(),
                 ).then((ok) => ok && setCode(""))
               }
@@ -116,14 +118,15 @@ export function DevicesScreen() {
             <button
               type="button"
               className="m-muted text-sm underline"
-              onClick={() => setAdvanced(!advanced)}
+              onClick={() => setAdvanced(!showAdvanced)}
             >
-              {advanced ? "Hide advanced" : "Advanced: use my own server"}
+              {showAdvanced ? "Hide advanced" : "Advanced: use my own server"}
             </button>
-            {advanced && (
+            {showAdvanced && (
               <>
                 <p className="m-muted text-sm">
-                  Leave empty to use ntfy.sh (the default). Or enter your own
+                  Leave empty to use ntfy.sh (the default) — your computer's
+                  Devices page must also have it empty. Or enter your own
                   ntfy server (https://…) or IGRIS relay (wss://…) — the same
                   one your computer uses.
                 </p>
