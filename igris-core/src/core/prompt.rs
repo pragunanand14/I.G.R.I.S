@@ -288,7 +288,8 @@ mod tests {
     #[test]
     fn the_computer_prompt_is_unchanged() {
         let p = system_prompt(&PromptContext { user_name: "Ada", date: "Saturday, 4 October 2026", os: "Windows", device: DeviceKind::Computer });
-        assert_eq!(p, include_str!("testdata/desktop_prompt.txt"));
+        // The fixture is LF (see .gitattributes); tolerate a CRLF checkout of it.
+        assert_eq!(p, include_str!("testdata/desktop_prompt.txt").replace("\r\n", "\n"));
     }
 
     #[test]
