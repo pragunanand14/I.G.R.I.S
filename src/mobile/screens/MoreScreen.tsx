@@ -1,4 +1,4 @@
-import { Bot, Brain, ChevronRight, History, Info, Mic, Palette, ShieldCheck, Smartphone, User } from "lucide-react";
+import { Bot, Brain, ChevronRight, History, Info, Laptop, Mic, Palette, ShieldCheck, Smartphone, User } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { api } from "@/services/api";
@@ -46,6 +46,21 @@ export function MoreScreen() {
       </Section>
 
       <AiSection />
+
+      <Section title="Your devices">
+        <div className="m-card">
+          <Link to="/more/devices" className="m-row">
+            <span className="m-icon-badge">
+              <Laptop className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">Phone and computer</div>
+              <div className="m-muted text-sm">Pair with your PC, send it tasks, approve its actions</div>
+            </div>
+            <ChevronRight className="m-faint size-5" />
+          </Link>
+        </div>
+      </Section>
 
       <Section title="Appearance">
         <div className="m-card space-y-4 p-4">

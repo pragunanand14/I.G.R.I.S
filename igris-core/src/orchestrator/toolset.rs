@@ -42,6 +42,9 @@ pub enum Capability {
     Tasks,
     /// Asking for more tools (`request_tools`).
     Meta,
+    /// The user's other devices: listing them, handing them tasks. Not an
+    /// action here — the other device runs the task under its own rules.
+    Devices,
 }
 
 impl Capability {
@@ -82,6 +85,7 @@ pub fn capability(name: &str) -> Option<Capability> {
         n if n.starts_with("computer_") || n.starts_with("browser_") => OperatorSession,
         "task_plan" => Tasks,
         "request_tools" => Meta,
+        "list_devices" | "send_to_device" | "device_task_status" | "device_task_control" => Devices,
         _ => return None,
     })
 }
@@ -159,6 +163,7 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
     ),
     (Capability::Projects, &["project", "repo", "codebase", "workspace", "my app"]),
     (Capability::Screen, &["screen", "screenshot", "what's on", "what is on", "look at my", "see my"]),
+    (Capability::Devices, &["laptop", "pc", "computer", "desktop", "phone", "mobile", "device", "android", "windows", "other device"]),
 ];
 
 /// Names `request_tools` accepts, and the groups each adds.
@@ -168,6 +173,7 @@ pub const REQUESTABLE: &[(&str, &[Capability])] = &[
     ("terminal", &[Capability::Terminal, Capability::Projects]),
     ("projects", &[Capability::Projects]),
     ("screen", &[Capability::Screen]),
+    ("devices", &[Capability::Devices]),
 ];
 
 fn word_hit(text: &str, stem: &str) -> bool {
@@ -359,11 +365,14 @@ mod tests {
             def("computer_click"),
             def("task_plan"),
             def("request_tools"),
+            def("send_to_device"),
         ];
         // A question: the core only.
         let t = Toolset::new(all.clone()).with_focus(focus_for("What's 12 * 7?", &[]));
         assert_eq!(names(&t), ["calculator", "web_search", "read_file", "launch_application", "operator_start", "task_plan", "request_tools"]);
-        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen"]);
+        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen", "devices"]);
+        // Naming another device brings the cross-device tools.
+        assert!(names(&Toolset::new(all.clone()).with_focus(focus_for("Open Notepad on my laptop", &[]))).contains(&"send_to_device".to_string()));
         assert_eq!(t.allowed().len(), all.len(), "hidden is not forbidden: the executor still decides");
         // Reminders, coding, files, screen: what the request names.
         assert!(names(&Toolset::new(all.clone()).with_focus(focus_for("Remind me tomorrow at 5pm", &[]))).contains(&"set_reminder".to_string()));
@@ -377,7 +386,14 @@ mod tests {
         assert!(focus_for("move it to 6pm", &["set_reminder".into()]).contains(&Capability::Productivity));
         // The model can ask for more; request_tools disappears once nothing is hidden.
         let mut t = Toolset::new(all.clone()).with_focus(focus_for("hi", &[]));
-        assert!(t.expand(&[Capability::Productivity, Capability::FileChanges, Capability::Terminal, Capability::Projects, Capability::Screen]));
+        assert!(t.expand(&[
+            Capability::Productivity,
+            Capability::FileChanges,
+            Capability::Terminal,
+            Capability::Projects,
+            Capability::Screen,
+            Capability::Devices
+        ]));
         assert!(!names(&t).contains(&"request_tools".to_string()) && names(&t).contains(&"add_task".to_string()));
         assert!(!t.expand(&[Capability::Productivity]), "unchanged lists aren't rebuilt");
         // Operator-session tools still follow operator mode, focus or not.
@@ -407,6 +423,7 @@ mod tests {
         // Platform apps check their own tools the same way (see `tool_names_in`).
         let sources = [
             include_str!("../tools/calculator.rs"),
+            include_str!("../tools/devices.rs"),
             include_str!("../tools/memory.rs"),
             include_str!("../tools/productivity.rs"),
             include_str!("../tools/projects.rs"),
@@ -426,7 +443,7 @@ mod tests {
         for name in ["write_file", "trash_path", "launch_application", "open_url", "run_command", "operator_start"] {
             assert!(capability(name).unwrap().acts(), "{name}");
         }
-        for name in ["calculator", "read_file", "web_search", "remember", "add_task", "take_screenshot", "task_plan", "computer_click"] {
+        for name in ["calculator", "read_file", "web_search", "remember", "add_task", "take_screenshot", "task_plan", "computer_click", "send_to_device"] {
             assert!(!capability(name).unwrap().acts(), "{name}");
         }
     }

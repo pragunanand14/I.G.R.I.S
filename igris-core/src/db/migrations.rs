@@ -298,6 +298,109 @@ pub const MIGRATIONS: &[Migration] = &[
             CREATE INDEX task_events_task ON task_events (task_id, id);
         "#,
     },
+    Migration {
+        version: 12,
+        name: "devices",
+        sql: r#"
+            -- Cross-device IGRIS (docs/CROSS_DEVICE.md). This installation's identity:
+            -- private keys are stored sealed by an OS key protector, never in the clear
+            -- where one is available.
+            CREATE TABLE device_identity (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                device_id   TEXT NOT NULL,
+                owner_id    TEXT NOT NULL,
+                name        TEXT NOT NULL,
+                platform    TEXT NOT NULL,
+                sealed_keys BLOB NOT NULL,
+                protector   TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            -- Relay connection settings (one row; off until the user sets it up).
+            CREATE TABLE device_settings (
+                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                relay_url    TEXT,
+                enabled      INTEGER NOT NULL DEFAULT 0,
+                sync_memory  INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO device_settings (id) VALUES (1);
+            -- The user's other devices (public keys only), trusted after explicit pairing.
+            CREATE TABLE devices (
+                device_id    TEXT PRIMARY KEY,
+                owner_id     TEXT NOT NULL,
+                name         TEXT NOT NULL,
+                platform     TEXT NOT NULL,
+                signing_key  TEXT NOT NULL,
+                kx_key       TEXT NOT NULL,
+                capabilities TEXT NOT NULL DEFAULT '[]',
+                trusted      INTEGER NOT NULL DEFAULT 1,
+                revoked_at   TEXT,
+                last_seen    TEXT,
+                created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            -- Replay protection: ids of messages already accepted, until they expire.
+            CREATE TABLE device_seen_messages (
+                msg_id     TEXT PRIMARY KEY,
+                sender     TEXT NOT NULL,
+                expires_at INTEGER NOT NULL
+            );
+            CREATE INDEX device_seen_messages_exp ON device_seen_messages (expires_at);
+            -- Remote approvals are single-use.
+            CREATE TABLE device_used_approvals (
+                approval_id TEXT PRIMARY KEY,
+                expires_at  INTEGER NOT NULL
+            );
+            -- Tasks sent to or received from another device. On the executing side,
+            -- conversation_id links to the local conversation (and so to the local
+            -- orchestrator task) that does the work.
+            CREATE TABLE remote_tasks (
+                request_id      TEXT PRIMARY KEY,
+                direction       TEXT NOT NULL CHECK (direction IN ('outgoing', 'incoming')),
+                peer_device_id  TEXT NOT NULL,
+                objective       TEXT NOT NULL,
+                conversation_id TEXT,
+                task_id         TEXT,
+                status          TEXT NOT NULL,
+                detail          TEXT,
+                result          TEXT,
+                last_seq        INTEGER NOT NULL DEFAULT 0,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            CREATE INDEX remote_tasks_recent ON remote_tasks (updated_at);
+            -- What other devices asked of this one, and what this one did about it.
+            CREATE TABLE device_audit (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                peer    TEXT,
+                kind    TEXT NOT NULL,
+                detail  TEXT
+            );
+            -- Memory sync: a stable id, a revision for conflict resolution, the device
+            -- that made the latest revision (NULL = this one) and a local change clock.
+            ALTER TABLE memories ADD COLUMN sync_id TEXT;
+            ALTER TABLE memories ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE memories ADD COLUMN origin TEXT;
+            ALTER TABLE memories ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
+            UPDATE memories SET sync_id = lower(hex(randomblob(16))), change_seq = id;
+            CREATE UNIQUE INDEX memories_sync_id ON memories (sync_id);
+            CREATE INDEX memories_change_seq ON memories (change_seq);
+            CREATE TABLE memory_tombstones (
+                sync_id    TEXT PRIMARY KEY,
+                revision   INTEGER NOT NULL,
+                origin     TEXT,
+                change_seq INTEGER NOT NULL,
+                deleted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+            CREATE TABLE sync_clock (id INTEGER PRIMARY KEY CHECK (id = 1), seq INTEGER NOT NULL);
+            INSERT INTO sync_clock (id, seq) SELECT 1, COALESCE(MAX(id), 0) FROM memories;
+            -- How far each peer has confirmed receiving this device's changes.
+            CREATE TABLE sync_peers (
+                device_id  TEXT PRIMARY KEY,
+                acked_seq  INTEGER NOT NULL DEFAULT 0
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

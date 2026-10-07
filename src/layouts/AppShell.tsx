@@ -2,6 +2,7 @@ import { Outlet } from "react-router";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { OperatorBanner } from "@/components/operator/OperatorBanner";
 import { TitleBar } from "@/components/layout/TitleBar";
+import { DevicePrompts } from "@/components/devices/DevicePrompts";
 import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 
@@ -20,6 +21,7 @@ export function AppShell() {
         </main>
       </div>
       <ReminderAlerts enabled={ready} />
+      <DevicePrompts enabled={ready} />
     </div>
   );
 }

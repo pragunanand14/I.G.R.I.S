@@ -130,9 +130,10 @@ pub fn add(conn: &Connection, kind: MemoryKind, content: &str, source: MemorySou
     if count >= MAX_MEMORIES {
         return Err(AppError::validation(format!("Memory is full ({MAX_MEMORIES} items). Delete some on the Memory page.")));
     }
+    let seq = next_change_seq(conn)?;
     conn.execute(
-        "INSERT INTO memories (kind, content, source, conversation_id) VALUES (?1, ?2, ?3, ?4)",
-        params![kind.as_str(), content, if source == MemorySource::Assistant { "assistant" } else { "user" }, conversation_id],
+        "INSERT INTO memories (kind, content, source, conversation_id, sync_id, change_seq) VALUES (?1, ?2, ?3, ?4, lower(hex(randomblob(16))), ?5)",
+        params![kind.as_str(), content, if source == MemorySource::Assistant { "assistant" } else { "user" }, conversation_id, seq],
     )?;
     let m = require(conn, conn.last_insert_rowid())?;
     tracing::info!(event = "MEMORY_ADDED", id = m.id, kind = kind.as_str(), source = ?source);
@@ -142,9 +143,12 @@ pub fn add(conn: &Connection, kind: MemoryKind, content: &str, source: MemorySou
 pub fn update(conn: &Connection, id: i64, content: &str, kind: Option<MemoryKind>) -> AppResult<Memory> {
     let content = validate_content(content)?;
     let current = require(conn, id)?;
+    // A local edit is a new revision made by this device (see device::sync).
+    let seq = next_change_seq(conn)?;
     conn.execute(
-        "UPDATE memories SET content = ?2, kind = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
-        params![id, content, kind.unwrap_or(current.kind).as_str()],
+        "UPDATE memories SET content = ?2, kind = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                revision = revision + 1, origin = NULL, change_seq = ?4 WHERE id = ?1",
+        params![id, content, kind.unwrap_or(current.kind).as_str(), seq],
     )?;
     tracing::info!(event = "MEMORY_UPDATED", id);
     require(conn, id)
@@ -152,9 +156,21 @@ pub fn update(conn: &Connection, id: i64, content: &str, kind: Option<MemoryKind
 
 pub fn delete(conn: &Connection, id: i64) -> AppResult<Memory> {
     let m = require(conn, id)?;
+    // Leave a tombstone so the deletion reaches the user's other devices.
+    let seq = next_change_seq(conn)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO memory_tombstones (sync_id, revision, origin, change_seq)
+         SELECT sync_id, revision + 1, NULL, ?2 FROM memories WHERE id = ?1 AND sync_id IS NOT NULL",
+        params![id, seq],
+    )?;
     conn.execute("DELETE FROM memories WHERE id = ?1", [id])?;
     tracing::info!(event = "MEMORY_DELETED", id);
     Ok(m)
+}
+
+/// Advance the local memory change clock (used to send changes to other devices in order).
+pub fn next_change_seq(conn: &Connection) -> AppResult<i64> {
+    Ok(conn.query_row("UPDATE sync_clock SET seq = seq + 1 WHERE id = 1 RETURNING seq", [], |r| r.get(0))?)
 }
 
 pub fn all(conn: &Connection) -> AppResult<Vec<Memory>> {

@@ -8,8 +8,10 @@
 #   UI commands, and per platform the overlay, Windows computer driver, browser
 #   control and desktop tools, or the Android device tools.
 # - plugins/tauri-plugin-igris-device: Android device capabilities (Kotlin).
+# - igris-relay: the minimal relay between one user's devices (routing only;
+#   never sees content, never runs tasks).
 [workspace]
-members = ["igris-core", "src-tauri", "plugins/tauri-plugin-igris-device"]
+members = ["igris-core", "igris-relay", "src-tauri", "plugins/tauri-plugin-igris-device"]
 resolver = "2"
 
 [workspace.package]

@@ -33,6 +33,8 @@ pub struct AppState {
     pub operator: Arc<crate::operator::Operator>,
     /// The task orchestrator.
     pub orchestrator: Arc<crate::orchestrator::Orchestrator>,
+    /// Cross-device hub (set once this device's keys are unlocked).
+    pub devices: crate::tools::devices::HubSlot,
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +211,7 @@ mod tests {
             sources: Vec::new(),
             attachments: Vec::new(),
             failure: None,
+            input_digest: None,
         }
     }
 

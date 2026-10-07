@@ -65,6 +65,10 @@ pub struct ToolActivity {
     /// Why the call failed, for the orchestrator's recovery (not persisted).
     #[serde(skip)]
     pub failure: Option<ToolErrorKind>,
+    /// Digest of the validated input, binding a remote approval to these exact
+    /// arguments (see `device::approval`). Not persisted.
+    #[serde(skip)]
+    pub input_digest: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,6 +178,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
         sources: Vec::new(),
         attachments: Vec::new(),
         failure: None,
+        input_digest: None,
     };
     let mut approval = "auto";
 
@@ -235,6 +240,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
         return finish(&mut activity, ActivityStatus::Invalid, msg.clone(), msg, true, approval);
     }
     activity.description = tool.describe(&call.input);
+    activity.input_digest = Some(crate::device::approval::input_digest(&call.input));
 
     // 4. Permission policy. A call that must always be confirmed asks even
     // inside an approved operator task or a trusted chat.

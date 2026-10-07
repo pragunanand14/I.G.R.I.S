@@ -23,4 +23,12 @@ impl<R: Runtime> Device<R> {
     pub fn status(&self) -> Result<PhoneStatus> {
         Err(Error::Unsupported)
     }
+
+    pub fn seal_keys(&self, _data_b64: &str) -> Result<String> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn unseal_keys(&self, _sealed_b64: &str) -> Result<String> {
+        Err(Error::Unsupported)
+    }
 }

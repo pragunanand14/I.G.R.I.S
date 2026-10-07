@@ -8,6 +8,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -15,11 +18,25 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 @InvokeArg
 class LaunchArgs {
     var packageName: String? = null
 }
+
+@InvokeArg
+class SealArgs {
+    var data: String? = null
+}
+
+/** Alias of the Android Keystore key that seals IGRIS's device identity keys. */
+private const val KEY_ALIAS = "igris-device-identity"
+private const val GCM_IV_BYTES = 12
 
 /**
  * IGRIS's Android device capabilities. Called only from IGRIS's Rust tools
@@ -113,5 +130,62 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             ret.put("network", network)
         }
         invoke.resolve(ret)
+    }
+
+    /**
+     * The AES key in the Android Keystore that seals IGRIS's device keys. It is
+     * created on first use, never leaves the Keystore (hardware-backed where the
+     * phone has it), and can't be exported.
+     */
+    private fun sealingKey(): SecretKey {
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
+        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        gen.init(
+            KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+        )
+        return gen.generateKey()
+    }
+
+    /** Seal bytes (base64) with the Keystore key: returns base64(iv ‖ AES-GCM ciphertext). */
+    @Command
+    fun sealKeys(invoke: Invoke) {
+        try {
+            val plain = Base64.decode(invoke.parseArgs(SealArgs::class.java).data ?: "", Base64.NO_WRAP)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, sealingKey())
+            val sealed = cipher.iv + cipher.doFinal(plain)
+            plain.fill(0)
+            val ret = JSObject()
+            ret.put("data", Base64.encodeToString(sealed, Base64.NO_WRAP))
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Couldn't protect the device keys: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Open bytes sealed by [sealKeys]. */
+    @Command
+    fun unsealKeys(invoke: Invoke) {
+        try {
+            val sealed = Base64.decode(invoke.parseArgs(SealArgs::class.java).data ?: "", Base64.NO_WRAP)
+            if (sealed.size <= GCM_IV_BYTES) {
+                invoke.reject("The stored device keys are corrupt.")
+                return
+            }
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, sealingKey(), GCMParameterSpec(128, sealed, 0, GCM_IV_BYTES))
+            val plain = cipher.doFinal(sealed, GCM_IV_BYTES, sealed.size - GCM_IV_BYTES)
+            val ret = JSObject()
+            ret.put("data", Base64.encodeToString(plain, Base64.NO_WRAP))
+            plain.fill(0)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Couldn't unlock the device keys: ${e.javaClass.simpleName}")
+        }
     }
 }

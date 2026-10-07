@@ -30,6 +30,11 @@ struct LaunchArgs<'a> {
 #[derive(Deserialize)]
 struct Empty {}
 
+#[derive(Serialize, Deserialize)]
+struct Data {
+    data: String,
+}
+
 fn failed(e: impl std::fmt::Display) -> Error {
     Error::Device(e.to_string())
 }
@@ -45,5 +50,15 @@ impl<R: Runtime> Device<R> {
 
     pub fn status(&self) -> Result<PhoneStatus> {
         self.0.run_mobile_plugin::<PhoneStatus>("status", ()).map_err(failed)
+    }
+
+    /// Seal bytes (standard base64 in and out) with a key held by the Android Keystore.
+    pub fn seal_keys(&self, data_b64: &str) -> Result<String> {
+        self.0.run_mobile_plugin::<Data>("sealKeys", Data { data: data_b64.to_string() }).map(|d| d.data).map_err(failed)
+    }
+
+    /// Open what [`Device::seal_keys`] sealed.
+    pub fn unseal_keys(&self, sealed_b64: &str) -> Result<String> {
+        self.0.run_mobile_plugin::<Data>("unsealKeys", Data { data: sealed_b64.to_string() }).map(|d| d.data).map_err(failed)
     }
 }

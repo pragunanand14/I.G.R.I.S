@@ -1,10 +1,12 @@
 import "./mobile.css";
 import { CalendarCheck, House, LayoutGrid, MessageCircle } from "lucide-react";
 import { createHashRouter, Navigate, NavLink, Outlet, RouterProvider } from "react-router";
+import { DevicePrompts } from "@/components/devices/DevicePrompts";
 import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { ActivityScreen } from "./screens/ActivityScreen";
 import { ChatScreen } from "./screens/ChatScreen";
+import { DevicesScreen } from "./screens/DevicesScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
 import { MoreScreen } from "./screens/MoreScreen";
@@ -36,6 +38,7 @@ function MobileShell() {
         ))}
       </nav>
       <ReminderAlerts enabled={ready} />
+      <DevicePrompts enabled={ready} phone />
     </div>
   );
 }
@@ -51,6 +54,7 @@ const router = createHashRouter([
       { path: "more", element: <MoreScreen /> },
       { path: "more/memory", element: <MemoryScreen /> },
       { path: "more/activity", element: <ActivityScreen /> },
+      { path: "more/devices", element: <DevicesScreen /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

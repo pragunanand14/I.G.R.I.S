@@ -58,6 +58,8 @@ pub struct Deps {
     pub browser_profile: PathBuf,
     pub open_path: PathOpener,
     pub open_url: UrlOpener,
+    /// The user's other devices (cross-device tools).
+    pub devices: igris_core::tools::devices::HubSlot,
     /// The phone (Android): apps and device status.
     #[cfg(mobile)]
     pub phone: super::phone::SharedPhone,
@@ -66,8 +68,11 @@ pub struct Deps {
 /// Every tool IGRIS offers on a desktop.
 #[cfg(desktop)]
 pub fn registry(d: Deps) -> ToolRegistry {
-    let Deps { db, config, system, connectivity, attachments, operator, orchestrator, browser_profile, open_path, open_url } = d;
+    let Deps { db, config, system, connectivity, attachments, operator, orchestrator, browser_profile, open_path, open_url, devices } = d;
     let mut tools = ToolRegistry::default();
+    for t in igris_core::tools::devices::all(&devices) {
+        tools.register(t);
+    }
     tools.register(Arc::new(WebSearchTool::new(config.clone())));
     tools.register(Arc::new(FetchUrlTool::default()));
     tools.register(Arc::new(CalculatorTool::default()));
@@ -140,8 +145,11 @@ pub fn registry(d: Deps) -> ToolRegistry {
 #[cfg(mobile)]
 pub fn registry(d: Deps) -> ToolRegistry {
     use super::phone::{DeviceStatusTool, ListPhoneAppsTool, OpenPhoneAppTool};
-    let Deps { db, config, orchestrator, open_url, phone, .. } = d;
+    let Deps { db, config, orchestrator, open_url, phone, devices, .. } = d;
     let mut tools = ToolRegistry::default();
+    for t in igris_core::tools::devices::all(&devices) {
+        tools.register(t);
+    }
     tools.register(Arc::new(WebSearchTool::new(config.clone())));
     tools.register(Arc::new(FetchUrlTool::default()));
     tools.register(Arc::new(CalculatorTool::default()));

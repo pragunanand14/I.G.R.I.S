@@ -8,6 +8,7 @@
 
 pub mod audit;
 pub mod calculator;
+pub mod devices;
 pub mod executor;
 pub mod memory;
 pub mod productivity;

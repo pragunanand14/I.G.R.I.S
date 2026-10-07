@@ -12,6 +12,7 @@ import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, 
 import { call, callRaw } from "./backend";
 import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
 import type { TaskControl, TaskEventRow, TaskInfo } from "@/types/task";
+import type { DeviceAuditRow, DeviceSettings, DevicesOverview, PairedDevice, PairingCode, RemoteTask, ThisDevice } from "@/types/devices";
 
 /** All IPC commands in one place — mirrors `generate_handler!` in `src-tauri/src/lib.rs`. */
 export const api = {
@@ -83,4 +84,19 @@ export const api = {
   addEvent: (event: EventInput) => call<CalendarEvent>("add_event", { event }),
   updateEvent: (id: number, event: EventInput) => call<CalendarEvent>("update_event", { id, event }),
   deleteEvent: (id: number) => call<void>("delete_event", { id }),
+  devicesOverview: () => call<DevicesOverview>("devices_overview"),
+  devicesConfigure: (relayUrl: string | null, enabled: boolean, syncMemory: boolean) =>
+    call<DeviceSettings>("devices_configure", { relayUrl, enabled, syncMemory }),
+  devicesStartPairing: () => call<PairingCode>("devices_start_pairing"),
+  devicesCancelPairing: () => call<void>("devices_cancel_pairing"),
+  devicesConfirmPairing: (pairingId: string, allow: boolean) => call<PairedDevice | null>("devices_confirm_pairing", { pairingId, allow }),
+  devicesJoin: (code: string) => call<PairedDevice>("devices_join", { code }),
+  devicesRevoke: (deviceId: string) => call<void>("devices_revoke", { deviceId }),
+  devicesForget: (deviceId: string) => call<void>("devices_forget", { deviceId }),
+  devicesRename: (deviceId: string, name: string) => call<PairedDevice>("devices_rename", { deviceId, name }),
+  devicesRenameThis: (name: string) => call<ThisDevice>("devices_rename_this", { name }),
+  devicesSendTask: (deviceId: string, objective: string) => call<RemoteTask>("devices_send_task", { deviceId, objective }),
+  devicesControlTask: (requestId: string, action: TaskControl) => call<RemoteTask>("devices_control_task", { requestId, action }),
+  devicesAnswerApproval: (callId: string, approve: boolean) => call<void>("devices_answer_approval", { callId, approve }),
+  devicesAudit: (limit?: number) => call<DeviceAuditRow[]>("devices_audit", { limit }),
 };

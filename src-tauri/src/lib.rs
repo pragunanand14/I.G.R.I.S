@@ -8,10 +8,13 @@
 //! the phone tools (through `tauri-plugin-igris-device`). Core modules are
 //! re-exported under their usual paths.
 
-pub use igris_core::{ai, attachments, config, conversations, core, db, error, files, memory, operator, orchestrator, productivity, projects, settings, voice};
+pub use igris_core::{
+    ai, attachments, config, conversations, core, db, device, error, files, memory, operator, orchestrator, productivity, projects, settings, voice,
+};
 
 pub mod commands;
 pub mod computer;
+pub mod devices;
 pub mod logging;
 #[cfg(desktop)]
 pub mod overlay;
@@ -96,6 +99,8 @@ pub fn run() {
                     let _ = app.emit("task-update", u);
                 }));
             }
+            // Cross-device: the hub is filled in once the device keys are unlocked (see devices.rs).
+            let device_hub: crate::tools::devices::HubSlot = Arc::new(std::sync::OnceLock::new());
             let tools = crate::tools::standard::registry(crate::tools::standard::Deps {
                 db: db.clone(),
                 config: config.clone(),
@@ -107,6 +112,7 @@ pub fn run() {
                 browser_profile: data_dir.join("browser-profile"),
                 open_path: platform::path_opener(app.handle()),
                 open_url: platform::url_opener(app.handle()),
+                devices: device_hub.clone(),
                 #[cfg(mobile)]
                 phone: platform::phone(app.handle()),
             });
@@ -136,6 +142,7 @@ pub fn run() {
 
             tauri::async_runtime::spawn(productivity::run_scheduler(db.clone(), reminder_notifier(app.handle().clone())));
 
+            let tool_names: Vec<String> = tools.specs().iter().map(|s| s.name.to_string()).collect();
             app.manage(AppState {
                 config,
                 ai: RwLock::new(ai),
@@ -150,7 +157,9 @@ pub fn run() {
                 attachments,
                 operator,
                 orchestrator,
+                devices: device_hub.clone(),
             });
+            devices::start(app.handle().clone(), device_hub, tool_names);
             #[cfg(desktop)]
             register_voice_hotkey(app.handle());
             tracing::info!(event = "APP_STARTED");
@@ -228,6 +237,20 @@ pub fn run() {
             commands::productivity::add_event,
             commands::productivity::update_event,
             commands::productivity::delete_event,
+            commands::devices::devices_overview,
+            commands::devices::devices_configure,
+            commands::devices::devices_start_pairing,
+            commands::devices::devices_cancel_pairing,
+            commands::devices::devices_confirm_pairing,
+            commands::devices::devices_join,
+            commands::devices::devices_revoke,
+            commands::devices::devices_forget,
+            commands::devices::devices_rename,
+            commands::devices::devices_rename_this,
+            commands::devices::devices_send_task,
+            commands::devices::devices_control_task,
+            commands::devices::devices_answer_approval,
+            commands::devices::devices_audit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");

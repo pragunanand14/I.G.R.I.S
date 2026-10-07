@@ -202,6 +202,7 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
                         sources: Vec::new(),
                         attachments: Vec::new(),
                         failure: None,
+                        input_digest: None,
                     };
                     emit(ChatEvent::Tool { activity: a.clone() });
                     server_running.push(a);
@@ -369,6 +370,7 @@ async fn run_call(
             sources: Vec::new(),
             attachments: Vec::new(),
             failure: None,
+            input_digest: None,
         };
         return (ToolResult { call_id: call.id.clone(), content: why, is_error: true, media: Vec::new() }, activity);
     }
@@ -401,6 +403,7 @@ async fn run_call(
                     sources: Vec::new(),
                     attachments: Vec::new(),
                     failure: None,
+                    input_digest: None,
                 };
                 return (ToolResult { call_id: call.id.clone(), content: why, is_error: true, media: Vec::new() }, activity);
             }

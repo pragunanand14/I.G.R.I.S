@@ -7,6 +7,7 @@ pub mod ai;
 pub mod app;
 pub mod attachments;
 pub mod chat;
+pub mod devices;
 pub mod memory;
 pub mod operator;
 pub mod productivity;

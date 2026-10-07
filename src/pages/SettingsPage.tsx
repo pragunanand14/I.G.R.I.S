@@ -1,5 +1,6 @@
 import { Check, RefreshCw } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { DevicesPanel } from "@/components/devices/DevicesPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { Segmented } from "@/components/ui/Segmented";
@@ -149,6 +150,8 @@ export function SettingsPage() {
         <VoicePanel disabled={disabled} />
         {/* Operator mode (controlling the screen) exists only on desktops. */}
         {!isMobilePlatform() && <OperatorPanel disabled={disabled} />}
+
+        <DevicesPanel disabled={backend !== "ready"} />
 
         <Panel title="About">
           {info ? (

@@ -127,6 +127,7 @@ mod tests {
             sources: vec![],
             attachments: vec![],
             failure,
+            input_digest: None,
         }
     }
 

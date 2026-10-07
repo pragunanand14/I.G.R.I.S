@@ -11,6 +11,8 @@ what the user has explicitly allowed, that every action is visible and recorded,
 | Rust backend | Trusted | Holds secrets, the database and every OS capability. |
 | Web UI (WebView) | Semi-trusted | Can only call IGRIS's own typed IPC commands (`src-tauri/src/lib.rs`); no generic shell, fs or http plugins are exposed. Strict CSP. |
 | AI model output | **Untrusted** | Can only request tools; every call is validated and permission-checked. Rendered as Markdown without raw HTML. |
+| The user's other paired devices | Authenticated, limited | Every message is end-to-end encrypted and signed by a key paired with user confirmation; they can request tasks and control/approve only their own requests. The executing device's permissions decide (docs/CROSS_DEVICE.md). |
+| Relay (`igris-relay`) and the network | **Untrusted** | Sees only routing metadata and ciphertext; can delay or drop messages but not read, forge, replay or re-target them. |
 | Web pages, search results, files, PDFs, images, screenshots | **Untrusted** | Fenced as data (`<untrusted_web_content>`, `<attached_document>`, file wrappers) and the system prompt forbids following instructions inside them. |
 
 ## Controls
@@ -111,6 +113,20 @@ Done for the 0.1 hardening pass:
 - CI runs typecheck, lint, tests, `cargo fmt`, `clippy -D warnings`, `cargo test` (Linux + Windows), `npm audit` and
   `cargo audit` on every push.
 
+## Cross-device review (Phase 16)
+
+| Threat | Control | Test |
+| --- | --- | --- |
+| Device impersonation | Device id = hash of its signing key; relay auth is a signature over a fresh challenge; envelopes verified against the stored key | `relay::devices_must_prove_their_key`, `envelope::only_the_trusted_sender_…` |
+| Pairing hijack / brute force | 80-bit one-time code, 10 min, 5 attempts, relay sees only the id; both sides sign; user must allow | `pairing::*`, `e2e::a_wrong_code_or_a_denied_pairing_trusts_nothing` |
+| Replay / tampering / re-addressing | Message id table, expiry ≤ 15 min, ±5 min skew, AEAD with header as AD, signature over everything | `envelope::replays_are_refused`, `tampering_anywhere_is_detected` |
+| Forged or reused remote approval | Signed artifact bound to task/call/tool/argument digest/target/approver, expiry, single use, only from the requesting device | `approval::*`, `e2e::pairing_then_a_task_with_a_signed_remote_approval…`, `a_remote_denial…` |
+| A paired phone taking over | No remote command/tool/settings messages; tasks run under the executor's own policy; phones can't add or remove other devices | `protocol::messages_are_tagged…`, hub authorization |
+| Lost/stolen device | Revoke from any device (from a PC: everywhere); in-flight work from it stops; relay stops routing | `e2e::memories_sync_both_ways_and_revocation…` |
+| Relay abuse | Mutual peer lists, bounded queue, rate limits, frame size, optional device allowlist, no persistence | `relay::*` |
+| Key theft at rest | DPAPI (Windows), Android Keystore; Linux/macOS: unprotected (shown in the UI) | `devices::dpapi_seals_and_opens…` (Windows CI) |
+| Poisoned memory sync | Incoming memories validated like local input (length, credential detection); only memories sync | `sync::untrusted_content_is_validated…` |
+
 ## Known limitations
 
 - A compromised WebView (e.g. via a future XSS bug) could call any IGRIS IPC command the UI can call. The CSP and
@@ -118,6 +134,9 @@ Done for the 0.1 hardening pass:
 - Approval prompts show the action description; a model could still phrase a harmful but *allowed* action
   convincingly. Read approval cards before allowing them.
 - Data at rest (SQLite database, attachments) is protected only by the OS user account; it is not encrypted.
+- Cross-device: device keys on Linux/macOS builds aren't sealed by the OS. The relay learns which devices talk and
+  when (not what). A device that is offline when it is revoked from another device only learns of it once it
+  reconnects (until then its own registry still lists the others, but they no longer accept it).
 - Screenshots are sent to the configured AI provider after approval; their content may include anything on screen.
 - With the wake word on, every phrase the microphone picks up is sent to the configured speech service to check for
   "IGRIS". It is off by default. Spoken "yes" approvals are only as reliable as transcription; the approval card is

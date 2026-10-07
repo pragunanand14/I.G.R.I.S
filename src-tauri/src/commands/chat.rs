@@ -17,7 +17,7 @@ fn validate_request_id(id: &str) -> AppResult<()> {
 }
 
 /// Router, model choice and response depth for a new generation.
-fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
+pub(crate) fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
     let (router, _status) = state.ai_router()?;
     let settings = settings::load(&*state.db.conn()?)?;
     let web_search_mode = state.config.read().map_err(|_| AppError::internal("config lock poisoned"))?.web_search_mode().map(str::to_string);
@@ -40,7 +40,7 @@ fn generation_params(state: &AppState) -> AppResult<GenerationParams> {
 }
 
 /// Tools for a new conversation (frozen with it).
-fn offered_tools(state: &AppState) -> AppResult<Vec<crate::ai::ToolDef>> {
+pub(crate) fn offered_tools(state: &AppState) -> AppResult<Vec<crate::ai::ToolDef>> {
     let mode = state.config.read().map_err(|_| AppError::internal("config lock poisoned"))?.web_search_mode();
     Ok(state.tools.offered(mode))
 }

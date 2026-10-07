@@ -569,6 +569,20 @@ chat turn ─▶ core/chat: save message, Phase 2 context (router, budget, compa
 * **Limits**: 30 rounds per task run (80 while operating the computer), 30 minutes per run, 5 failed actions, tool
   timeouts, cancellation at every step.
 
+## Cross-device (phone ↔ PC)
+
+`igris-core/src/device/` adds one user's other devices without a second brain:
+a device identity (Ed25519 + X25519, sealed by a platform `KeyProtector`), a
+trusted registry, code-and-confirmation pairing, end-to-end encrypted signed
+envelopes, and a hub that routes them. A task from another device becomes an
+ordinary conversation on the executing device, run by the app's `TaskRunner`
+through `chat::generate` → orchestrator → executor with that device's own
+policy; orchestrator events become ordered `task_update`s; pause/resume/stop
+use `Orchestrator::control`; approvals race the local UI against a signed
+remote approval verified by the executor. Memories sync with revisions and
+tombstones. The separate `igris-relay` crate only authenticates and routes.
+Details, protocol and limits: [CROSS_DEVICE.md](CROSS_DEVICE.md).
+
 ## Possible next steps
 
 * Operator mode on macOS/Linux; browser automation via the DevTools protocol for pages with poor accessibility data;

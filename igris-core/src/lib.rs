@@ -20,6 +20,7 @@ pub mod config;
 pub mod conversations;
 pub mod core;
 pub mod db;
+pub mod device;
 pub mod error;
 pub mod files;
 pub mod memory;
