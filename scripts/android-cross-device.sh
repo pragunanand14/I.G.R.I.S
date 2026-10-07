@@ -12,18 +12,30 @@ OUT=android-artifacts/cross-device
 PORT=8787
 mkdir -p "$OUT"
 
+export RUST_BACKTRACE=1
+for b in target/debug/igris-relay target/debug/examples/device_peer; do
+  [ -x "$b" ] || { echo "::error::$b wasn't built"; exit 1; }
+done
 target/debug/igris-relay --listen "127.0.0.1:$PORT" > "$OUT/relay.log" 2>&1 &
 RELAY=$!
 sleep 1
-target/debug/examples/device_peer "ws://127.0.0.1:$PORT" "$OUT/peer" > /dev/null 2>&1 &
+target/debug/examples/device_peer "ws://127.0.0.1:$PORT" "$OUT/peer" > "$OUT/peer.out" 2>&1 &
 PEER=$!
 # The phone reaches the host's relay at its own 127.0.0.1 (loopback, so ws:// is allowed).
 adb reverse "tcp:$PORT" "tcp:$PORT"
 trap 'kill $RELAY $PEER 2>/dev/null' EXIT
 
 dump() {
-  adb shell uiautomator dump /sdcard/x.xml > /dev/null 2>&1
-  adb pull /sdcard/x.xml "$OUT/ui.xml" > /dev/null 2>&1
+  rm -f "$OUT/ui.xml"
+  adb shell rm -f /sdcard/x.xml > /dev/null 2>&1
+  DUMP_MSG=$(adb shell uiautomator dump /sdcard/x.xml 2>&1 | tr -d '\r' | tail -1)
+  adb pull /sdcard/x.xml "$OUT/ui.xml" > /dev/null 2>&1 || : > "$OUT/ui.xml"
+}
+
+# What the phone shows now (for the log when a step fails).
+show() {
+  echo "  uiautomator: $DUMP_MSG ($(wc -c < "$OUT/ui.xml") bytes)"
+  grep -o -E '(text|content-desc|hint)="[^"]+"' "$OUT/ui.xml" | sort -u | head -40 | sed 's/^/  /'
 }
 
 H=$(adb shell wm size | grep -o '[0-9]*x[0-9]*' | tail -1 | cut -dx -f2)
@@ -71,6 +83,8 @@ PY
     sleep 2
   done
   echo "::error::Couldn't find \"$1\" on screen"
+  show
+  adb exec-out screencap -p > "$OUT/missing-$(echo "$1" | tr -cd 'A-Za-z0-9').png" || true
   return 1
 }
 
@@ -94,6 +108,10 @@ check() { if eval "$2"; then echo "PASS: $1"; else echo "::error::FAIL: $1"; fai
 wait_file "$OUT/peer/code.txt" 60
 CODE=$(cat "$OUT/peer/code.txt" 2>/dev/null)
 check "CI PC is connected and shows a pairing code" '[ -n "$CODE" ]'
+if [ -z "$CODE" ]; then
+  echo "--- CI PC output ---"; tail -40 "$OUT/peer.out"
+  echo "--- relay log ---"; tail -20 "$OUT/relay.log"
+fi
 
 adb shell am start -n "$PKG/.MainActivity" > /dev/null
 sleep 3
@@ -126,4 +144,5 @@ echo "--- phone device events ---"
 grep -o '"event":"\(DEVICE\|REMOTE\|PAIRING\)[A-Z_]*"[^}]\{0,120\}' "$OUT/igris.log" 2>/dev/null | head -30 || true
 echo "--- CI PC events ---"
 grep -v '^EVENT' "$OUT/peer/events.log" || true
+[ "$fail" = 0 ] || { echo "--- CI PC output (tail) ---"; tail -30 "$OUT/peer.out"; echo "--- relay log (tail) ---"; tail -20 "$OUT/relay.log"; }
 exit $fail

@@ -64,7 +64,7 @@ jobs:
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
       - name: Host side of the cross-device test (relay + "CI PC" device hub)
-        run: cargo build -p igris-relay -p igris-core --example device_peer
+        run: cargo build -p igris-relay --bin igris-relay && cargo build -p igris-core --example device_peer
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
