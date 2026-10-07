@@ -101,7 +101,8 @@ pub struct NetworkInfo {
     /// Aggregate throughput across non-loopback interfaces. `None` on the first sample.
     pub rx_bytes_per_sec: Option<f64>,
     pub tx_bytes_per_sec: Option<f64>,
-    pub interface_count: usize,
+    /// `None` when the platform hides network interfaces from apps (Android).
+    pub interface_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -167,7 +168,9 @@ impl SystemMonitor {
         let cpu_ready = self.last_cpu_refresh.map(|t| now.duration_since(t) >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).unwrap_or(false);
         if cpu_ready {
             self.sys.refresh_cpu_all();
-            self.cpu_usage = Some(self.sys.global_cpu_usage().clamp(0.0, 100.0));
+            // Some platforms (Android) don't let apps read system-wide CPU stats:
+            // no CPUs are listed then, and usage is unknown rather than 0%.
+            self.cpu_usage = if self.sys.cpus().is_empty() { None } else { Some(self.sys.global_cpu_usage().clamp(0.0, 100.0)) };
             self.last_cpu_refresh = Some(now);
         }
 
@@ -194,7 +197,7 @@ impl SystemMonitor {
             cpu: CpuInfo {
                 usage_percent: self.cpu_usage,
                 brand: cpus.first().map(|c| c.brand().trim().to_string()).unwrap_or_default(),
-                logical_cores: cpus.len(),
+                logical_cores: if cpus.is_empty() { std::thread::available_parallelism().map_or(0, |n| n.get()) } else { cpus.len() },
                 physical_cores: System::physical_core_count(),
                 frequency_mhz: cpus.first().map(|c| c.frequency()).filter(|f| *f > 0),
             },
@@ -220,7 +223,12 @@ impl SystemMonitor {
                     available_bytes: d.available_space(),
                 })
                 .collect(),
-            network: NetworkInfo { connectivity, rx_bytes_per_sec: rate(rx), tx_bytes_per_sec: rate(tx), interface_count: count },
+            network: if count == 0 {
+                // Nothing visible: unknown, not "0 B/s on 0 interfaces".
+                NetworkInfo { connectivity, rx_bytes_per_sec: None, tx_bytes_per_sec: None, interface_count: None }
+            } else {
+                NetworkInfo { connectivity, rx_bytes_per_sec: rate(rx), tx_bytes_per_sec: rate(tx), interface_count: Some(count) }
+            },
             battery: (self.battery)(),
             temperatures: self
                 .components

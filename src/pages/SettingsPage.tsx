@@ -12,6 +12,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useVoiceStore } from "@/stores/voiceStore";
 import { browserRecognitionAvailable } from "@/services/voice/browserSpeech";
 import { browserTtsAvailable, browserVoices } from "@/services/voice/speaker";
+import { isMobilePlatform } from "@/services/platform";
 import { VOICE_HOTKEY_LABEL } from "@/types/voice";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { Effort } from "@/types/ai";
@@ -146,7 +147,8 @@ export function SettingsPage() {
         <AiPanel disabled={disabled} configDir={info?.configDir ?? null} />
 
         <VoicePanel disabled={disabled} />
-        <OperatorPanel disabled={disabled} />
+        {/* Operator mode (controlling the screen) exists only on desktops. */}
+        {!isMobilePlatform() && <OperatorPanel disabled={disabled} />}
 
         <Panel title="About">
           {info ? (
@@ -403,7 +405,8 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
     <Panel title="Voice">
       <InfoRow label="Speech recognition" value={sttText} />
       <InfoRow label="Speech output" value={ttsText} />
-      <InfoRow label="Push-to-talk hotkey" value={VOICE_HOTKEY_LABEL} />
+      {/* Global hotkeys exist only on desktops. */}
+      {!isMobilePlatform() && <InfoRow label="Push-to-talk hotkey" value={VOICE_HOTKEY_LABEL} />}
       {status?.tts.mode === "browser" && !status.tts.problem && (
         <p className="mt-2 text-xs text-muted">
           For a natural, human-sounding voice set <code className="font-mono">TTS_PROVIDER=groq</code> (uses your Groq key; voices: troy,

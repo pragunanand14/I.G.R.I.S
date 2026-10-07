@@ -68,13 +68,13 @@ pub fn render(s: &SystemSnapshot) -> String {
     }
     let n = &s.network;
     lines.push(format!(
-        "Network: internet {}, {} interfaces{}",
+        "Network: internet {}, {}{}",
         match n.connectivity {
             Connectivity::Online => "reachable",
             Connectivity::Offline => "unreachable",
             Connectivity::Unknown => "not yet checked",
         },
-        n.interface_count,
+        n.interface_count.map_or_else(|| "interfaces not visible to apps".to_string(), |c| format!("{c} interfaces")),
         match (n.rx_bytes_per_sec, n.tx_bytes_per_sec) {
             (Some(rx), Some(tx)) => format!(", down {:.0} KB/s, up {:.0} KB/s", rx / 1024.0, tx / 1024.0),
             _ => String::new(),

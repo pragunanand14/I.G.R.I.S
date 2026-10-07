@@ -100,7 +100,7 @@ export function SystemPage() {
           </div>
           <Row label="Download">{formatRate(s.network.rxBytesPerSec)}</Row>
           <Row label="Upload">{formatRate(s.network.txBytesPerSec)}</Row>
-          <Row label="Interfaces">{s.network.interfaceCount}</Row>
+          <Row label="Interfaces">{s.network.interfaceCount ?? "—"}</Row>
           <p className="mt-2 text-[11px] text-faint">Reachability is checked by connecting to public DNS resolvers every 15 s.</p>
         </Panel>
 

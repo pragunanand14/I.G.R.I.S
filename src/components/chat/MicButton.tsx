@@ -1,5 +1,6 @@
 import { Loader2, Mic, Square, Volume2 } from "lucide-react";
 import { useVoiceStore } from "@/stores/voiceStore";
+import { isMobilePlatform } from "@/services/platform";
 import { VOICE_HOTKEY_LABEL } from "@/types/voice";
 
 /** Push-to-talk button: idle → listening → (auto-stops) → transcribing. Click while IGRIS speaks to interrupt. */
@@ -22,7 +23,7 @@ export function MicButton({ disabled }: { disabled?: boolean }) {
           ? "Interrupt and speak"
           : unavailable
             ? (can.reason ?? "Voice input unavailable")
-            : `Speak (${VOICE_HOTKEY_LABEL})${wakeActive ? " — also listening for “IGRIS”" : ""}`;
+            : `Speak${isMobilePlatform() ? "" : ` (${VOICE_HOTKEY_LABEL})`}${wakeActive ? " — also listening for “IGRIS”" : ""}`;
 
   return (
     <button

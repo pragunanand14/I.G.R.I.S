@@ -39,7 +39,8 @@ export interface NetworkInfo {
   connectivity: Connectivity;
   rxBytesPerSec: number | null;
   txBytesPerSec: number | null;
-  interfaceCount: number;
+  /** `null` when the platform hides network interfaces (Android). */
+  interfaceCount: number | null;
 }
 
 export type BatteryState = "charging" | "discharging" | "full" | "empty" | "paused" | "unknown";

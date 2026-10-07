@@ -58,7 +58,7 @@ export function TelemetryStrip() {
           icon={conn === "offline" ? <WifiOff className={iconCls} /> : <Wifi className={iconCls} />}
           label="Network"
           value={!snapshot ? "—" : conn === "online" ? "Connected" : conn === "offline" ? "Offline" : "Checking…"}
-          detail={snapshot ? `${snapshot.network.interfaceCount} interface${snapshot.network.interfaceCount === 1 ? "" : "s"}` : "—"}
+          detail={snapshot && snapshot.network.interfaceCount !== null ? `${snapshot.network.interfaceCount} interface${snapshot.network.interfaceCount === 1 ? "" : "s"}` : "—"}
         />
         <Tile
           icon={battery?.state === "charging" ? <BatteryCharging className={iconCls} /> : <Battery className={iconCls} />}

@@ -51,5 +51,8 @@ check "device plugin answered (PHONE_READY)" 'grep -q "\"event\":\"PHONE_READY\"
 # Text only the backend can supply proves the UI is up and its IPC reaches Rust.
 check "UI rendered and reached the backend (AI status from Rust on screen)" 'grep -q "No AI provider configured" "$OUT/ui.xml"'
 check "UI did not report the backend as unavailable" '! grep -q "backend is unavailable" "$OUT/ui.xml"'
+# The phone UI must not show desktop-only things or zeros it can't measure.
+check "no desktop hotkey hint on the phone" '! grep -q "Ctrl+Shift+Space" "$OUT/ui.xml"'
+check "no unmeasured CPU zeros (\"0 threads\")" '! grep -q "\"0 threads\"" "$OUT/ui.xml"'
 check "no crash in logcat" '! grep -qE "FATAL EXCEPTION.*|panicked at" "$OUT/logcat.txt"'
 exit $fail
