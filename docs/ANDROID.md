@@ -82,18 +82,25 @@ never in the frontend" rule, so it hasn't been built.
 ## Test results
 
 Emulator smoke test (GitHub `ubuntu-latest`, Android 14 / API 34 x86_64
-emulator, no AI provider) — run `37514700998`, all checks PASS:
+emulator, no AI provider). Latest run `37567881433` (commit `cc54cc8`) — all
+checks PASS:
 
 | Check | Result |
 |---|---|
-| APK installs, cold start | PASS (3.4 s to first frame) |
+| APK installs, cold start | PASS (3–6 s to first frame) |
 | IGRIS starts: all 11 migrations, `APP_STARTED` | PASS |
 | Phone tool set registered | PASS (25 tools) |
 | Kotlin plugin answers (`PHONE_READY`) | PASS (17 apps, Wi-Fi, battery readable, SDK 34) |
+| UI rendered and reached Rust (the backend's AI-status message is on screen, read via `uiautomator`) | PASS |
+| UI doesn't report the backend unavailable | PASS |
+| No desktop hotkey hint, no unmeasured "0 threads" on the phone | PASS |
 | No crash in logcat | PASS |
 
-Later runs also check the screen (UI dump): the UI rendered and shows the
-backend's own AI-status message, proving the webview ↔ Rust IPC works.
+Found and fixed by reading the emulator's screen: Android hides system-wide
+CPU stats and network interfaces from apps, so the System view showed "0%",
+"0 threads" and "0 interfaces" — these are now "—"; the mic button and Settings
+no longer show the desktop hotkey or the operator-mode panel on phones. The
+phone's real battery (via the plugin) shows on Home.
 
 **Not tested yet:** a physical phone; a chat with a real AI provider on
 Android; voice on a device; opening an app by voice/chat end to end; release
