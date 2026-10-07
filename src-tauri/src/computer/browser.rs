@@ -150,6 +150,9 @@ pub struct Browser {
     live: Mutex<Option<Live>>,
 }
 
+/// Longest wait for a launched browser to open its DevTools endpoint.
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(45);
+
 impl Browser {
     pub fn new(profile: PathBuf) -> Self {
         Self { profile, live: Mutex::new(None) }
@@ -182,7 +185,10 @@ impl Browser {
         cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         let mut child = cmd.spawn().map_err(|e| format!("Couldn't start the browser: {e}"))?;
         // The browser writes its DevTools port to the profile once it's listening.
-        let deadline = Instant::now() + Duration::from_secs(20);
+        // A first start with a fresh profile can be slow (profile creation, virus
+        // scanning, a busy or slow disk), so allow well beyond a typical start.
+        let started = Instant::now();
+        let deadline = started + LAUNCH_TIMEOUT;
         let port: u16 = loop {
             if let Some(p) = std::fs::read_to_string(&port_file).ok().and_then(|s| s.lines().next().and_then(|l| l.trim().parse().ok())) {
                 break p;
@@ -192,7 +198,7 @@ impl Browser {
             }
             if Instant::now() > deadline {
                 let _ = child.kill();
-                return Err("The browser didn't start its DevTools endpoint in time.".into());
+                return Err(format!("The browser didn't start its DevTools endpoint in time (still starting after {} s).", started.elapsed().as_secs()));
             }
             tokio::time::sleep(Duration::from_millis(150)).await;
         };
