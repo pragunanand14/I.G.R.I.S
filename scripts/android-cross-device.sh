@@ -43,7 +43,8 @@ H=${H:-1920}
 
 # Tap the node whose text, content-desc or hint is exactly $1 (else the first containing it).
 tap() {
-  for _ in $(seq 1 14); do
+  last_y=""
+  for i in $(seq 1 14); do
     dump
     xy=$(python3 - "$1" "$OUT/ui.xml" <<'PY'
 import re, sys
@@ -66,21 +67,27 @@ PY
 )
     if [ -n "$xy" ]; then
       y=${xy#* }
-      # Off screen (below the fold, or under the keyboard / tab bar): scroll it into view.
-      if [ "$y" -gt $((H * 3 / 4)) ]; then
-        adb shell input swipe 500 $((H * 7 / 10)) 500 $((H * 3 / 10)) 400
-        sleep 1
-        continue
-      elif [ "$y" -lt $((H / 12)) ]; then
-        adb shell input swipe 500 $((H * 3 / 10)) 500 $((H * 7 / 10)) 400
-        sleep 1
-        continue
-      fi
+      # Behind the bottom tab bar (unless it is a tab): scroll it up into view first.
+      case "$1" in Home | Chat | Today | More) ;; *)
+        if [ "$y" -gt $((H * 87 / 100)) ] && [ "$y" != "${last_y:-}" ]; then
+          last_y=$y
+          adb shell input swipe 500 $((H * 7 / 10)) 500 $((H * 4 / 10)) 400
+          sleep 1
+          continue
+        fi
+        ;;
+      esac
       adb shell input tap $xy
       sleep 1
       return 0
     fi
-    sleep 2
+    # Not on screen: look further down the page, then back up.
+    if [ "$i" -le 7 ]; then
+      adb shell input swipe 500 $((H * 7 / 10)) 500 $((H * 3 / 10)) 400
+    else
+      adb shell input swipe 500 $((H * 3 / 10)) 500 $((H * 7 / 10)) 400
+    fi
+    sleep 1
   done
   echo "::error::Couldn't find \"$1\" on screen"
   show
