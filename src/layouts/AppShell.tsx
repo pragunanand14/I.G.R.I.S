@@ -1,43 +1,12 @@
-import { useEffect } from "react";
 import { Outlet } from "react-router";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { OperatorBanner } from "@/components/operator/OperatorBanner";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
-import { useTelemetryPolling } from "@/hooks/useTelemetryPolling";
-import { useThemeEffect } from "@/hooks/useThemeEffect";
-import { useVoice } from "@/hooks/useVoice";
-import { useAppStore } from "@/stores/appStore";
-import { useChatStore } from "@/stores/chatStore";
-import { useOperatorStore } from "@/stores/operatorStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { useTaskStore } from "@/stores/taskStore";
+import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 
 export function AppShell() {
-  const backend = useAppStore((s) => s.backend);
-  const initApp = useAppStore((s) => s.init);
-  const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.load);
-
-  useEffect(() => {
-    void initApp();
-  }, [initApp]);
-
-  const loadAiStatus = useChatStore((s) => s.loadAiStatus);
-  useEffect(() => {
-    if (backend !== "ready") return;
-    void loadSettings();
-    void loadAiStatus();
-  }, [backend, loadSettings, loadAiStatus]);
-
-  const connectOperator = useOperatorStore((s) => s.connect);
-  useEffect(() => (backend === "ready" ? connectOperator() : undefined), [backend, connectOperator]);
-  const connectTasks = useTaskStore((s) => s.connect);
-  useEffect(() => (backend === "ready" ? connectTasks() : undefined), [backend, connectTasks]);
-
-  useThemeEffect(settings);
-  useTelemetryPolling(backend === "ready", settings.telemetryIntervalMs);
-  useVoice(backend === "ready");
+  const ready = useAppLifecycle();
 
   return (
     <div className="flex h-full flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
@@ -50,7 +19,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-      <ReminderAlerts enabled={backend === "ready"} />
+      <ReminderAlerts enabled={ready} />
     </div>
   );
 }

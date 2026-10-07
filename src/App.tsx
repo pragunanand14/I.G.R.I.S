@@ -2,6 +2,7 @@ import { createHashRouter, RouterProvider } from "react-router";
 import { NAV_ITEMS } from "@/config/navigation";
 import { AppShell } from "@/layouts/AppShell";
 import { lazy, Suspense } from "react";
+import { isMobilePlatform } from "@/services/platform";
 import { HomePage } from "@/pages/HomePage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { PlannedPage } from "@/pages/PlannedPage";
@@ -49,6 +50,16 @@ const router = createHashRouter([
   },
 ]);
 
+// Phones get their own UI (same IGRIS underneath: stores, services, backend).
+const MobileApp = named(() => import("@/mobile/MobileApp"), "MobileApp");
+
 export function App() {
+  if (isMobilePlatform()) {
+    return (
+      <Suspense fallback={null}>
+        <MobileApp />
+      </Suspense>
+    );
+  }
   return <RouterProvider router={router} />;
 }

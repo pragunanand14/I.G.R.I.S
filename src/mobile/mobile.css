@@ -1,0 +1,195 @@
+/*
+ * IGRIS on phones: a calm, readable look of its own. Bigger type, rounded
+ * cards, plain sentence-case labels, generous touch targets. Follows the
+ * user's theme (light/dark) and accent colour.
+ */
+.m-app {
+  --m-bg: #0e1116;
+  --m-card: #171b22;
+  --m-card-2: #1f242d;
+  --m-text: #f1f4f8;
+  --m-muted: #a3acb9;
+  --m-faint: #6f7987;
+  --m-line: rgb(255 255 255 / 0.07);
+  --m-accent: rgb(var(--accent-rgb));
+  --m-accent-soft: rgb(var(--accent-rgb) / 0.14);
+  --m-ok: #4fd1a1;
+  --m-warn: #f0b54f;
+  --m-bad: #f2706b;
+  background: var(--m-bg);
+  color: var(--m-text);
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-theme="light"] .m-app {
+  --m-bg: #f4f6f9;
+  --m-card: #ffffff;
+  --m-card-2: #eef1f5;
+  --m-text: #111722;
+  --m-muted: #586273;
+  --m-faint: #8a94a3;
+  --m-line: rgb(15 25 40 / 0.08);
+  --m-ok: #17946a;
+  --m-warn: #b97c12;
+  --m-bad: #d6453f;
+}
+
+.m-card {
+  background: var(--m-card);
+  border: 1px solid var(--m-line);
+  border-radius: 22px;
+}
+
+.m-muted { color: var(--m-muted); }
+.m-faint { color: var(--m-faint); }
+.m-accent { color: var(--m-accent); }
+
+.m-title {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.m-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--m-muted);
+}
+
+.m-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 16px;
+  font-weight: 600;
+  background: var(--m-card-2);
+  color: var(--m-text);
+}
+.m-button:disabled { opacity: 0.45; }
+
+.m-button-primary {
+  background: var(--m-accent);
+  color: #0b0e13;
+}
+
+.m-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--m-card);
+  border: 1px solid var(--m-line);
+  font-size: 15px;
+  text-align: left;
+}
+.m-chip:disabled { opacity: 0.45; }
+
+.m-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  padding: 12px 18px;
+  width: 100%;
+  text-align: left;
+}
+.m-row + .m-row { border-top: 1px solid var(--m-line); }
+
+.m-icon-badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: var(--m-accent-soft);
+  color: var(--m-accent);
+  flex-shrink: 0;
+}
+
+.m-input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: 16px;
+  background: var(--m-card-2);
+  border: 1px solid var(--m-line);
+  color: var(--m-text);
+  font-size: 16px;
+}
+.m-input::placeholder { color: var(--m-faint); }
+.m-input:focus { outline: 2px solid var(--m-accent); outline-offset: 1px; }
+
+.m-tabbar {
+  background: color-mix(in srgb, var(--m-card) 92%, transparent);
+  border-top: 1px solid var(--m-line);
+  backdrop-filter: blur(14px);
+}
+
+.m-tab {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--m-faint);
+}
+.m-tab[aria-current="page"] { color: var(--m-accent); }
+.m-tab-pill {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 32px;
+  border-radius: 999px;
+}
+.m-tab[aria-current="page"] .m-tab-pill { background: var(--m-accent-soft); }
+
+.m-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(0 0 0 / 0.45);
+}
+.m-sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 41;
+  max-height: 85%;
+  overflow-y: auto;
+  background: var(--m-bg);
+  border-radius: 26px 26px 0 0;
+  padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
+}
+.m-sheet-handle {
+  width: 40px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--m-line);
+  margin: 4px auto 14px;
+}
+
+.m-mic {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  background: var(--m-accent);
+  color: #0b0e13;
+  box-shadow: 0 8px 24px -8px rgb(var(--accent-rgb) / 0.7);
+}
+.m-mic[aria-pressed="true"] { background: var(--m-bad); color: #fff; }
+.m-mic:disabled { opacity: 0.45; box-shadow: none; }
+
+/* Chat on phones: the shared message components, framed for a small screen. */
+.m-chat-thread { background: var(--m-bg); }

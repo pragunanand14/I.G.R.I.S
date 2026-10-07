@@ -43,9 +43,17 @@ these capabilities and says what the phone app can't do.
 - TLS: on Android, HTTPS is verified against bundled Mozilla roots
   (`igris-core/src/net.rs`); the platform verifier needs JNI setup that Tauri
   doesn't provide. User-installed CAs are therefore not trusted on Android.
-- UI: phones get bottom navigation, no window buttons, safe-area padding, a
-  conversation panel instead of the history column, and no desktop-only pages
-  or sections (Projects, shared folders, desktop applications).
+- UI: phones get their own interface (`src/mobile/`), not a squeezed desktop
+  layout: four tabs (Home, Chat, Today, More), large readable type, rounded
+  cards, plain-language labels and status ("Ready to help", "Needs an AI
+  provider"), a big mic, tap-to-ask suggestions, one combined Today list
+  (reminders, timers, to-dos, events) with a single add box, and More for
+  name, AI/voice status, appearance, memories, activity and privacy switches.
+  It uses the same stores, services and backend commands as the desktop UI;
+  inside a chat, the shared message components (Markdown, tool activity,
+  approval prompts, task card, composer) are reused so approvals behave
+  exactly as on the desktop. `App.tsx` picks the phone UI by platform; the
+  desktop UI is unchanged.
 
 ## Building
 
