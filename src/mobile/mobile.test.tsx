@@ -5,7 +5,9 @@ import { useChatStore } from "@/stores/chatStore";
 import type { AuditEntry } from "@/types/tools";
 import { outcome } from "./activity";
 import { whenText } from "./format";
+import { useSystemStore } from "@/stores/systemStore";
 import { HomeScreen } from "./screens/HomeScreen";
+import { MoreScreen } from "./screens/MoreScreen";
 
 const ai = (ready: boolean, problem: string | null = null) => ({ provider: "anthropic", configuredModel: null, ready, problem, effectiveModel: ready ? "m" : null, effort: "medium" as const });
 
@@ -37,7 +39,7 @@ describe("phone Home screen", () => {
     home();
     expect(screen.getByText("Needs an AI provider")).toBeInTheDocument();
     expect(screen.getByText("No AI provider configured.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /How to set it up/ })).toHaveAttribute("href", "/more");
+    expect(screen.getByRole("link", { name: /How to set it up/ })).toHaveAttribute("href", "/more/ai");
   });
 
   it("is ready to help when the AI is connected", () => {
@@ -49,10 +51,33 @@ describe("phone Home screen", () => {
     expect(screen.getByRole("button", { name: "What's my battery level?" })).toBeEnabled();
   });
 
-  it("shows unknown phone values as unknown", () => {
+  it("keeps Home to a greeting, one place to ask and what's coming up", () => {
     useAppStore.setState({ backend: "ready" });
+    useChatStore.setState({ aiStatus: ai(true) });
     home();
-    expect(screen.getByText("Battery unknown")).toBeInTheDocument();
+    expect(screen.getByText("Coming up")).toBeInTheDocument();
+    expect(screen.queryByText(/Battery/)).not.toBeInTheDocument();
+  });
+});
+
+describe("phone More screen", () => {
+  afterEach(() => useAppStore.setState({ backend: "connecting" }));
+
+  it("lists every area and shows unknown phone values as unknown", () => {
+    useAppStore.setState({ backend: "ready" });
+    useSystemStore.setState({ snapshot: null });
+    render(
+      <MemoryRouter>
+        <MoreScreen />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: /Phone and computer/ })).toHaveAttribute("href", "/more/devices");
+    expect(screen.getByRole("link", { name: /AI and voice/ })).toHaveAttribute("href", "/more/ai");
+    expect(screen.getByRole("link", { name: /Appearance/ })).toHaveAttribute("href", "/more/appearance");
+    expect(screen.getByRole("link", { name: /What IGRIS remembers/ })).toHaveAttribute("href", "/more/memory");
+    expect(screen.getByRole("link", { name: /What IGRIS has done/ })).toHaveAttribute("href", "/more/activity");
+    expect(screen.getByRole("switch", { name: "Ask before every action" })).toBeInTheDocument();
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThanOrEqual(2);
   });
 });
 

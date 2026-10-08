@@ -1,21 +1,37 @@
 /*
- * IGRIS on phones: a calm, readable look of its own. Bigger type, rounded
- * cards, plain sentence-case labels, generous touch targets. Follows the
- * user's theme (light/dark) and accent colour.
+ * IGRIS on phones: quiet and minimal. Neutral surfaces without borders,
+ * one accent used sparingly, grouped lists, generous spacing and touch
+ * targets. Follows the user's theme (light/dark) and accent colour.
  */
+@layer components {
 .m-app {
-  --m-bg: #0e1116;
-  --m-card: #171b22;
-  --m-card-2: #1f242d;
-  --m-text: #f1f4f8;
-  --m-muted: #a3acb9;
-  --m-faint: #6f7987;
-  --m-line: rgb(255 255 255 / 0.07);
+  --m-bg: #0c0c0e;
+  --m-surface: #161618;
+  --m-surface-2: #202023;
+  --m-text: #f3f3f4;
+  --m-muted: #a1a1a9;
+  --m-faint: #6b6b74;
+  --m-line: rgb(255 255 255 / 0.06);
   --m-accent: rgb(var(--accent-rgb));
-  --m-accent-soft: rgb(var(--accent-rgb) / 0.14);
+  --m-accent-soft: rgb(var(--accent-rgb) / 0.12);
   --m-ok: #4fd1a1;
   --m-warn: #f0b54f;
   --m-bad: #f2706b;
+
+  /* The shared (desktop) components inside the phone app use the same palette. */
+  --bg: var(--m-bg);
+  --bg-elevated: var(--m-surface);
+  --surface: var(--m-surface);
+  --surface-hover: var(--m-surface-2);
+  --surface-strong: var(--m-surface-2);
+  --border: var(--m-line);
+  --border-strong: rgb(255 255 255 / 0.1);
+  --text: var(--m-text);
+  --text-muted: var(--m-muted);
+  --text-faint: var(--m-faint);
+  --grid-line: transparent;
+  --shadow: none;
+
   background: var(--m-bg);
   color: var(--m-text);
   font-size: 16px;
@@ -24,40 +40,86 @@
 }
 
 [data-theme="light"] .m-app {
-  --m-bg: #f4f6f9;
-  --m-card: #ffffff;
-  --m-card-2: #eef1f5;
-  --m-text: #111722;
-  --m-muted: #586273;
-  --m-faint: #8a94a3;
-  --m-line: rgb(15 25 40 / 0.08);
+  --m-bg: #f6f6f7;
+  --m-surface: #ffffff;
+  --m-surface-2: #ececee;
+  --m-text: #111113;
+  --m-muted: #66666e;
+  --m-faint: #9c9ca4;
+  --m-line: rgb(0 0 0 / 0.06);
   --m-ok: #17946a;
   --m-warn: #b97c12;
   --m-bad: #d6453f;
-}
-
-.m-card {
-  background: var(--m-card);
-  border: 1px solid var(--m-line);
-  border-radius: 22px;
+  --border-strong: rgb(0 0 0 / 0.1);
 }
 
 .m-muted { color: var(--m-muted); }
 .m-faint { color: var(--m-faint); }
 .m-accent { color: var(--m-accent); }
 
+/* ── Type ─────────────────────────────────────────────────────────────── */
+
 .m-title {
-  font-size: 28px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
 }
 
-.m-section-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--m-muted);
+.m-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--m-faint);
+  padding: 0 4px;
 }
+
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+
+/* A plain surface (used for prompts and single blocks). */
+.m-card {
+  background: var(--m-surface);
+  border-radius: 20px;
+}
+
+/* A grouped list: rows separated by inset hairlines. */
+.m-group {
+  background: var(--m-surface);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.m-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 12px 18px;
+  width: 100%;
+  text-align: left;
+}
+.m-row + .m-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 0;
+  border-top: 1px solid var(--m-line);
+}
+button.m-row:active,
+a.m-row:active { background: var(--m-surface-2); }
+
+/* Kept for older markup: a quiet icon, no tinted tile. */
+.m-icon-badge {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--m-muted);
+  flex-shrink: 0;
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
 
 .m-button {
   display: inline-flex;
@@ -66,71 +128,141 @@
   gap: 8px;
   min-height: 48px;
   padding: 0 18px;
-  border-radius: 16px;
+  border-radius: 14px;
   font-weight: 600;
-  background: var(--m-card-2);
+  font-size: 15px;
+  background: var(--m-surface-2);
   color: var(--m-text);
 }
-.m-button:disabled { opacity: 0.45; }
+.m-button:disabled { opacity: 0.4; }
 
+/* The one important action on a screen: inverted, not coloured. */
 .m-button-primary {
-  background: var(--m-accent);
-  color: #0b0e13;
+  background: var(--m-text);
+  color: var(--m-bg);
+}
+.m-button-primary:disabled {
+  opacity: 1;
+  background: var(--m-surface-2);
+  color: var(--m-faint);
+}
+
+.m-link {
+  color: var(--m-accent);
+  font-weight: 600;
 }
 
 .m-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 999px;
-  background: var(--m-card);
-  border: 1px solid var(--m-line);
-  font-size: 15px;
-  text-align: left;
-}
-.m-chip:disabled { opacity: 0.45; }
-
-.m-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 60px;
-  padding: 12px 18px;
-  width: 100%;
-  text-align: left;
-}
-.m-row + .m-row { border-top: 1px solid var(--m-line); }
-
-.m-icon-badge {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
-  background: var(--m-accent-soft);
-  color: var(--m-accent);
   flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--m-surface);
+  color: var(--m-muted);
+  font-size: 14px;
+  white-space: nowrap;
 }
+.m-chip:disabled { opacity: 0.4; }
 
 .m-input {
   width: 100%;
-  min-height: 52px;
+  min-height: 50px;
   padding: 0 16px;
-  border-radius: 16px;
-  background: var(--m-card-2);
-  border: 1px solid var(--m-line);
+  border-radius: 14px;
+  background: var(--m-surface);
   color: var(--m-text);
   font-size: 16px;
 }
+.m-card .m-input,
+.m-sheet .m-input { background: var(--m-surface-2); }
 .m-input::placeholder { color: var(--m-faint); }
-.m-input:focus { outline: 2px solid var(--m-accent); outline-offset: 1px; }
+.m-input:focus { outline: 2px solid var(--m-accent); outline-offset: 0; }
+
+/* A text field that sits inside a group row (no box of its own). */
+.m-field {
+  width: 100%;
+  min-height: 52px;
+  background: transparent;
+  color: var(--m-text);
+  font-size: 16px;
+}
+.m-field::placeholder { color: var(--m-faint); }
+.m-field:focus { outline: none; }
+
+/* The ask box on Home: one pill with the mic/send button inside. */
+.m-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  padding: 6px 6px 6px 20px;
+  border-radius: 999px;
+  background: var(--m-surface);
+}
+.m-ask:focus-within { outline: 2px solid var(--m-accent); }
+
+.m-mic {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: var(--m-text);
+  color: var(--m-bg);
+  flex-shrink: 0;
+}
+.m-mic[aria-pressed="true"] { background: var(--m-bad); color: #fff; }
+.m-mic:disabled { opacity: 0.35; }
+
+.m-icon-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--m-muted);
+  flex-shrink: 0;
+}
+.m-icon-button:active { background: var(--m-surface-2); }
+
+.m-segmented {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--m-surface-2);
+}
+.m-segmented > button {
+  min-height: 40px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--m-muted);
+}
+.m-segmented > button[aria-checked="true"] {
+  background: var(--m-surface);
+  color: var(--m-text);
+}
+
+.m-scroll-x {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -20px;
+  padding: 0 20px;
+}
+.m-scroll-x::-webkit-scrollbar { display: none; }
+
+/* ── Navigation ───────────────────────────────────────────────────────── */
 
 .m-tabbar {
-  background: color-mix(in srgb, var(--m-card) 92%, transparent);
+  background: var(--m-bg);
   border-top: 1px solid var(--m-line);
-  backdrop-filter: blur(14px);
 }
 
 .m-tab {
@@ -138,27 +270,21 @@
   flex: 1;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 8px 0 10px;
-  font-size: 12px;
-  font-weight: 600;
+  gap: 2px;
+  padding: 10px 0 8px;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--m-faint);
 }
-.m-tab[aria-current="page"] { color: var(--m-accent); }
-.m-tab-pill {
-  display: grid;
-  place-items: center;
-  width: 58px;
-  height: 32px;
-  border-radius: 999px;
-}
-.m-tab[aria-current="page"] .m-tab-pill { background: var(--m-accent-soft); }
+.m-tab[aria-current="page"] { color: var(--m-text); }
+
+/* ── Sheets ───────────────────────────────────────────────────────────── */
 
 .m-sheet-backdrop {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: rgb(0 0 0 / 0.45);
+  background: rgb(0 0 0 / 0.5);
 }
 .m-sheet {
   position: fixed;
@@ -167,29 +293,23 @@
   max-height: 85%;
   overflow-y: auto;
   background: var(--m-bg);
-  border-radius: 26px 26px 0 0;
-  padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0;
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
 }
 .m-sheet-handle {
-  width: 40px;
-  height: 5px;
+  width: 36px;
+  height: 4px;
   border-radius: 99px;
-  background: var(--m-line);
-  margin: 4px auto 14px;
+  background: var(--m-surface-2);
+  margin: 4px auto 16px;
 }
-
-.m-mic {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 999px;
-  background: var(--m-accent);
-  color: #0b0e13;
-  box-shadow: 0 8px 24px -8px rgb(var(--accent-rgb) / 0.7);
-}
-.m-mic[aria-pressed="true"] { background: var(--m-bad); color: #fff; }
-.m-mic:disabled { opacity: 0.45; box-shadow: none; }
 
 /* Chat on phones: the shared message components, framed for a small screen. */
 .m-chat-thread { background: var(--m-bg); }
+
+/* Prompts floating over the screen (approvals, pairing, notices). */
+.m-float {
+  background: var(--m-surface);
+  box-shadow: 0 0 0 1px var(--m-line), 0 16px 40px -12px rgb(0 0 0 / 0.55);
+}
+}

@@ -1,8 +1,8 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 
-/** A phone screen: a large title, optional back button and action, then scrolling content. */
+/** A phone screen: optional back button, a large title, then scrolling content. */
 export function Screen({
   title,
   subtitle,
@@ -19,35 +19,94 @@ export function Screen({
 }) {
   const navigate = useNavigate();
   return (
-    <div className="mx-auto w-full max-w-xl px-5 pt-5 pb-8">
-      {back && (
-        <button type="button" onClick={() => void navigate(back)} className="m-muted -ml-2 mb-2 flex min-h-11 items-center gap-1 pr-3 text-[15px] font-medium">
-          <ChevronLeft className="size-5" /> Back
-        </button>
-      )}
-      <header className="mb-5 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="m-title">{title}</h1>
-          {subtitle && <p className="m-muted mt-1 text-[15px]">{subtitle}</p>}
+    <div className="mx-auto w-full max-w-xl px-5 pt-4 pb-10">
+      {back || action ? (
+        <div className="mb-3 flex min-h-11 items-center justify-between">
+          {back ? (
+            <button type="button" onClick={() => void navigate(back)} className="m-icon-button -ml-3" aria-label="Back">
+              <ChevronLeft className="size-6" />
+            </button>
+          ) : (
+            <span />
+          )}
+          {action}
         </div>
-        {action}
+      ) : (
+        <div className="h-6" />
+      )}
+      <header className="mb-7">
+        <h1 className="m-title">{title}</h1>
+        {subtitle && <p className="m-muted mt-1.5 text-[15px]">{subtitle}</p>}
       </header>
-      <div className="space-y-5">{children}</div>
+      <div className="space-y-7">{children}</div>
     </div>
   );
 }
 
-/** A titled group of content. */
-export function Section({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
+/** A group of content with a small label above it. */
+export function Section({ title, children, aside }: { title?: string; children: ReactNode; aside?: ReactNode }) {
   return (
-    <section>
-      <div className="mb-2 flex items-center justify-between px-1">
-        <h2 className="m-section-title">{title}</h2>
-        {aside}
-      </div>
+    <section className="space-y-2">
+      {(title || aside) && (
+        <div className="flex min-h-6 items-center justify-between">
+          {title ? <h2 className="m-label">{title}</h2> : <span />}
+          {aside}
+        </div>
+      )}
       {children}
     </section>
   );
+}
+
+/** A grouped list. */
+export function Group({ children, label }: { children: ReactNode; label?: string }) {
+  return (
+    <div className="m-group" role={label ? "list" : undefined} aria-label={label}>
+      {children}
+    </div>
+  );
+}
+
+/** One row of a group: a title, an optional line under it, an optional value on the right; a link when `to` is set. */
+export function Row({
+  title,
+  detail,
+  value,
+  to,
+  onClick,
+  icon,
+}: {
+  title: ReactNode;
+  detail?: ReactNode;
+  value?: ReactNode;
+  to?: string;
+  onClick?: () => void;
+  icon?: ReactNode;
+}) {
+  const body = (
+    <>
+      {icon && <span className="m-muted shrink-0">{icon}</span>}
+      <div className="min-w-0 flex-1">
+        <div className="font-medium break-words">{title}</div>
+        {detail && <div className="m-muted mt-0.5 text-sm break-words">{detail}</div>}
+      </div>
+      {value !== undefined && <span className="m-muted shrink-0 text-[15px]">{value}</span>}
+      {(to || onClick) && <ChevronRight className="m-faint size-5 shrink-0" />}
+    </>
+  );
+  if (to)
+    return (
+      <Link to={to} className="m-row">
+        {body}
+      </Link>
+    );
+  if (onClick)
+    return (
+      <button type="button" className="m-row" onClick={onClick}>
+        {body}
+      </button>
+    );
+  return <div className="m-row">{body}</div>;
 }
 
 /** A bottom sheet. */
@@ -64,7 +123,7 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
       <div className="m-sheet-backdrop" onClick={onClose} aria-hidden="true" />
       <div className="m-sheet" role="dialog" aria-modal="true" aria-label={title}>
         <div className="m-sheet-handle" />
-        <h2 className="mb-3 text-lg font-semibold">{title}</h2>
+        <h2 className="mb-4 text-xl font-semibold">{title}</h2>
         {children}
       </div>
     </>
@@ -76,10 +135,19 @@ export type Tone = "ok" | "warn" | "bad";
 const TONE_COLOR: Record<Tone, string> = { ok: "var(--m-ok)", warn: "var(--m-warn)", bad: "var(--m-bad)" };
 
 export function Dot({ tone }: { tone: Tone }) {
-  return <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ background: TONE_COLOR[tone] }} aria-hidden="true" />;
+  return <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: TONE_COLOR[tone] }} aria-hidden="true" />;
 }
 
-/** A plain on/off switch with a label and an explanation. */
+/** A short error line. */
+export function ErrorText({ children }: { children: ReactNode }) {
+  return (
+    <p role="alert" className="px-1 text-sm" style={{ color: "var(--m-bad)" }}>
+      {children}
+    </p>
+  );
+}
+
+/** A plain on/off switch with a label and an explanation, as a group row. */
 export function Switch({
   label,
   description,
@@ -106,12 +174,12 @@ export function Switch({
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className="relative h-8 w-13 shrink-0 rounded-full transition-colors disabled:opacity-40"
-        style={{ background: checked ? "var(--m-accent)" : "var(--m-card-2)", border: "1px solid var(--m-line)" }}
+        className="relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors disabled:opacity-40"
+        style={{ background: checked ? "var(--m-ok)" : "var(--m-surface-2)" }}
       >
         <span
-          className="absolute top-1/2 size-6 -translate-y-1/2 rounded-full bg-white shadow transition-[left]"
-          style={{ left: checked ? "calc(100% - 28px)" : "3px" }}
+          className="absolute top-1/2 size-[26px] -translate-y-1/2 rounded-full bg-white shadow-sm transition-[left]"
+          style={{ left: checked ? "calc(100% - 28px)" : "2px" }}
         />
       </button>
     </label>

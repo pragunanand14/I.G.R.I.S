@@ -9,7 +9,7 @@ import { ChatScreen } from "./screens/ChatScreen";
 import { DevicesScreen } from "./screens/DevicesScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
-import { MoreScreen } from "./screens/MoreScreen";
+import { AiScreen, AppearanceScreen, MoreScreen } from "./screens/MoreScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 
 const TABS = [
@@ -30,9 +30,7 @@ function MobileShell() {
       <nav aria-label="Main" className="m-tabbar flex shrink-0 pb-[env(safe-area-inset-bottom)]">
         {TABS.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === "/"} className="m-tab">
-            <span className="m-tab-pill">
-              <Icon className="size-[22px]" strokeWidth={1.9} />
-            </span>
+            <Icon className="size-[22px]" strokeWidth={1.75} />
             {label}
           </NavLink>
         ))}
@@ -52,6 +50,8 @@ const router = createHashRouter([
       { path: "chat", element: <ChatScreen /> },
       { path: "today", element: <TodayScreen /> },
       { path: "more", element: <MoreScreen /> },
+      { path: "more/ai", element: <AiScreen /> },
+      { path: "more/appearance", element: <AppearanceScreen /> },
       { path: "more/memory", element: <MemoryScreen /> },
       { path: "more/activity", element: <ActivityScreen /> },
       { path: "more/devices", element: <DevicesScreen /> },

@@ -37,30 +37,27 @@ export function ChatScreen() {
 
   return (
     <div className="m-chat-thread flex h-full flex-col">
-      <header className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2" style={{ borderBottom: "1px solid var(--m-line)" }}>
-        <button type="button" onClick={() => setListOpen(true)} className="m-button min-h-11 px-3" aria-label="Your chats">
-          <MessagesSquare className="size-5" />
+      <header className="flex shrink-0 items-center gap-1 px-2 pt-2 pb-1">
+        <button type="button" onClick={() => setListOpen(true)} className="m-icon-button" aria-label="Your chats">
+          <MessagesSquare className="size-[22px]" />
         </button>
-        <h1 className="min-w-0 flex-1 truncate text-center text-[17px] font-semibold">{active?.title ?? "New chat"}</h1>
-        <button type="button" onClick={() => void s.openConversation(null)} className="m-button min-h-11 px-3" aria-label="New chat">
-          <SquarePen className="size-5" />
+        <h1 className="min-w-0 flex-1 truncate text-center text-base font-semibold">{active?.title ?? "New chat"}</h1>
+        <button type="button" onClick={() => void s.openConversation(null)} className="m-icon-button" aria-label="New chat">
+          <SquarePen className="size-[22px]" />
         </button>
       </header>
 
       {!status.ready && !streamingHere && (
-        <div className="m-card mx-4 mt-3 flex items-start gap-3 p-3" role="status">
-          <span className="mt-1.5">
-            <Dot tone={status.tone} />
-          </span>
-          <div className="min-w-0">
-            <p className="font-semibold">{status.title}</p>
-            <p className="m-muted text-sm break-words">{status.detail}</p>
-          </div>
+        <div className="m-card mx-4 mt-2 px-4 py-3" role="status">
+          <p className="flex items-center gap-2 text-[15px] font-medium">
+            <Dot tone={status.tone} /> {status.title}
+          </p>
+          <p className="m-muted mt-0.5 text-sm break-words">{status.detail}</p>
         </div>
       )}
 
       {s.error && (
-        <div role="alert" className="m-card mx-4 mt-3 p-3 text-sm" style={{ color: "var(--m-bad)" }}>
+        <div role="alert" className="m-card mx-4 mt-2 px-4 py-3 text-sm" style={{ color: "var(--m-bad)" }}>
           {s.error}{" "}
           <button type="button" onClick={s.dismissError} className="ml-1 font-semibold underline">
             OK
@@ -73,14 +70,12 @@ export function ChatScreen() {
           s.loading ? (
             <p className="m-muted p-6 text-center">Loading…</p>
           ) : (
-            <div className="mx-auto max-w-xl px-5 pt-10 text-center">
-              <p className="text-xl font-semibold">What can I do for you?</p>
-              <p className="m-muted mt-2">
-                I can answer questions, search the web, set reminders and to-dos, open your apps, check your battery and remember things for you.
-              </p>
-              <div className="mt-6 flex flex-col items-stretch gap-2">
+            <div className="mx-auto flex h-full max-w-xl flex-col justify-end px-5 pb-4">
+              <p className="text-2xl font-semibold tracking-tight">What can I do for you?</p>
+              <p className="m-muted mt-2 text-[15px]">Questions, web searches, reminders and to-dos, opening your apps, and remembering things for you.</p>
+              <div className="m-group mt-6">
                 {SUGGESTIONS.map((x) => (
-                  <button key={x} type="button" className="m-chip justify-center" disabled={!status.ready} onClick={() => void ask(x)}>
+                  <button key={x} type="button" className="m-row min-h-12 text-[15px] disabled:opacity-40" disabled={!status.ready} onClick={() => void ask(x)}>
                     {x}
                   </button>
                 ))}
@@ -99,7 +94,7 @@ export function ChatScreen() {
         )}
       </div>
 
-      <div className="mx-auto w-full max-w-xl shrink-0 px-3 pt-1 pb-3">
+      <div className="mx-auto w-full max-w-xl shrink-0 px-3 pt-1 pb-2">
         <TaskCard conversationId={s.activeId} busy={s.streaming !== null} onResume={(id, cid) => void s.resumeTask(id, cid)} />
         <Composer
           key={s.activeId ?? "new"}
@@ -134,12 +129,12 @@ function ChatList({ onPick }: { onPick: (id: string | null) => void }) {
   return (
     <div className="space-y-3">
       <button type="button" className="m-button m-button-primary w-full" onClick={() => onPick(null)}>
-        <SquarePen className="size-5" /> Start a new chat
+        <SquarePen className="size-5" /> New chat
       </button>
       {conversations.length === 0 ? (
         <p className="m-muted py-4 text-center">No chats yet.</p>
       ) : (
-        <ul className="m-card" aria-label="Chats">
+        <ul className="m-group" aria-label="Chats">
           {conversations.map((c) => (
             <li key={c.id} className="m-row">
               {confirm === c.id ? (
@@ -163,8 +158,8 @@ function ChatList({ onPick }: { onPick: (id: string | null) => void }) {
                     <div className={`truncate font-medium ${c.id === activeId ? "m-accent" : ""}`}>{c.title}</div>
                     <div className="m-muted text-sm">{whenText(c.updatedAt)}</div>
                   </button>
-                  <button type="button" className="m-faint grid size-11 place-items-center" aria-label={`Delete ${c.title}`} onClick={() => setConfirm(c.id)}>
-                    <Trash2 className="size-5" />
+                  <button type="button" className="m-icon-button -mr-2" aria-label={`Delete ${c.title}`} onClick={() => setConfirm(c.id)}>
+                    <Trash2 className="m-faint size-[18px]" />
                   </button>
                 </>
               )}

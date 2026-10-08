@@ -6,7 +6,7 @@ import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
 import type { CalendarEvent, Reminder, Task } from "@/types/productivity";
 import { whenText } from "../format";
-import { Screen, Section } from "../ui";
+import { ErrorText, Group, Row, Screen, Section } from "../ui";
 
 interface Day {
   reminders: Reminder[];
@@ -70,73 +70,63 @@ export function TodayScreen() {
       ) : (
         <>
           <AddBox onAdded={load} onError={setError} />
-          {error && (
-            <p role="alert" className="text-sm" style={{ color: "var(--m-bad)" }}>
-              {error}
-            </p>
-          )}
+          {error && <ErrorText>{error}</ErrorText>}
 
-          <Section title="Reminders and timers">
-            <div className="m-card">
+          <Section title="Reminders">
+            <Group>
               {day?.reminders.length === 0 && <p className="m-row m-muted">Nothing scheduled.</p>}
               {day?.reminders.map((r) => (
                 <div key={r.id} className="m-row">
-                  <span className="m-icon-badge">{r.kind === "timer" ? <Timer className="size-5" /> : <Bell className="size-5" />}</span>
+                  <span className="m-muted shrink-0">{r.kind === "timer" ? <Timer className="size-[18px]" /> : <Bell className="size-[18px]" />}</span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{r.title}</div>
                     <div className="m-muted text-sm">{whenText(r.dueAt)}</div>
                   </div>
-                  <button type="button" className="m-faint grid size-11 place-items-center" aria-label={`Cancel ${r.title}`} onClick={() => void act(() => api.cancelReminder(r.id))}>
-                    <X className="size-5" />
+                  <button type="button" className="m-icon-button -mr-2" aria-label={`Cancel ${r.title}`} onClick={() => void act(() => api.cancelReminder(r.id))}>
+                    <X className="m-faint size-[18px]" />
                   </button>
                 </div>
               ))}
-            </div>
+            </Group>
           </Section>
 
           <Section title="To-do">
-            <div className="m-card">
+            <Group>
               {day?.tasks.length === 0 && <p className="m-row m-muted">Your list is empty.</p>}
               {day?.tasks.map((t) => (
                 <div key={t.id} className="m-row">
                   <button
                     type="button"
-                    className="grid size-11 shrink-0 place-items-center"
+                    className="-ml-2 grid size-9 shrink-0 place-items-center"
                     aria-label={`Mark “${t.title}” done`}
                     onClick={() => void act(() => api.setTaskDone(t.id, true))}
                   >
-                    <Circle className="m-faint size-6" />
+                    <Circle className="m-faint size-[22px]" strokeWidth={1.5} />
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{t.title}</div>
                     {t.dueAt && <div className="m-muted text-sm">Due {whenText(t.dueAt)}</div>}
                   </div>
-                  <button type="button" className="m-faint grid size-11 place-items-center" aria-label={`Delete ${t.title}`} onClick={() => void act(() => api.deleteTask(t.id))}>
-                    <Trash2 className="size-5" />
+                  <button type="button" className="m-icon-button -mr-2" aria-label={`Delete ${t.title}`} onClick={() => void act(() => api.deleteTask(t.id))}>
+                    <Trash2 className="m-faint size-[18px]" />
                   </button>
                 </div>
               ))}
-            </div>
+            </Group>
           </Section>
 
           {day && day.events.length > 0 && (
-            <Section title="Events today">
-              <div className="m-card">
+            <Section title="Events">
+              <Group>
                 {day.events.map((e) => (
-                  <div key={e.id} className="m-row">
-                    <span className="m-icon-badge">
-                      <CalendarDays className="size-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{e.title}</div>
-                      <div className="m-muted text-sm">
-                        {e.allDay ? "All day" : new Date(e.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                        {e.location ? ` · ${e.location}` : ""}
-                      </div>
-                    </div>
-                  </div>
+                  <Row
+                    key={e.id}
+                    icon={<CalendarDays className="size-[18px]" />}
+                    title={e.title}
+                    detail={`${e.allDay ? "All day" : new Date(e.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${e.location ? ` · ${e.location}` : ""}`}
+                  />
                 ))}
-              </div>
+              </Group>
             </Section>
           )}
         </>
@@ -176,32 +166,34 @@ function AddBox({ onAdded, onError }: { onAdded: () => Promise<void>; onError: (
   };
 
   return (
-    <form onSubmit={submit} className="m-card space-y-3 p-4">
-      <input className="m-input" value={what} onChange={(e) => setWhat(e.target.value)} placeholder="What do you need to remember?" aria-label="What" />
-      <input
-        className="m-input"
-        value={when}
-        onChange={(e) => setWhen(e.target.value)}
-        placeholder="When? e.g. in 20 min, 6pm"
-        aria-label="When"
-      />
+    <form onSubmit={submit} className="space-y-3">
+      <div className="m-group">
+        <div className="m-row py-0">
+          <input className="m-field" value={what} onChange={(e) => setWhat(e.target.value)} placeholder="Add a reminder or to-do" aria-label="What" />
+        </div>
+        <div className="m-row py-0">
+          <input className="m-field" value={when} onChange={(e) => setWhen(e.target.value)} placeholder="When? e.g. in 20 min, 6pm" aria-label="When" />
+        </div>
+      </div>
       <p className="m-muted min-h-5 px-1 text-sm" aria-live="polite">
         {preview.state === "ok" && (
           <span className="inline-flex items-center gap-1">
-            <Check className="m-accent size-4" /> {preview.parsed.description}
+            <Check className="size-4" style={{ color: "var(--m-ok)" }} /> {preview.parsed.description}
           </span>
         )}
         {preview.state === "error" && <span style={{ color: "var(--m-warn)" }}>{preview.message}</span>}
-        {preview.state === "empty" && "Leave the time empty to just add it to your to-do list."}
+        {preview.state === "empty" && "No time? It goes on your to-do list."}
       </p>
-      <div className="grid grid-cols-2 gap-2">
-        <button type="button" className="m-button m-button-primary" disabled={busy || !what.trim() || preview.state !== "ok"} onClick={() => void run("reminder")}>
-          <Bell className="size-5" /> Remind me
-        </button>
-        <button type="button" className="m-button" disabled={busy || !what.trim()} onClick={() => void run("todo")}>
-          <Check className="size-5" /> Add to-do
-        </button>
-      </div>
+      {what.trim() && (
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className="m-button m-button-primary" disabled={busy || preview.state !== "ok"} onClick={() => void run("reminder")}>
+            Remind me
+          </button>
+          <button type="button" className="m-button" disabled={busy} onClick={() => void run("todo")}>
+            Add to-do
+          </button>
+        </div>
+      )}
     </form>
   );
 }

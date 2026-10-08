@@ -26,7 +26,7 @@ export function linkText(s: LinkStatus | undefined): { text: string; tone: "ok" 
     case "connecting":
       return { text: "Connecting…", tone: "warn" };
     case "offline":
-      return { text: s.detail ? `Can't reach the relay — ${s.detail}` : "Can't reach the relay", tone: "bad" };
+      return { text: s.detail ? `Can't connect — ${s.detail}` : "Can't connect", tone: "bad" };
     default:
       return { text: "Off", tone: "warn" };
   }
