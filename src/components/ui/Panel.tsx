@@ -7,16 +7,17 @@ interface PanelProps {
   className?: string;
 }
 
+/** A quiet surface for one group of content: a small title, then the content. */
 export function Panel({ title, action, children, className = "" }: PanelProps) {
   return (
-    <section className={`rounded-xl border border-line bg-surface backdrop-blur-sm ${className}`}>
+    <section className={`anim-rise rounded-2xl border border-line bg-surface transition-colors duration-300 ${className}`}>
       {(title || action) && (
-        <header className="flex items-center justify-between gap-4 border-b border-line px-4 py-2.5">
-          {title && <h2 className="text-label">{title}</h2>}
+        <header className="flex min-h-11 items-center justify-between gap-4 px-5 pt-3">
+          {title && <h2 className="text-[13px] font-medium text-muted">{title}</h2>}
           {action}
         </header>
       )}
-      <div className="p-4">{children}</div>
+      <div className={title || action ? "px-5 pt-2 pb-5" : "p-5"}>{children}</div>
     </section>
   );
 }

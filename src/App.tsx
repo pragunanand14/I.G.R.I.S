@@ -10,17 +10,32 @@ import { PlannedPage } from "@/pages/PlannedPage";
 // Pages load on first visit; Home (the start screen) ships in the main bundle.
 const named = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, key: K) =>
   lazy(() => load().then((m) => ({ default: m[key] })));
-const ChatPage = named(() => import("@/pages/ChatPage"), "ChatPage");
-const MemoryPage = named(() => import("@/pages/MemoryPage"), "MemoryPage");
-const ProjectsPage = named(() => import("@/pages/ProjectsPage"), "ProjectsPage");
-const SecurityPage = named(() => import("@/pages/SecurityPage"), "SecurityPage");
-const SettingsPage = named(() => import("@/pages/SettingsPage"), "SettingsPage");
-const SystemPage = named(() => import("@/pages/SystemPage"), "SystemPage");
-const TasksPage = named(() => import("@/pages/TasksPage"), "TasksPage");
-const ToolsPage = named(() => import("@/pages/ToolsPage"), "ToolsPage");
+const PAGES = {
+  chat: () => import("@/pages/ChatPage"),
+  memory: () => import("@/pages/MemoryPage"),
+  projects: () => import("@/pages/ProjectsPage"),
+  security: () => import("@/pages/SecurityPage"),
+  settings: () => import("@/pages/SettingsPage"),
+  system: () => import("@/pages/SystemPage"),
+  tasks: () => import("@/pages/TasksPage"),
+  tools: () => import("@/pages/ToolsPage"),
+};
+const ChatPage = named(PAGES.chat, "ChatPage");
+const MemoryPage = named(PAGES.memory, "MemoryPage");
+const ProjectsPage = named(PAGES.projects, "ProjectsPage");
+const SecurityPage = named(PAGES.security, "SecurityPage");
+const SettingsPage = named(PAGES.settings, "SettingsPage");
+const SystemPage = named(PAGES.system, "SystemPage");
+const TasksPage = named(PAGES.tasks, "TasksPage");
+const ToolsPage = named(PAGES.tools, "ToolsPage");
+
+// Once the window is up, fetch the other pages in the background so moving between them never waits.
+if (typeof window !== "undefined" && !isMobilePlatform()) {
+  setTimeout(() => Object.values(PAGES).forEach((load) => void load().catch(() => undefined)), 2500);
+}
 
 function Page({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<div className="p-8 text-sm text-faint">Loading…</div>}>{children}</Suspense>;
+  return <Suspense fallback={null}>{children}</Suspense>;
 }
 
 const IMPLEMENTED: Record<string, React.ReactNode> = {

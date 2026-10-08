@@ -12,7 +12,7 @@ export function OperatorBanner() {
   const paused = task.state === "paused";
 
   return (
-    <div role="status" className="flex shrink-0 items-center gap-3 border-b border-accent/30 bg-accent/10 px-4 py-2 text-sm" data-testid="operator-banner">
+    <div role="status" className="anim-fade mx-2 mb-2 flex shrink-0 items-center gap-3 rounded-xl bg-accent/10 px-4 py-2 text-sm" data-testid="operator-banner">
       <span className="relative flex size-2.5">
         <span className={`absolute inline-flex size-full rounded-full bg-accent opacity-60 ${paused ? "" : "animate-ping"}`} />
         <span className="relative inline-flex size-2.5 rounded-full bg-accent" />

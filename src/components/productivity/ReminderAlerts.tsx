@@ -57,7 +57,7 @@ export function ReminderAlerts({ enabled }: { enabled: boolean }) {
     <div className="pointer-events-none fixed top-12 right-4 z-50 flex w-80 flex-col gap-2" aria-live="assertive">
       {error && <p className="pointer-events-auto rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</p>}
       {ringing.map((r) => (
-        <div key={r.id} role="alert" className="pointer-events-auto rounded-xl border border-accent/40 bg-elevated p-3 shadow-xl backdrop-blur">
+        <div key={r.id} role="alert" className="anim-rise pointer-events-auto rounded-2xl border border-line-strong bg-elevated p-3.5 shadow-[var(--shadow)]">
           <div className="flex items-start gap-2.5">
             <span className="mt-0.5 grid size-7 shrink-0 animate-pulse place-items-center rounded-full bg-accent/15 text-accent motion-reduce:animate-none">
               {r.kind === "timer" ? <Timer className="size-4" /> : r.late ? <AlarmClock className="size-4" /> : <BellRing className="size-4" />}

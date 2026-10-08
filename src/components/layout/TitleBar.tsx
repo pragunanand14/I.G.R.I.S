@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { windowControls } from "@/services/window";
 import { useAppStore } from "@/stores/appStore";
 
-/** Custom frameless title bar. The whole bar is a drag region (double-click maximises). */
+/** The frameless window's top strip: a drag region (double-click maximises) with the window buttons. */
 export function TitleBar() {
   const version = useAppStore((s) => s.info?.version);
   const controls = windowControls.available();
@@ -19,22 +19,7 @@ export function TitleBar() {
   }, [controls]);
 
   return (
-    <header data-tauri-drag-region className="flex h-9 shrink-0 items-center justify-between border-b border-line bg-bg/80 pl-4">
-      <div data-tauri-drag-region className="flex items-center gap-2.5">
-        <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-          <circle cx="12" cy="12" r="10" fill="none" stroke="var(--accent)" strokeOpacity="0.4" strokeWidth="1.5" />
-          <circle cx="12" cy="12" r="4" fill="var(--accent)" />
-        </svg>
-        <span data-tauri-drag-region className="text-[11px] font-semibold tracking-[0.32em] text-fg">
-          IGRIS
-        </span>
-        {version && (
-          <span data-tauri-drag-region className="font-mono text-[10px] text-faint">
-            v{version}
-          </span>
-        )}
-      </div>
-
+    <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-end" aria-label={version ? `IGRIS v${version}` : "IGRIS"}>
       {controls && (
         <div className="flex h-full">
           <WindowButton label="Minimize" onClick={() => void windowControls.minimize()}>
@@ -69,7 +54,7 @@ function WindowButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`grid h-full w-11 place-items-center text-muted transition-colors ${
+      className={`grid h-full w-12 place-items-center text-faint transition-colors duration-200 ${
         danger ? "hover:bg-danger hover:text-white" : "hover:bg-surface-hover hover:text-fg"
       }`}
     >

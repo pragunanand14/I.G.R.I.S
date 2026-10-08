@@ -6,7 +6,7 @@ import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { rememberTheme, restoreTheme } from "./motion";
-import { Splash } from "./Splash";
+import { Opening } from "@/components/core/Opening";
 import { ActivityScreen } from "./screens/ActivityScreen";
 import { ChatScreen, ChatsScreen } from "./screens/ChatScreen";
 import { DevicesScreen } from "./screens/DevicesScreen";
@@ -33,7 +33,7 @@ function MobileShell() {
       </main>
       <ReminderAlerts enabled={ready} />
       <DevicePrompts enabled={ready} phone />
-      <Splash />
+      <Opening />
     </div>
   );
 }

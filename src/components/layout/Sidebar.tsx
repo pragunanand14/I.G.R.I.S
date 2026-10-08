@@ -1,61 +1,89 @@
-import { NavLink } from "react-router";
-import { NAV_ITEMS } from "@/config/navigation";
+import { useLayoutEffect, useRef, useState } from "react";
+import { NavLink, useLocation } from "react-router";
+import { AiCore } from "@/components/core/AiCore";
+import { NAV_ITEMS, type NavItem } from "@/config/navigation";
+import { useCoreState } from "@/hooks/useCoreState";
+import { nav } from "@/hooks/motion";
 import { useAppStore } from "@/stores/appStore";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { DESKTOP_ONLY_PATHS, isMobilePlatform } from "@/services/platform";
 
+const MAIN = NAV_ITEMS.filter((i) => i.path !== "/settings");
+const SETTINGS = NAV_ITEMS.find((i) => i.path === "/settings");
+
+/**
+ * The window's left column: the IGRIS mark (also a drag handle), the pages,
+ * Settings and the engine's state. The highlight slides to the current page.
+ */
 export function Sidebar() {
   const backend = useAppStore((s) => s.backend);
-  const tone = backend === "ready" ? "ok" : backend === "connecting" ? "warn" : "error";
-  const backendLabel =
-    backend === "ready" ? "Backend connected" : backend === "connecting" ? "Connecting to backend" : "Backend unavailable";
+  const version = useAppStore((s) => s.info?.version);
+  const core = useCoreState();
+  const { pathname } = useLocation();
+  const list = useRef<HTMLDivElement>(null);
+  const [mark, setMark] = useState<{ y: number; h: number } | null>(null);
 
-  const items = isMobilePlatform() ? NAV_ITEMS.filter((i) => !DESKTOP_ONLY_PATHS.includes(i.path)) : NAV_ITEMS;
+  const current = NAV_ITEMS.find((i) => (i.path === "/" ? pathname === "/" : pathname.startsWith(i.path)))?.path ?? null;
+  useLayoutEffect(() => {
+    const el = current ? list.current?.querySelector<HTMLElement>(`[data-path="${current}"]`) : null;
+    setMark(el ? { y: el.offsetTop, h: el.offsetHeight } : null);
+  }, [current]);
+
+  const tone = backend === "ready" ? "ok" : backend === "connecting" ? "warn" : "error";
+  const status = backend === "ready" ? "Online" : backend === "connecting" ? "Starting" : "Offline";
 
   return (
-    <nav
-      aria-label="Primary"
-      className="flex w-full shrink-0 flex-row items-center border-t border-line bg-bg px-1 py-1 md:w-[72px] md:flex-col md:border-t-0 md:border-r md:px-0 md:py-3"
-    >
-      <ul className="flex min-w-0 flex-1 flex-row items-center gap-1 overflow-x-auto md:flex-col md:overflow-visible">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const planned = item.plannedPhase !== undefined;
-          return (
-            <li key={item.path}>
-              <NavLink
-                to={item.path}
-                end={item.path === "/"}
-                title={planned ? `${item.label} — planned for Phase ${item.plannedPhase}` : item.label}
-                className={({ isActive }) =>
-                  `group relative flex w-14 flex-col items-center gap-1 rounded-lg py-2 transition-colors ${
-                    isActive ? "bg-surface-strong text-fg" : "text-muted hover:bg-surface-hover hover:text-fg"
-                  } ${planned ? "opacity-45" : ""}`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {isActive && (
-                      <span className="absolute -top-1 right-3 left-3 h-0.5 rounded-full bg-accent md:top-2 md:right-auto md:bottom-2 md:-left-2 md:h-auto md:w-0.5" />
-                    )}
-                    <Icon className="size-[18px]" strokeWidth={1.6} />
-                    <span className="text-[10px] leading-none">{item.label}</span>
-                    {planned && (
-                      <span className="absolute top-1 right-1 rounded px-0.5 font-mono text-[8px] leading-tight text-faint">
-                        P{item.plannedPhase}
-                      </span>
-                    )}
-                  </>
-                )}
-              </NavLink>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="hidden flex-col items-center gap-1 pt-2 md:flex" title={backendLabel} aria-label={backendLabel} role="status">
+    <nav aria-label="Primary" className="flex w-16 shrink-0 flex-col pb-3 lg:w-56">
+      <div data-tauri-drag-region className="flex h-14 shrink-0 items-center gap-2.5 px-5">
+        <span className="size-6 shrink-0" aria-hidden="true">
+          <AiCore state={core} size="100%" />
+        </span>
+        <span data-tauri-drag-region className="hidden text-[13px] font-semibold tracking-[0.28em] text-fg lg:inline">
+          IGRIS
+        </span>
+      </div>
+
+      <div ref={list} className="relative mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3">
+        {mark && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute right-3 left-3 rounded-lg bg-surface-strong transition-[transform,height] duration-300 ease-[var(--ease-out)]"
+            style={{ transform: `translateY(${mark.y}px)`, height: mark.h, top: 0 }}
+          />
+        )}
+        {MAIN.map((item) => (
+          <Item key={item.path} item={item} />
+        ))}
+        <div className="flex-1" />
+        {SETTINGS && <Item item={SETTINGS} />}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 px-5 text-xs text-faint" role="status" title={`IGRIS core: ${status}`}>
         <StatusDot tone={tone} pulse={backend === "connecting"} />
-        <span className="text-[9px] tracking-wider text-faint uppercase">Core</span>
+        <span className="hidden lg:inline">{status}</span>
+        {version && <span className="ml-auto hidden font-mono text-[10px] lg:inline">v{version}</span>}
       </div>
     </nav>
+  );
+}
+
+function Item({ item }: { item: NavItem }) {
+  const Icon = item.icon;
+  const planned = item.plannedPhase !== undefined;
+  return (
+    <NavLink
+      to={item.path}
+      end={item.path === "/"}
+      data-path={item.path}
+      viewTransition={nav().viewTransition}
+      title={planned ? `${item.label} — planned for Phase ${item.plannedPhase}` : item.label}
+      className={({ isActive }) =>
+        `relative flex h-9 items-center justify-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors duration-200 lg:justify-start ${
+          isActive ? "text-fg" : "text-muted hover:bg-surface-hover hover:text-fg"
+        } ${planned ? "opacity-45" : ""}`
+      }
+    >
+      <Icon className="size-[18px] shrink-0" strokeWidth={1.7} />
+      <span className="hidden truncate lg:inline">{item.label}</span>
+    </NavLink>
   );
 }

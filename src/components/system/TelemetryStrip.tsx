@@ -14,12 +14,12 @@ interface TileProps {
 
 function Tile({ icon, label, value, detail, meter }: TileProps) {
   return (
-    <div className="flex min-w-0 flex-col gap-2 px-5 py-3.5">
+    <div className="flex min-w-0 flex-col gap-1.5 px-6 py-1">
       <div className="flex items-center gap-2 text-faint">
         {icon}
         <span className="text-label">{label}</span>
       </div>
-      <div className="tabular truncate text-xl font-light text-fg">{value}</div>
+      <div className="tabular truncate text-lg font-medium text-fg">{value}</div>
       {meter !== undefined ? <Meter value={meter} label={`${label} usage`} /> : <div className="h-1" />}
       <div className="tabular truncate text-[11px] text-muted">{detail}</div>
     </div>
@@ -39,7 +39,7 @@ export function TelemetryStrip() {
   const iconCls = "size-3.5";
   return (
     <div className="w-full max-w-4xl">
-      <div className="grid grid-cols-4 divide-x divide-line rounded-xl border border-line bg-surface backdrop-blur-sm">
+      <div className="grid grid-cols-4 divide-x divide-line">
         <Tile
           icon={<Cpu className={iconCls} />}
           label="CPU"

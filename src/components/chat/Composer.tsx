@@ -138,7 +138,7 @@ export function Composer({ onSend, onStop, streaming, disabled, disabledReason, 
           e.preventDefault();
           void submit();
         }}
-        className={`rounded-2xl border bg-elevated/80 py-2 pr-2 pl-4 shadow-[var(--shadow)] backdrop-blur focus-within:border-line-strong ${dragging ? "border-accent" : "border-line"}`}
+        className={`rounded-[22px] border bg-surface py-2 pr-2 pl-4 shadow-[var(--shadow)] transition-[border-color,box-shadow] duration-300 focus-within:border-line-strong ${dragging ? "border-accent" : "border-line"}`}
       >
         {files.length > 0 && (
           <ul className="mb-2 flex flex-wrap gap-2 pt-1" aria-label="Attachments">

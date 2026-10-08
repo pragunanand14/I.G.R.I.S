@@ -40,6 +40,7 @@ export function ChatPage() {
   const streamingHere = s.streaming !== null && (s.streaming.conversationId === s.activeId || s.streaming.conversationId === null);
   const streamingElsewhere = s.streaming !== null && !streamingHere;
   const aiReady = s.aiStatus?.ready ?? false;
+  const empty = s.messages.length === 0 && !s.pendingUser && !streamingHere;
 
   const disabledReason =
     backend !== "ready"
@@ -66,8 +67,8 @@ export function ChatPage() {
       />
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line px-4 md:px-6">
-          <div className="flex min-w-0 items-center gap-2">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 px-4 md:px-6">
+          <div className="flex min-w-0 items-center gap-2.5">
             <button
               type="button"
               onClick={() => setHistoryOpen(true)}
@@ -77,10 +78,17 @@ export function ChatPage() {
             >
               <History className="size-4" />
             </button>
-            <h1 className="truncate text-sm text-fg">{active?.title ?? "New conversation"}</h1>
+            {!empty && (
+              <span className="size-6 shrink-0 [view-transition-name:igris-orb]" aria-hidden="true">
+                <AiCore state={coreState} size="100%" />
+              </span>
+            )}
+            <h1 key={active?.id ?? "new"} className="anim-fade truncate text-sm font-medium text-fg">
+              {active?.title ?? "New conversation"}
+            </h1>
           </div>
           {s.aiStatus?.effectiveModel && (
-            <span className="shrink-0 rounded-md border border-line px-2 py-0.5 font-mono text-[10px] text-muted" title="Model used for new messages">
+            <span className="shrink-0 rounded-full bg-surface-strong px-2.5 py-1 font-mono text-[10px] text-muted" title="Model used for new messages">
               {s.aiStatus.provider} · {s.aiStatus.effectiveModel}
             </span>
           )}
@@ -109,16 +117,18 @@ export function ChatPage() {
           </div>
         )}
 
-        {s.messages.length === 0 && !s.pendingUser && !streamingHere ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+        {empty ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
             {s.loading ? (
               <p className="text-sm text-muted">Loading conversation…</p>
             ) : (
               <>
-                <AiCore state={coreState} size={140} />
-                <div>
-                  <p className="text-base font-light text-fg">How can I help?</p>
-                  <p className="mt-1 text-xs text-faint">{isMobilePlatform() ? PHONE_ABILITIES : DESKTOP_ABILITIES}</p>
+                <span className="size-[140px] [view-transition-name:igris-orb]">
+                  <AiCore state={coreState} size="100%" />
+                </span>
+                <div className="anim-rise">
+                  <p className="text-xl font-semibold tracking-tight text-fg">How can I help?</p>
+                  <p className="mx-auto mt-2 max-w-lg text-sm text-muted">{isMobilePlatform() ? PHONE_ABILITIES : DESKTOP_ABILITIES}</p>
                 </div>
               </>
             )}

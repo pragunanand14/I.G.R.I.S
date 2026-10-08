@@ -34,19 +34,19 @@ export function ConversationList({ conversations, activeId, busyId, onSelect, on
 
   return (
     <aside
-      className={`${openOnNarrow ? "absolute inset-0 z-20 flex w-full bg-bg" : "hidden"} shrink-0 flex-col border-r border-line md:static md:z-auto md:flex md:w-64 md:bg-bg/60`}
+      className={`${openOnNarrow ? "absolute inset-0 z-20 flex w-full bg-elevated" : "hidden"} shrink-0 flex-col border-r border-line md:static md:z-auto md:flex md:w-64`}
     >
       <div className="p-3">
         <button
           type="button"
           onClick={() => onSelect(null)}
-          className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-fg transition-colors hover:bg-surface-hover"
+          className="flex w-full items-center gap-2 rounded-xl bg-surface-strong px-3 py-2.5 text-sm font-medium text-fg transition-[background-color,transform] duration-200 hover:bg-surface-hover active:scale-[0.98]"
         >
           <MessageSquarePlus className="size-4 text-accent" />
           New conversation
         </button>
       </div>
-      <p className="text-label px-4 pb-2">History</p>
+      <p className="text-label px-4 pt-1 pb-2">History</p>
       <ul className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3" aria-label="Conversations">
         {conversations.length === 0 && <li className="px-3 py-2 text-xs text-faint">No conversations yet.</li>}
         {conversations.map((c) => {

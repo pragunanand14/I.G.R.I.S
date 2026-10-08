@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { AiCore } from "@/components/core/AiCore";
 import { useAppStore } from "@/stores/appStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { reducedMotion, useIntro } from "./motion";
+import { reducedMotion, useIntro } from "@/hooks/motion";
+import "./Opening.css";
 
 const TEXT = "I.G.R.I.S is starting…";
 const TYPE_MS = 42;
@@ -17,7 +18,7 @@ const EASE = "cubic-bezier(0.65, 0, 0.25, 1)";
  * then the orb glides and shrinks into its place on Home while Home fades in.
  * Elsewhere (or with reduced motion) it simply fades.
  */
-export function Splash() {
+export function Opening() {
   const state = useIntro((s) => s.state);
   const finish = useIntro((s) => s.finish);
   const backend = useAppStore((s) => s.backend);
@@ -89,15 +90,15 @@ export function Splash() {
 
   if (gone) return null;
   return (
-    <div ref={root} className="m-splash" aria-live="polite">
-      <div ref={bg} className="m-splash-bg" />
-      <div className="m-splash-center">
-        <div ref={orb} className="m-splash-orb">
+    <div ref={root} className="opening" aria-live="polite">
+      <div ref={bg} className="opening-bg" />
+      <div className="opening-center">
+        <div ref={orb} className="opening-orb">
           <AiCore state={backend === "unavailable" || backend === "error" ? "error" : "thinking"} size="100%" />
         </div>
-        <p ref={text} className="m-splash-text" role="status">
+        <p ref={text} className="opening-text" role="status">
           {TEXT.slice(0, typed)}
-          <span className="m-caret" aria-hidden="true" />
+          <span className="opening-caret" aria-hidden="true" />
         </p>
       </div>
     </div>
