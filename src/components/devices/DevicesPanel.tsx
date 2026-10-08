@@ -237,7 +237,7 @@ function PairingSection({ overview, disabled }: { overview: DevicesOverview; dis
       <Heading>Pair a device</Heading>
       {pairing ? (
         <div className="rounded-lg border border-accent/40 bg-accent/5 p-3">
-          <div className="text-xs text-muted">On your phone, open IGRIS → More → Phone and computer, type this code and tap Join:</div>
+          <div className="text-xs text-muted">On your phone, open IGRIS → Settings (gear icon) → Phone and computer, type this code and tap Join:</div>
           <div className="my-2 font-mono text-xl tracking-wider text-fg" data-selectable>
             {pairing.code}
           </div>

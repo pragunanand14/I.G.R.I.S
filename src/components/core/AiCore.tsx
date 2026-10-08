@@ -22,7 +22,7 @@ const barAngles = Array.from({ length: BARS }, (_, i) => ({ i, deg: (i / BARS) *
 
 interface AiCoreProps {
   state: CoreState;
-  size?: number;
+  size?: number | string;
 }
 
 /**

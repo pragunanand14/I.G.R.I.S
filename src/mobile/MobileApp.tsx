@@ -1,42 +1,39 @@
 import "./mobile.css";
-import { CalendarCheck, House, LayoutGrid, MessageCircle } from "lucide-react";
-import { createHashRouter, Navigate, NavLink, Outlet, RouterProvider } from "react-router";
+import { useEffect } from "react";
+import { createHashRouter, Navigate, Outlet, RouterProvider } from "react-router";
 import { DevicePrompts } from "@/components/devices/DevicePrompts";
 import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { rememberTheme, restoreTheme } from "./motion";
+import { Splash } from "./Splash";
 import { ActivityScreen } from "./screens/ActivityScreen";
-import { ChatScreen } from "./screens/ChatScreen";
+import { ChatScreen, ChatsScreen } from "./screens/ChatScreen";
 import { DevicesScreen } from "./screens/DevicesScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
 import { AiScreen, AppearanceScreen, MoreScreen } from "./screens/MoreScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 
-const TABS = [
-  { to: "/", label: "Home", icon: House },
-  { to: "/chat", label: "Chat", icon: MessageCircle },
-  { to: "/today", label: "Today", icon: CalendarCheck },
-  { to: "/more", label: "More", icon: LayoutGrid },
-];
+restoreTheme();
 
-/** The phone layout: a screen above a four-tab bar. */
+/** The phone layout: one screen at a time, Home in the middle of everything, the opening animation on top. */
 function MobileShell() {
   const ready = useAppLifecycle();
+  const settings = useSettingsStore((s) => s.settings);
+  useEffect(() => {
+    // After the theme effect has applied the setting.
+    const t = setTimeout(rememberTheme, 0);
+    return () => clearTimeout(t);
+  }, [settings.theme]);
   return (
     <div className="m-app flex h-full flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
       <main className="relative min-h-0 flex-1 overflow-y-auto">
         <Outlet />
       </main>
-      <nav aria-label="Main" className="m-tabbar flex shrink-0 pb-[env(safe-area-inset-bottom)]">
-        {TABS.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} end={to === "/"} className="m-tab">
-            <Icon className="size-[22px]" strokeWidth={1.75} />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
       <ReminderAlerts enabled={ready} />
       <DevicePrompts enabled={ready} phone />
+      <Splash />
     </div>
   );
 }
@@ -48,13 +45,14 @@ const router = createHashRouter([
     children: [
       { index: true, element: <HomeScreen /> },
       { path: "chat", element: <ChatScreen /> },
+      { path: "chats", element: <ChatsScreen /> },
       { path: "today", element: <TodayScreen /> },
-      { path: "more", element: <MoreScreen /> },
-      { path: "more/ai", element: <AiScreen /> },
-      { path: "more/appearance", element: <AppearanceScreen /> },
-      { path: "more/memory", element: <MemoryScreen /> },
-      { path: "more/activity", element: <ActivityScreen /> },
-      { path: "more/devices", element: <DevicesScreen /> },
+      { path: "settings", element: <MoreScreen /> },
+      { path: "settings/ai", element: <AiScreen /> },
+      { path: "settings/appearance", element: <AppearanceScreen /> },
+      { path: "settings/memory", element: <MemoryScreen /> },
+      { path: "settings/activity", element: <ActivityScreen /> },
+      { path: "settings/devices", element: <DevicesScreen /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

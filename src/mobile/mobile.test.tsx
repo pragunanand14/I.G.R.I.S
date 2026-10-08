@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -8,6 +8,7 @@ import { whenText } from "./format";
 import { useSystemStore } from "@/stores/systemStore";
 import { HomeScreen } from "./screens/HomeScreen";
 import { MoreScreen } from "./screens/MoreScreen";
+import { useIntro } from "./motion";
 
 const ai = (ready: boolean, problem: string | null = null) => ({ provider: "anthropic", configuredModel: null, ready, problem, effectiveModel: ready ? "m" : null, effort: "medium" as const });
 
@@ -20,6 +21,7 @@ function home() {
 }
 
 describe("phone Home screen", () => {
+  beforeEach(() => useIntro.setState({ state: "done" }));
   afterEach(() => {
     useAppStore.setState({ backend: "connecting", backendError: null });
     useChatStore.setState({ aiStatus: null, streaming: null });
@@ -27,10 +29,10 @@ describe("phone Home screen", () => {
 
   it("says plainly when IGRIS isn't running and offers nothing it can't do", () => {
     useAppStore.setState({ backend: "unavailable", backendError: "Running outside the app." });
-    home();
+    const { container } = home();
     expect(screen.getByText("IGRIS isn't running")).toBeInTheDocument();
     expect(screen.getByLabelText("Ask IGRIS")).toBeDisabled();
-    for (const chip of screen.getAllByRole("button", { name: /Remind me|battery|apps|to-do/ })) expect(chip).toBeDisabled();
+    expect(container.querySelector(".m-mic")).toBeDisabled();
   });
 
   it("explains a missing AI provider in the backend's own words and links to setup", () => {
@@ -39,7 +41,7 @@ describe("phone Home screen", () => {
     home();
     expect(screen.getByText("Needs an AI provider")).toBeInTheDocument();
     expect(screen.getByText("No AI provider configured.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /How to set it up/ })).toHaveAttribute("href", "/more/ai");
+    expect(screen.getByRole("link", { name: /How to set it up/ })).toHaveAttribute("href", "/settings/ai");
   });
 
   it("is ready to help when the AI is connected", () => {
@@ -48,15 +50,27 @@ describe("phone Home screen", () => {
     home();
     expect(screen.getByText("Ready to help")).toBeInTheDocument();
     expect(screen.getByLabelText("Ask IGRIS")).toBeEnabled();
-    expect(screen.getByRole("button", { name: "What's my battery level?" })).toBeEnabled();
   });
 
-  it("keeps Home to a greeting, one place to ask and what's coming up", () => {
+  it("is the orb, one bar and three ways to everything else", () => {
+    useAppStore.setState({ backend: "ready" });
+    useChatStore.setState({ aiStatus: ai(true) });
+    const { container } = home();
+    expect(container.querySelector("[data-orb='home'] .ai-core")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Your chats" })).toHaveAttribute("href", "/chats");
+    expect(screen.getByRole("link", { name: "Reminders and to-dos" })).toHaveAttribute("href", "/today");
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+  });
+
+  it("turns the mic into send while there's text", () => {
     useAppStore.setState({ backend: "ready" });
     useChatStore.setState({ aiStatus: ai(true) });
     home();
-    expect(screen.getByText("Coming up")).toBeInTheDocument();
-    expect(screen.queryByText(/Battery/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Ask IGRIS"), { target: { value: "hello" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText("Ask IGRIS"), { target: { value: "" } });
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
   });
 });
 
@@ -71,11 +85,11 @@ describe("phone More screen", () => {
         <MoreScreen />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: /Phone and computer/ })).toHaveAttribute("href", "/more/devices");
-    expect(screen.getByRole("link", { name: /AI and voice/ })).toHaveAttribute("href", "/more/ai");
-    expect(screen.getByRole("link", { name: /Appearance/ })).toHaveAttribute("href", "/more/appearance");
-    expect(screen.getByRole("link", { name: /What IGRIS remembers/ })).toHaveAttribute("href", "/more/memory");
-    expect(screen.getByRole("link", { name: /What IGRIS has done/ })).toHaveAttribute("href", "/more/activity");
+    expect(screen.getByRole("link", { name: /Phone and computer/ })).toHaveAttribute("href", "/settings/devices");
+    expect(screen.getByRole("link", { name: /AI and voice/ })).toHaveAttribute("href", "/settings/ai");
+    expect(screen.getByRole("link", { name: /Appearance/ })).toHaveAttribute("href", "/settings/appearance");
+    expect(screen.getByRole("link", { name: /What IGRIS remembers/ })).toHaveAttribute("href", "/settings/memory");
+    expect(screen.getByRole("link", { name: /What IGRIS has done/ })).toHaveAttribute("href", "/settings/activity");
     expect(screen.getByRole("switch", { name: "Ask before every action" })).toBeInTheDocument();
     expect(screen.getAllByText("Unknown").length).toBeGreaterThanOrEqual(2);
   });

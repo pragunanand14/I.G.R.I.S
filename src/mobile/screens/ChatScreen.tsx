@@ -1,23 +1,28 @@
-import { MessagesSquare, SquarePen, Trash2 } from "lucide-react";
+import { ChevronLeft, MessagesSquare, SquarePen, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
+import { AiCore } from "@/components/core/AiCore";
 import { Composer } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
 import { TaskCard } from "@/components/chat/TaskCard";
 import { useAppStore } from "@/stores/appStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useTaskStore } from "@/stores/taskStore";
+import { useCoreState } from "@/hooks/useCoreState";
+import { nav } from "../motion";
 import { useStatus } from "../status";
 import { SUGGESTIONS, useAsk } from "../ask";
 import { whenText } from "../format";
-import { Dot, Sheet } from "../ui";
+import { Dot, Screen } from "../ui";
 
-/** One conversation, full screen; past chats are a sheet away. */
+/** One conversation, full screen; past chats are one tap away. */
 export function ChatScreen() {
+  const navigate = useNavigate();
+  const core = useCoreState();
   const backend = useAppStore((s) => s.backend);
   const status = useStatus();
   const s = useChatStore();
   const { loadConversations } = s;
-  const [listOpen, setListOpen] = useState(false);
   const ask = useAsk();
 
   useEffect(() => {
@@ -38,10 +43,18 @@ export function ChatScreen() {
   return (
     <div className="m-chat-thread flex h-full flex-col">
       <header className="flex shrink-0 items-center gap-1 px-2 pt-2 pb-1">
-        <button type="button" onClick={() => setListOpen(true)} className="m-icon-button" aria-label="Your chats">
+        <button type="button" onClick={() => void navigate("/", nav())} className="m-icon-button" aria-label="Home">
+          <ChevronLeft className="size-6" />
+        </button>
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+          <span className="m-chat-orb" aria-hidden="true">
+            <AiCore state={core} size="100%" />
+          </span>
+          <h1 className="min-w-0 truncate text-base font-semibold">{active?.title ?? "New chat"}</h1>
+        </div>
+        <button type="button" onClick={() => void navigate("/chats", nav())} className="m-icon-button" aria-label="Your chats">
           <MessagesSquare className="size-[22px]" />
         </button>
-        <h1 className="min-w-0 flex-1 truncate text-center text-base font-semibold">{active?.title ?? "New chat"}</h1>
         <button type="button" onClick={() => void s.openConversation(null)} className="m-icon-button" aria-label="New chat">
           <SquarePen className="size-[22px]" />
         </button>
@@ -108,16 +121,28 @@ export function ChatScreen() {
           attachments={backend === "ready"}
         />
       </div>
-
-      <Sheet open={listOpen} onClose={() => setListOpen(false)} title="Your chats">
-        <ChatList
-          onPick={(id) => {
-            setListOpen(false);
-            void s.openConversation(id);
-          }}
-        />
-      </Sheet>
     </div>
+  );
+}
+
+/** Your chats: open one, start a new one, delete old ones. */
+export function ChatsScreen() {
+  const navigate = useNavigate();
+  const backend = useAppStore((s) => s.backend);
+  const load = useChatStore((s) => s.loadConversations);
+  const open = useChatStore((s) => s.openConversation);
+  useEffect(() => {
+    if (backend === "ready") void load();
+  }, [backend, load]);
+  return (
+    <Screen title="Chats" back="/">
+      <ChatList
+        onPick={(id) => {
+          void open(id);
+          void navigate("/chat", nav());
+        }}
+      />
+    </Screen>
   );
 }
 
@@ -127,7 +152,7 @@ function ChatList({ onPick }: { onPick: (id: string | null) => void }) {
   const remove = useChatStore((s) => s.remove);
   const [confirm, setConfirm] = useState<string | null>(null);
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <button type="button" className="m-button m-button-primary w-full" onClick={() => onPick(null)}>
         <SquarePen className="size-5" /> New chat
       </button>

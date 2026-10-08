@@ -23,7 +23,7 @@ multi-user service: there are no accounts, no registration and no cloud brain.
 | Tools | `igris-core/src/tools/devices.rs` | `list_devices` (SAFE), `send_to_device` (LOW), `device_task_status` (SAFE), `device_task_control` (LOW). |
 | Relay | `igris-relay/` | Optional separate minimal server binary, for people who want to run their own. |
 | App | `src-tauri/src/devices.rs`, `commands/devices.rs` | Key protectors (Windows DPAPI, Android Keystore), task runner, commands, notifications. |
-| UI | Settings → Devices (desktop), More → Your devices (phone), prompts on every screen | Connect, pair, remove, send tasks, approve, see status. |
+| UI | Settings → Devices (desktop), Settings (gear on Home) → Phone and computer (phone), prompts on every screen | Connect, pair, remove, send tasks, approve, see status. |
 
 ## Trust model
 
@@ -197,14 +197,14 @@ relay.example.com {
 }
 ```
 
-Then in IGRIS on each device: Settings → Devices → Advanced (phone: More →
+Then in IGRIS on each device: Settings → Devices → Advanced (phone: Settings →
 Phone and computer → Advanced) → `wss://relay.example.com`.
 
 ## Using it
 
 1. Open IGRIS on both devices.
 2. On the PC: Settings → Devices → **Show a pairing code**. On the phone:
-   More → Phone and computer → type the code → **Join**. On the PC: **Allow**.
+   Settings (gear on Home) → Phone and computer → type the code → **Join**. On the PC: **Allow**.
    That's all the setup; both devices stay paired until you remove one.
 3. On the phone, ask IGRIS "open Notepad on my PC", or use **Ask My PC** on the
    Devices screen. You'll see "Sent to My PC" → "My PC accepted the task" →

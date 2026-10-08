@@ -4,7 +4,7 @@ import { useDeviceStore } from "@/stores/deviceStore";
 import { CAPABILITY_LABEL, isActive, keyProtectionText, linkText, platformLabel, taskStatusText, taskTone } from "@/components/devices/deviceText";
 import { Dot, ErrorText, Group, Screen, Section, Switch } from "../ui";
 
-/** More → Phone and computer: pair with your PC, send it tasks, see what's happening. */
+/** Settings → Phone and computer: pair with your PC, send it tasks, see what's happening. */
 export function DevicesScreen() {
   const { overview, error, busy, refresh, configure, connectAndJoin, startPairing, cancelPairing, pairing, pairingResult, revoke, sendTask, control } =
     useDeviceStore();
@@ -19,7 +19,7 @@ export function DevicesScreen() {
 
   if (!overview) {
     return (
-      <Screen title="Phone and computer" back="/more">
+      <Screen title="Phone and computer" back="/settings">
         <p className="m-muted">{error ?? "Starting…"}</p>
       </Screen>
     );
@@ -39,7 +39,7 @@ export function DevicesScreen() {
   );
 
   return (
-    <Screen title="Phone and computer" subtitle={devices.length === 0 ? "Use IGRIS on your phone and your computer together." : undefined} back="/more">
+    <Screen title="Phone and computer" subtitle={devices.length === 0 ? "Use IGRIS on your phone and your computer together." : undefined} back="/settings">
       {error && <ErrorText>{error}</ErrorText>}
 
       {devices.length === 0 && (

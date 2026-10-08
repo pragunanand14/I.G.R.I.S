@@ -64,7 +64,7 @@ export function TodayScreen() {
   };
 
   return (
-    <Screen title="Today" subtitle={new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}>
+    <Screen title="Today" back="/" subtitle={new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}>
       {backend !== "ready" ? (
         <p className="m-muted">Your reminders and to-dos appear here once IGRIS is running.</p>
       ) : (

@@ -34,7 +34,7 @@ export function MoreScreen() {
   const paired = useDeviceStore((s) => s.overview?.devices.filter((d) => d.trusted && !d.revokedAt).length ?? 0);
 
   return (
-    <Screen title="More">
+    <Screen title="Settings" back="/">
       {error && <ErrorText>{error}</ErrorText>}
 
       <Group>
@@ -42,9 +42,9 @@ export function MoreScreen() {
       </Group>
 
       <Group>
-        <Row title="Phone and computer" value={paired > 0 ? "Paired" : undefined} to="/more/devices" />
-        <Row title="AI and voice" value={aiReady ? "Connected" : "Set up"} to="/more/ai" />
-        <Row title="Appearance" value={THEMES.find((t) => t.value === settings.theme)?.label} to="/more/appearance" />
+        <Row title="Phone and computer" value={paired > 0 ? "Paired" : undefined} to="/settings/devices" />
+        <Row title="AI and voice" value={aiReady ? "Connected" : "Set up"} to="/settings/ai" />
+        <Row title="Appearance" value={THEMES.find((t) => t.value === settings.theme)?.label} to="/settings/appearance" />
       </Group>
 
       <Section title="Privacy">
@@ -63,8 +63,8 @@ export function MoreScreen() {
             disabled={!ready}
             onChange={(on) => void update({ confirmLowRisk: on })}
           />
-          <Row title="What IGRIS remembers" to="/more/memory" />
-          <Row title="What IGRIS has done" to="/more/activity" />
+          <Row title="What IGRIS remembers" to="/settings/memory" />
+          <Row title="What IGRIS has done" to="/settings/activity" />
         </Group>
       </Section>
 
@@ -125,7 +125,7 @@ function About() {
   );
 }
 
-/** More → AI and voice: what's set up, in plain words, and how to fix it. */
+/** Settings → AI and voice: what's set up, in plain words, and how to fix it. */
 export function AiScreen() {
   const status = useStatus();
   const config = useAppStore((s) => s.config);
@@ -155,7 +155,7 @@ export function AiScreen() {
 
   const voiceOk = voice ? !voice.stt.problem : null;
   return (
-    <Screen title="AI and voice" back="/more">
+    <Screen title="AI and voice" back="/settings">
       <Group>
         <Row
           title={
@@ -200,13 +200,13 @@ export function AiScreen() {
   );
 }
 
-/** More → Appearance: light/dark and the accent colour. */
+/** Settings → Appearance: light/dark and the accent colour. */
 export function AppearanceScreen() {
   const ready = useAppStore((s) => s.backend) === "ready";
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   return (
-    <Screen title="Appearance" back="/more">
+    <Screen title="Appearance" back="/settings">
       <Section title="Theme">
         <div className="m-segmented" role="radiogroup" aria-label="Theme">
           {THEMES.map((t) => (

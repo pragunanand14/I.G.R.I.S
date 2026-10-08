@@ -54,7 +54,7 @@ export function MemoryScreen() {
   };
 
   return (
-    <Screen title="Memories" subtitle="What IGRIS remembers to help you. Only you can see and change it." back="/more">
+    <Screen title="Memories" subtitle="What IGRIS remembers to help you. Only you can see and change it." back="/settings">
       {!ready ? (
         <p className="m-muted">Memories appear here once IGRIS is running.</p>
       ) : (

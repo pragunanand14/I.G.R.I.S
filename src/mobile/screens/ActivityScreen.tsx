@@ -23,7 +23,7 @@ export function ActivityScreen() {
   }, [ready]);
 
   return (
-    <Screen title="Activity" subtitle="Every action IGRIS has taken, and whether you approved it." back="/more">
+    <Screen title="Activity" subtitle="Every action IGRIS has taken, and whether you approved it." back="/settings">
       {error && <ErrorText>{error}</ErrorText>}
       {!ready ? (
         <p className="m-muted">Activity appears here once IGRIS is running.</p>

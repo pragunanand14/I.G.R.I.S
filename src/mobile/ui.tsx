@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
+import { nav } from "./motion";
 
 /** A phone screen: optional back button, a large title, then scrolling content. */
 export function Screen({
@@ -23,7 +24,7 @@ export function Screen({
       {back || action ? (
         <div className="mb-3 flex min-h-11 items-center justify-between">
           {back ? (
-            <button type="button" onClick={() => void navigate(back)} className="m-icon-button -ml-3" aria-label="Back">
+            <button type="button" onClick={() => void navigate(back, nav())} className="m-icon-button -ml-3" aria-label="Back">
               <ChevronLeft className="size-6" />
             </button>
           ) : (
@@ -96,7 +97,7 @@ export function Row({
   );
   if (to)
     return (
-      <Link to={to} className="m-row">
+      <Link to={to} viewTransition={nav().viewTransition} className="m-row">
         {body}
       </Link>
     );

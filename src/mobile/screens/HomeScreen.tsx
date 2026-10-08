@@ -1,170 +1,173 @@
-import { ArrowUp, Bell, Mic } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
-import { SUGGESTIONS, useAsk } from "../ask";
+import { ArrowUp, CalendarCheck, MessagesSquare, Mic, Settings } from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router";
+import { AiCore } from "@/components/core/AiCore";
+import { useCoreState } from "@/hooks/useCoreState";
 import { api } from "@/services/api";
 import { useAppStore } from "@/stores/appStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVoiceStore } from "@/stores/voiceStore";
-import type { Reminder, Task } from "@/types/productivity";
 import { greetingFor } from "@/utils/format";
+import { useAsk } from "../ask";
+import { nav, useIntro } from "../motion";
 import { useStatus } from "../status";
-import { whenText } from "../format";
-import { Dot, Group, Row, Section } from "../ui";
+import { Dot } from "../ui";
 
-/** A greeting, one place to ask, and what's coming up. */
+/** The orb, a greeting, one bar to type or talk, and a way to everything else. */
 export function HomeScreen() {
-  const status = useStatus();
+  const intro = useIntro((s) => s.state);
+  // Animate Home in only when it appears at the end of the opening animation.
+  const [entering] = useState(intro === "playing");
+  const enter = (i: number, base: string) =>
+    entering
+      ? { className: `${base} ${intro === "playing" ? "m-intro-wait" : "m-intro-in"}`, style: { animationDelay: `${i * 70}ms` } }
+      : { className: base };
+  const core = useCoreState();
   const userName = useSettingsStore((s) => s.settings.userName).trim();
-  const ask = useAsk();
-  const [text, setText] = useState("");
-  const now = new Date();
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const t = text.trim();
-    if (!t || !status.ready) return;
-    setText("");
-    void ask(t);
-  };
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-xl flex-col px-5 pt-10 pb-8">
-      <header>
-        <p className="m-faint text-sm">{now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}</p>
-        <h1 className="m-title mt-1.5">
-          {greetingFor(now)}
-          {userName ? `, ${userName}` : ""}
-        </h1>
-        <StatusLine />
+    <div className="m-home">
+      <header {...enter(0, "flex h-14 shrink-0 items-center justify-between")}>
+        <IconLink to="/chats" label="Your chats">
+          <MessagesSquare className="size-[22px]" />
+        </IconLink>
+        <div className="flex items-center gap-1">
+          <TodayLink />
+          <IconLink to="/settings" label="Settings">
+            <Settings className="size-[22px]" />
+          </IconLink>
+        </div>
       </header>
 
-      <div className="mt-8 space-y-4">
-        <form onSubmit={submit} className="m-ask">
-          <input
-            className="m-field min-h-0 flex-1"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={status.ready ? "Ask anything" : "IGRIS isn't ready yet"}
-            aria-label="Ask IGRIS"
-            disabled={!status.ready}
-            enterKeyHint="send"
-          />
-          {text.trim() ? (
-            <button type="submit" className="m-mic" aria-label="Send" disabled={!status.ready}>
-              <ArrowUp className="size-6" />
-            </button>
-          ) : (
-            <TalkButton disabled={!status.ready} />
-          )}
-        </form>
-
-        <div className="m-scroll-x" aria-label="Try asking">
-          {SUGGESTIONS.map((s) => (
-            <button key={s} type="button" className="m-chip" disabled={!status.ready} onClick={() => void ask(s)}>
-              {s}
-            </button>
-          ))}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
+        <div data-orb="home" className="m-home-orb" style={{ opacity: intro === "playing" ? 0 : 1 }}>
+          <AiCore state={core} size="100%" />
+        </div>
+        <h1 {...enter(1, "mt-7 text-[26px] font-semibold tracking-tight")}>
+          {greetingFor(new Date())}
+          {userName ? `, ${userName}` : ""}
+        </h1>
+        <div {...enter(2, "mt-2 w-full")}>
+          <StatusLine />
         </div>
       </div>
 
-      <div className="mt-10">
-        <ComingUp />
+      <div {...enter(3, "shrink-0 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))]")}>
+        <AskBar />
       </div>
     </div>
   );
 }
 
-/** One quiet line when all is well; the reason (in the backend's words) and a way to fix it when not. */
-function StatusLine() {
-  const status = useStatus();
-  if (status.ready)
-    return (
-      <p className="m-muted mt-3 flex items-center gap-2 text-sm" role="status">
-        <Dot tone={status.tone} /> {status.title}
-      </p>
-    );
+function IconLink({ to, label, children, dot }: { to: string; label: string; children: ReactNode; dot?: boolean }) {
   return (
-    <div className="m-card mt-5 p-4" role="status">
-      <p className="flex items-center gap-2 font-medium">
-        <Dot tone={status.tone} /> {status.title}
-      </p>
-      <p className="m-muted mt-1 text-sm break-words">{status.detail}</p>
-      {status.needsSetup && (
-        <Link to="/more/ai" className="m-link mt-3 inline-flex min-h-9 items-center text-[15px]">
-          How to set it up
-        </Link>
-      )}
-    </div>
+    <Link to={to} viewTransition={nav().viewTransition} className="m-icon-button relative" aria-label={label} title={label}>
+      {children}
+      {dot && <span className="absolute top-2.5 right-2.5 size-2 rounded-full" style={{ background: "var(--m-accent)" }} aria-hidden="true" />}
+    </Link>
   );
 }
 
-/** Tap to talk; tap again to stop. The words go to the chat. */
-function TalkButton({ disabled }: { disabled: boolean }) {
-  const phase = useVoiceStore((s) => s.phase);
-  useVoiceStore((s) => s.status);
-  const can = useVoiceStore.getState().canListen();
-  const toggle = useVoiceStore((s) => s.toggle);
-  const navigate = useNavigate();
-  const listening = phase === "listening";
-  const label = listening ? "Stop listening" : phase === "transcribing" ? "Writing down what you said…" : can.ok ? "Talk to IGRIS" : (can.reason ?? "Voice isn't available");
-  return (
-    <button
-      type="button"
-      className="m-mic"
-      aria-label={label}
-      title={label}
-      aria-pressed={listening}
-      disabled={(disabled || !can.ok || phase === "transcribing") && !listening}
-      onClick={() => {
-        void toggle();
-        if (!listening) void navigate("/chat");
-      }}
-    >
-      <Mic className="size-6" />
-    </button>
-  );
-}
-
-/** The next reminders and how many to-dos are open. */
-function ComingUp() {
+/** Reminders and to-dos; a dot when something is due within a day or open. */
+function TodayLink() {
   const backend = useAppStore((s) => s.backend);
-  const [reminders, setReminders] = useState<Reminder[] | null>(null);
-  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (backend !== "ready") return;
     let live = true;
-    const load = () => {
-      api.listReminders().then((r) => live && setReminders(r.filter((x) => x.status === "pending"))).catch(() => live && setReminders(null));
-      api.listTasks("open").then((t) => live && setTasks(t)).catch(() => live && setTasks(null));
-    };
-    load();
-    const id = setInterval(load, 30000);
+    const load = () =>
+      Promise.all([api.listReminders(), api.listTasks("open")])
+        .then(([r, t]) => {
+          const soon = Date.now() + 86400000;
+          if (live) setBusy(t.length > 0 || r.some((x) => x.status === "pending" && new Date(x.dueAt).getTime() < soon));
+        })
+        .catch(() => undefined);
+    void load();
+    const id = setInterval(() => void load(), 60000);
     return () => {
       live = false;
       clearInterval(id);
     };
   }, [backend]);
-  if (backend !== "ready") return null;
-
-  const next = (reminders ?? []).slice().sort((a, b) => a.dueAt.localeCompare(b.dueAt)).slice(0, 3);
-  const todo = tasks === null ? "To-do list" : tasks.length === 0 ? "Nothing to do" : `${tasks.length} thing${tasks.length === 1 ? "" : "s"} to do`;
   return (
-    <Section
-      title="Coming up"
-      aside={
-        <Link to="/today" className="m-link flex min-h-9 items-center px-1 text-sm">
-          See all
-        </Link>
-      }
-    >
-      <Group>
-        {next.map((r) => (
-          <Row key={r.id} icon={<Bell className="size-[18px]" />} title={r.title} value={whenText(r.dueAt)} />
-        ))}
-        {next.length === 0 && <Row title={<span className="m-muted font-normal">{reminders === null ? "—" : "No reminders"}</span>} />}
-        <Row title={todo} to="/today" />
-      </Group>
-    </Section>
+    <IconLink to="/today" label="Reminders and to-dos" dot={busy}>
+      <CalendarCheck className="size-[22px]" />
+    </IconLink>
+  );
+}
+
+/** What IGRIS is doing, in a few words; the reason and a way to fix it when it can't help. */
+function StatusLine() {
+  const status = useStatus();
+  const phase = useVoiceStore((s) => s.phase);
+  if (!status.ready)
+    return (
+      <div className="m-card m-pop mx-auto mt-3 max-w-sm px-4 py-3 text-left" role="status">
+        <p className="flex items-center gap-2 font-medium">
+          <Dot tone={status.tone} /> {status.title}
+        </p>
+        <p className="m-muted mt-1 text-sm break-words">{status.detail}</p>
+        {status.needsSetup && (
+          <Link to="/settings/ai" viewTransition={nav().viewTransition} className="m-link mt-2 inline-flex min-h-9 items-center text-[15px]">
+            How to set it up
+          </Link>
+        )}
+      </div>
+    );
+  const text = phase === "listening" ? "Listening… tap the mic when you're done" : phase === "transcribing" ? "Writing down what you said…" : status.title;
+  return (
+    <p key={text} className="m-muted m-fade-in text-[15px]" role="status">
+      {text}
+    </p>
+  );
+}
+
+/** Type, or tap the mic and talk. While there's text, the mic becomes send. */
+function AskBar() {
+  const status = useStatus();
+  const ask = useAsk();
+  const [text, setText] = useState("");
+  const phase = useVoiceStore((s) => s.phase);
+  useVoiceStore((s) => s.status);
+  const can = useVoiceStore.getState().canListen();
+  const toggle = useVoiceStore((s) => s.toggle);
+  const listening = phase === "listening";
+  const typing = text.trim().length > 0;
+
+  const submit = (e?: FormEvent) => {
+    e?.preventDefault();
+    const t = text.trim();
+    if (!t || !status.ready) return;
+    setText("");
+    void ask(t);
+  };
+  const micLabel = listening ? "Stop listening" : phase === "transcribing" ? "Writing down what you said…" : can.ok ? "Talk to IGRIS" : (can.reason ?? "Voice isn't available");
+  const disabled = typing ? !status.ready : (!status.ready || !can.ok || phase === "transcribing") && !listening;
+
+  return (
+    <form onSubmit={submit} className="m-ask">
+      <input
+        className="m-field min-h-0 flex-1"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={status.ready ? "Ask anything" : "IGRIS isn't ready yet"}
+        aria-label="Ask IGRIS"
+        disabled={!status.ready}
+        enterKeyHint="send"
+      />
+      <button
+        type={typing ? "submit" : "button"}
+        className="m-mic"
+        data-mode={typing ? "send" : "mic"}
+        aria-label={typing ? "Send" : micLabel}
+        title={typing ? "Send" : micLabel}
+        aria-pressed={typing ? undefined : listening}
+        disabled={disabled}
+        onClick={typing ? undefined : () => void toggle()}
+      >
+        <Mic className="m-mic-icon m-mic-icon--mic size-6" />
+        <ArrowUp className="m-mic-icon m-mic-icon--send size-6" />
+      </button>
+    </form>
   );
 }

@@ -62,7 +62,7 @@ PY
     if [ -n "$xy" ]; then
       y=${xy#* }
       # Behind the bottom tab bar (unless it is a tab): scroll it up into view first.
-      case "$1" in Home | Chat | Today | More) ;; *)
+      case "$1" in Home | Chat | Today | More | Settings) ;; *)
         if [ "$y" -gt $((H * 87 / 100)) ] && [ "$y" != "${last_y:-}" ]; then
           last_y=$y
           adb shell input swipe 500 $((H * 7 / 10)) 500 $((H * 4 / 10)) 400
@@ -148,7 +148,7 @@ fi
 
 adb shell am start -n "$PKG/.MainActivity" > /dev/null
 sleep 3
-tap "More" && tap "Phone and computer"
+tap "Settings" && tap "Phone and computer"
 # The default needs no address: only the code.
 tap_field 1 && type_text "$CODE"
 adb shell input keyevent 111
