@@ -183,6 +183,8 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
 
         let mut round_has_text = false;
         let mut server_running: Vec<ToolActivity> = Vec::new();
+        let round_started = Instant::now();
+        let reasoning_before = reasoning_chars;
         let result = input
             .route
             .provider
@@ -272,6 +274,17 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
                 break;
             }
         };
+        // How long each model call took and how big it was: the evidence for "why is it slow".
+        tracing::info!(
+            event = "AI_ROUND",
+            round,
+            ms = round_started.elapsed().as_millis() as u64,
+            model = %completion.model,
+            input_tokens = completion.usage.input_tokens,
+            output_tokens = completion.usage.output_tokens,
+            reasoning_chars = reasoning_chars - reasoning_before,
+            tool_calls = completion.tool_calls.len()
+        );
         usage.input_tokens = Some(usage.input_tokens.unwrap_or(0) + completion.usage.input_tokens.unwrap_or(0));
         usage.output_tokens = Some(usage.output_tokens.unwrap_or(0) + completion.usage.output_tokens.unwrap_or(0));
         served_model = completion.model.clone();
