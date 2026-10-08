@@ -47,6 +47,8 @@ pub enum ChatEvent {
     Delta { text: String },
     /// The model is reasoning before it answers; `chars` is the total so far (text not shown).
     Reasoning { chars: usize },
+    /// The model was overloaded or down; the backup model (AI_FALLBACK_MODEL) answers instead.
+    ModelSwitch { from: String, to: String, reason: String },
     /// The provider request failed transiently and is retried in `seconds`
     /// (`rate_limited`: the provider said too many requests).
     Waiting { seconds: u64, rate_limited: bool },
@@ -492,6 +494,55 @@ mod tests {
         p.router =
             Arc::new(ModelRouter::new(Arc::new(AnthropicProvider::new("k".into(), Some(url)).unwrap()), "claude-opus-5-5").with_context_window(Some(8_000)));
         p
+    }
+
+    #[tokio::test]
+    async fn an_overloaded_model_hands_over_to_the_backup_and_says_so() {
+        let db = db();
+        let busy = || {
+            (
+                503,
+                "application/json",
+                json!({"type":"error","error":{"type":"overloaded_error","message":"This model is currently experiencing high demand."}}).to_string(),
+            )
+        };
+        // The main model fails every retry; the backup answers.
+        let server = MockServer::start(vec![busy(), busy(), busy(), (200, "text/event-stream", sse_reply("Hi from the backup."))]).await;
+        let reg = registry_with(None);
+        let mut p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        p.router = Arc::new(
+            ModelRouter::new(Arc::new(AnthropicProvider::new("k".into(), Some(server.url())).unwrap()), "claude-opus-5-5")
+                .with_fallback(Some("claude-sonnet-5-5".into())),
+        );
+        let (conv, _) = save_user_message(&db, None, "Hello", "Ada", &reg.defs(), false).unwrap();
+        let mut evs = Vec::new();
+        let msg = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| evs.push(e)).await.unwrap();
+        assert_eq!(msg.content, "Hi from the backup.");
+        assert!(evs.iter().any(|e| matches!(e, ChatEvent::ModelSwitch { from, to, .. } if from == "claude-opus-5-5" && to == "claude-sonnet-5-5")));
+        let reqs = server.requests().await;
+        assert_eq!(reqs.len(), 4);
+        assert_eq!(reqs[3].json()["model"], "claude-sonnet-5-5");
+    }
+
+    #[tokio::test]
+    async fn without_a_backup_an_overloaded_model_is_reported_not_hidden() {
+        let db = db();
+        let busy = || {
+            (
+                503,
+                "application/json",
+                json!({"type":"error","error":{"type":"overloaded_error","message":"This model is currently experiencing high demand."}}).to_string(),
+            )
+        };
+        let server = MockServer::start(vec![busy(), busy(), busy()]).await;
+        let reg = registry_with(None);
+        let p = params(server.url(), reg.clone(), Policy::default(), Approval::Approved);
+        let (conv, _) = save_user_message(&db, None, "Hello", "Ada", &reg.defs(), false).unwrap();
+        let mut evs = Vec::new();
+        let msg = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| evs.push(e)).await.unwrap();
+        assert_eq!(msg.status, MessageStatus::Error);
+        assert!(msg.error.unwrap_or_default().contains("high demand"));
+        assert!(!evs.iter().any(|e| matches!(e, ChatEvent::ModelSwitch { .. })));
     }
 
     #[tokio::test]

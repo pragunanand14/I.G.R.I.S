@@ -12,6 +12,7 @@ export function streamingLabel(s: StreamingState, now: number): string {
       ? `The AI service is limiting requests (too many in a short time) — trying again in ${secs} s`
       : `Couldn't reach the AI service — trying again in ${secs} s`;
   }
+  if (s.switched && s.phase === "waiting") return `${s.switched.from} is overloaded right now — answering with ${s.switched.to}…`;
   let label = s.phase === "waiting" ? "Thinking…" : "Responding…";
   if (s.phase === "waiting" && s.compacting) label = "Condensing earlier messages…";
   if (s.phase === "waiting" && s.reasoningChars) label = `Reasoning… (~${Math.max(1, Math.round(s.reasoningChars / 5))} words)`;

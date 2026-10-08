@@ -13,6 +13,12 @@ describe("what the chat says while IGRIS waits", () => {
     expect(streamingLabel({ ...base, retryAt: 5_000, rateLimited: false }, 1_000)).toMatch(/Couldn't reach the AI service — trying again in 4 s/);
   });
 
+  it("says when the backup model answers because the main one is overloaded", () => {
+    expect(streamingLabel({ ...base, switched: { from: "gemini-3.5-flash-lite", to: "gemini-2.5-flash" } }, 1_000)).toBe(
+      "gemini-3.5-flash-lite is overloaded right now — answering with gemini-2.5-flash…",
+    );
+  });
+
   it("goes back to normal once the wait is over", () => {
     expect(streamingLabel({ ...base, retryAt: 5_000, rateLimited: true }, 6_000)).toMatch(/^Thinking…/);
   });

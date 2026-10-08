@@ -46,6 +46,7 @@ export type ChatEvent =
   | { type: "delta"; text: string }
   | { type: "reasoning"; chars: number }
   | { type: "waiting"; seconds: number; rateLimited: boolean }
+  | { type: "modelSwitch"; from: string; to: string; reason: string }
   /** Older messages are being summarized to fit the model's context. */
   | { type: "compacting"; messages: number }
   | { type: "tool"; activity: ToolActivity }

@@ -134,6 +134,9 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
     let operator_running = || input.tooling.operator.as_ref().is_some_and(|o| o.covers(Some(cid)));
     let mut limit = MAX_TOOL_ROUNDS;
     let mut round = 0usize;
+    // The model in use; switches once to the backup (AI_FALLBACK_MODEL) if this one is overloaded or down.
+    let mut model = input.route.model.clone();
+    let mut switched = false;
     loop {
         // Checkpoint: honour pause and stop before doing anything else.
         if let Some(s) = session.as_mut() {
@@ -173,7 +176,7 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
         let fixed = budget::estimate_fixed(&input.system, toolset.exposed());
         fit_tool_output(&mut turns, fixed, &input.budget);
         let request = ChatRequest {
-            model: input.route.model.clone(),
+            model: model.clone(),
             system: input.system.clone(),
             turns,
             max_tokens: MAX_OUTPUT_TOKENS,
@@ -268,6 +271,21 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
             Err(e) if e.kind == AiErrorKind::Cancelled => {
                 outcome = Outcome::Cancelled;
                 break;
+            }
+            Err(e) if !switched && !round_has_text && matches!(e.kind, AiErrorKind::Overloaded | AiErrorKind::Server | AiErrorKind::Timeout) => {
+                match input.route.fallback.clone() {
+                    Some(backup) => {
+                        tracing::warn!(event = "AI_MODEL_SWITCH", kind = ?e.kind, from = %model, to = %backup);
+                        emit(ChatEvent::ModelSwitch { from: model.clone(), to: backup.clone(), reason: e.message.clone() });
+                        model = backup;
+                        switched = true;
+                        continue; // the same round, on the backup model
+                    }
+                    None => {
+                        outcome = Outcome::Failed(e);
+                        break;
+                    }
+                }
             }
             Err(e) => {
                 outcome = Outcome::Failed(e);

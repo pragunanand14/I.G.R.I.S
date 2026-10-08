@@ -39,6 +39,8 @@ pub struct Route {
     pub provider: Arc<dyn AiProvider>,
     pub model: String,
     pub caps: ModelCapabilities,
+    /// A backup model on the same provider for when this one is overloaded or down.
+    pub fallback: Option<String>,
 }
 
 impl Route {
@@ -62,13 +64,14 @@ pub struct ModelRouter {
     chat_model: String,
     vision_model: Option<String>,
     fast_model: Option<String>,
+    fallback_model: Option<String>,
     context_window: Option<u32>,
 }
 
 impl ModelRouter {
     /// One provider and model for every role (the pre-router behaviour).
     pub fn new(provider: Arc<dyn AiProvider>, chat_model: impl Into<String>) -> Self {
-        Self { provider, chat_model: chat_model.into(), vision_model: None, fast_model: None, context_window: None }
+        Self { provider, chat_model: chat_model.into(), vision_model: None, fast_model: None, fallback_model: None, context_window: None }
     }
 
     pub fn with_role_model(mut self, role: ModelRole, model: Option<String>) -> Self {
@@ -85,6 +88,12 @@ impl ModelRouter {
     }
 
     /// AI_CONTEXT_WINDOW: the context size of this provider's models (local servers).
+    /// The backup model (AI_FALLBACK_MODEL) for every role.
+    pub fn with_fallback(mut self, model: Option<String>) -> Self {
+        self.fallback_model = model.filter(|m| !m.trim().is_empty());
+        self
+    }
+
     pub fn with_context_window(mut self, tokens: Option<u32>) -> Self {
         self.context_window = tokens;
         self
@@ -105,7 +114,8 @@ impl ModelRouter {
         }
         .to_string();
         let caps = capabilities_for(self.provider.id(), &model, self.context_window);
-        Route { role, provider: self.provider.clone(), model, caps }
+        let fallback = self.fallback_model.clone().filter(|f| *f != model);
+        Route { role, provider: self.provider.clone(), model, caps, fallback }
     }
 
     /// A model for `role` that can do what the request needs: the role's model
@@ -177,5 +187,13 @@ mod tests {
         assert_eq!(route.caps.context_window, crate::ai::capabilities::FALLBACK_CONTEXT);
         let r = local("qwen2.5:7b").with_context_window(Some(8_192));
         assert_eq!(r.route(ModelRole::Chat, None).caps.context_window, 8_192);
+    }
+
+    #[test]
+    fn the_backup_model_is_offered_only_when_it_differs() {
+        let r = local("qwen2.5:7b").with_fallback(Some("qwen2.5:3b".into()));
+        assert_eq!(r.route(ModelRole::Chat, None).fallback.as_deref(), Some("qwen2.5:3b"));
+        assert_eq!(r.route(ModelRole::Chat, Some("qwen2.5:3b")).fallback, None, "no switching to the same model");
+        assert_eq!(local("qwen2.5:7b").with_fallback(Some("  ".into())).route(ModelRole::Chat, None).fallback, None);
     }
 }

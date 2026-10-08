@@ -26,6 +26,8 @@ export interface StreamingState {
   retryAt?: number;
   /** …because the provider said too many requests. */
   rateLimited?: boolean;
+  /** The model was overloaded or down and the backup model answers instead. */
+  switched?: { from: string; to: string };
 }
 
 interface ChatStore {
@@ -94,6 +96,9 @@ export const useChatStore = create<ChatStore>((set, get) => {
         break;
       case "reasoning":
         set({ streaming: { ...s.streaming, reasoningChars: ev.chars, retryAt: undefined } });
+        break;
+      case "modelSwitch":
+        set({ streaming: { ...s.streaming, switched: { from: ev.from, to: ev.to }, retryAt: undefined } });
         break;
       case "waiting":
         set({ streaming: { ...s.streaming, retryAt: Date.now() + ev.seconds * 1000, rateLimited: ev.rateLimited } });

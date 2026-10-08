@@ -74,6 +74,7 @@ impl AiRuntime {
                     let router = ModelRouter::new(provider, model)
                         .with_role_model(ModelRole::Vision, cfg.ai_vision_model.clone())
                         .with_role_model(ModelRole::Fast, cfg.ai_fast_model.clone())
+                        .with_fallback(cfg.ai_fallback_model.clone())
                         .with_context_window(cfg.ai_context_window);
                     AiRuntime {
                         router: Some(Arc::new(router)),
