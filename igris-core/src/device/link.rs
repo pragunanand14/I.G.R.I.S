@@ -172,15 +172,8 @@ async fn session(
                     return "Connection lost.".into();
                 }
             }
-            changed = peers.changed() => {
-                if changed.is_err() {
-                    return "Disconnected.".into();
-                }
-                let ids = peers.borrow_and_update().clone();
-                if sink.send(text(&ClientFrame::Peers { ids })).await.is_err() {
-                    return "Connection lost.".into();
-                }
-            }
+            // Peer-list changes arrive through `out`, in order with the messages: a goodbye
+            // queued before a peer is dropped must reach the relay while it still routes it.
             f = out.recv() => {
                 let Some(f) = f else { return "Disconnected.".into() };
                 if sink.send(text(&f)).await.is_err() {

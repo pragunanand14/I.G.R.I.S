@@ -459,8 +459,10 @@ impl DeviceHub {
     fn refresh_peers(&self) {
         let ids = self.peer_ids();
         if let Some(l) = lock(&self.link).as_ref() {
-            let _ = l.peers.send(ids);
+            let _ = l.peers.send(ids.clone());
         }
+        // In order with anything already queued (e.g. the goodbye to a device being removed).
+        self.frame(ClientFrame::Peers { ids });
         self.emit(HubEvent::DevicesChanged);
     }
 
@@ -480,6 +482,8 @@ impl DeviceHub {
                     l.up = true;
                 }
                 self.set_status("connected", None);
+                // Anything that changed while (re)connecting.
+                self.frame(ClientFrame::Peers { ids: self.peer_ids() });
                 // A code shown before a reconnect keeps working: listen for it again.
                 let open: Vec<String> = lock(&self.invites).iter().filter(|(_, s)| !s.invite.expired() && s.opened.is_none()).map(|(p, _)| p.clone()).collect();
                 for pid in open {
