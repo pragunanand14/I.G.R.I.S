@@ -238,6 +238,7 @@ pub async fn run(input: LoopInput<'_>, emit: Emit<'_>) -> LoopOutput {
                     reasoning_chars += n;
                     emit(ChatEvent::Reasoning { chars: reasoning_chars });
                 }
+                StreamEvent::Waiting { seconds, rate_limited } => emit(ChatEvent::Waiting { seconds, rate_limited }),
                 StreamEvent::TextDelta(t) => {
                     if first_token_ms.is_none() {
                         first_token_ms = Some(started.elapsed().as_millis());

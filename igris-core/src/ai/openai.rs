@@ -367,6 +367,7 @@ impl OpenAiCompatibleProvider {
                 }
                 err
             },
+            &mut |delay, err| on_event(StreamEvent::Waiting { seconds: delay.as_secs_f64().ceil() as u64, rate_limited: err.kind == AiErrorKind::RateLimited }),
         )
         .await
         .map_err(|e| {
@@ -845,6 +846,28 @@ mod tests {
         let r = &server.requests().await[0];
         assert_eq!(r.header("authorization").as_deref(), Some("Bearer sk-test"));
         assert!(r.head.starts_with("POST /chat/completions"));
+    }
+
+    #[tokio::test]
+    async fn a_rate_limit_is_waited_out_and_reported_not_hidden() {
+        let limited = json!([{ "error": { "code": 429, "message": "Quota exceeded. Please retry in 0.2s.", "details": [
+            { "@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "0.2s" }
+        ] } }])
+        .to_string();
+        let ok = format!("data: {}\n\ndata: [DONE]\n\n", json!({"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}));
+        let server = MockServer::start(vec![(429, "application/json", limited), (200, "text/event-stream", ok)]).await;
+        let p = OpenAiCompatibleProvider::openai("sk-test".into(), Some(server.url())).unwrap();
+        let mut waits = Vec::new();
+        let c = p
+            .stream(&req(), &CancellationToken::new(), &mut |e| {
+                if let StreamEvent::Waiting { seconds, rate_limited } = e {
+                    waits.push((seconds, rate_limited))
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(c.text, "Hi");
+        assert_eq!(waits, vec![(1, true)], "the wait (0.2 s hint + 0.5 s margin, rounded up) is reported as a rate limit");
     }
 
     #[tokio::test]

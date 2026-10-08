@@ -434,6 +434,7 @@ impl AiProvider for AnthropicProvider {
                 let msg = resp.json::<Value>().await.ok().and_then(|v| v["error"]["message"].as_str().map(str::to_string));
                 http::status_error(status, msg, retry, "Anthropic")
             },
+            &mut |delay, err| on_event(StreamEvent::Waiting { seconds: delay.as_secs_f64().ceil() as u64, rate_limited: err.kind == AiErrorKind::RateLimited }),
         )
         .await?;
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useNow } from "@/hooks/useNow";
+import { streamingLabel } from "./streamingLabel";
 import type { StreamingState } from "@/stores/chatStore";
 import type { Message } from "@/types/chat";
 import { MessageItem } from "./MessageItem";
@@ -81,15 +82,3 @@ export function MessageList({ messages, pendingUser, streaming, onRegenerate, on
   );
 }
 
-function streamingLabel(s: StreamingState, now: number): string {
-  const last = s.activities.at(-1);
-  if (last?.status === "awaitingApproval") return "Waiting for approval…";
-  if (last?.status === "running") return `${last.title}…`;
-  let label = s.phase === "waiting" ? "Thinking…" : "Responding…";
-  if (s.phase === "waiting" && s.compacting) label = "Condensing earlier messages…";
-  if (s.phase === "waiting" && s.reasoningChars) label = `Reasoning… (~${Math.max(1, Math.round(s.reasoningChars / 5))} words)`;
-  // Slow (e.g. local) models: show that it's still working.
-  const elapsed = s.startedAt ? Math.floor((now - s.startedAt) / 1000) : 0;
-  if (s.phase === "waiting" && elapsed >= 10) label += ` ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
-  return label;
-}

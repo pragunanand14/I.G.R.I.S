@@ -47,6 +47,9 @@ pub enum ChatEvent {
     Delta { text: String },
     /// The model is reasoning before it answers; `chars` is the total so far (text not shown).
     Reasoning { chars: usize },
+    /// The provider request failed transiently and is retried in `seconds`
+    /// (`rate_limited`: the provider said too many requests).
+    Waiting { seconds: u64, rate_limited: bool },
     /// A tool call started, needs approval, or finished (upsert by `activity.id`).
     Tool { activity: ToolActivity },
     /// The assistant turn ended; `message.status` says how.

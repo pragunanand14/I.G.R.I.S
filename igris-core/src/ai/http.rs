@@ -97,7 +97,12 @@ pub fn retry_after(resp: &Response) -> Option<Duration> {
 
 /// Send a request, retrying transient failures with backoff. `build` is
 /// called per attempt; `on_error` turns a non-2xx response into an error.
-pub async fn send_with_retry<B, E, Fut>(cancel: &CancellationToken, build: B, on_error: E) -> AiResult<Response>
+pub async fn send_with_retry<B, E, Fut>(
+    cancel: &CancellationToken,
+    build: B,
+    on_error: E,
+    on_wait: &mut (dyn FnMut(Duration, &AiError) + Send),
+) -> AiResult<Response>
 where
     B: Fn() -> RequestBuilder,
     E: Fn(Response) -> Fut,
@@ -122,6 +127,7 @@ where
         let backoff = if err.kind == AiErrorKind::RateLimited { 4000 } else { 800 };
         let delay = err.retry_after.unwrap_or_else(|| Duration::from_millis(backoff * 2u64.pow(attempt - 1)).min(MAX_RETRY_DELAY));
         tracing::warn!(event = "AI_REQUEST_RETRY", attempt, kind = ?err.kind, delay_ms = delay.as_millis() as u64);
+        on_wait(delay, &err);
         tokio::select! {
             _ = cancel.cancelled() => return Err(cancelled()),
             _ = tokio::time::sleep(delay) => {}

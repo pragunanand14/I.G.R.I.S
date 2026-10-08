@@ -214,6 +214,12 @@ pub enum StreamEvent {
     /// The model is reasoning before answering (characters of reasoning so far in
     /// this delta). Reasoning text itself isn't shown or stored.
     Reasoning(usize),
+    /// The request failed transiently and is retried after `seconds`; `rate_limited`
+    /// when the provider said too many requests (so the wait is the provider's, not IGRIS's).
+    Waiting {
+        seconds: u64,
+        rate_limited: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

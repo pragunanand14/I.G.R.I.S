@@ -22,6 +22,10 @@ export interface StreamingState {
   compacting?: boolean;
   /** When the request started (ms epoch), for the elapsed-time display. */
   startedAt?: number;
+  /** The provider asked IGRIS to wait (or the connection failed): retrying at this time (ms epoch). */
+  retryAt?: number;
+  /** …because the provider said too many requests. */
+  rateLimited?: boolean;
 }
 
 interface ChatStore {
@@ -89,14 +93,17 @@ export const useChatStore = create<ChatStore>((set, get) => {
         setActivity("thinking");
         break;
       case "reasoning":
-        set({ streaming: { ...s.streaming, reasoningChars: ev.chars } });
+        set({ streaming: { ...s.streaming, reasoningChars: ev.chars, retryAt: undefined } });
+        break;
+      case "waiting":
+        set({ streaming: { ...s.streaming, retryAt: Date.now() + ev.seconds * 1000, rateLimited: ev.rateLimited } });
         break;
       case "compacting":
         set({ streaming: { ...s.streaming, compacting: true } });
         break;
       case "delta":
         if (useAssistantStore.getState().activity !== "speaking") setActivity("speaking");
-        set({ streaming: { ...s.streaming, phase: "streaming", text: s.streaming.text + ev.text } });
+        set({ streaming: { ...s.streaming, phase: "streaming", text: s.streaming.text + ev.text, retryAt: undefined } });
         break;
       case "tool": {
         const list = s.streaming.activities;
