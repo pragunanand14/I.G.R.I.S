@@ -66,7 +66,7 @@ export function MemoryPage() {
 
   if (backend !== "ready") {
     return (
-      <div className="p-8">
+      <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="Memory" />
         <p className="text-sm text-danger">Memory requires the IGRIS desktop backend.</p>
       </div>
@@ -74,7 +74,7 @@ export function MemoryPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-8">
+    <div className="mx-auto max-w-3xl px-8 pt-8 pb-16">
       <PageHeader
         title="Memory"
         description="What IGRIS remembers between conversations. Everything here is stored only on this computer."
@@ -127,7 +127,7 @@ export function MemoryPage() {
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label="New memory"
                 placeholder={newKind === "long_term" ? "e.g. My main project is SkillTrack (Java, MySQL)" : "e.g. The staging server is staging.example.com"}
-                className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+                className="h-9 min-w-0 flex-1 rounded-xl bg-surface-strong px-3 text-sm text-fg placeholder:text-faint transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none"
               />
               <button type="submit" disabled={!draft.trim()} className="h-9 rounded-lg bg-accent px-4 text-xs font-semibold text-bg disabled:opacity-40">
                 Save
@@ -159,7 +159,7 @@ export function MemoryPage() {
               onChange={(e) => setQuery(e.target.value)}
               aria-label="Search memories"
               placeholder="Search memories…"
-              className="h-9 w-full rounded-lg border border-line bg-surface pr-3 pl-8 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+              className="h-9 w-full rounded-xl bg-surface-strong pr-3 pl-8 text-sm text-fg placeholder:text-faint transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none"
             />
           </div>
 

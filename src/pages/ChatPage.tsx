@@ -1,4 +1,4 @@
-import { AlertTriangle, History, Settings as SettingsIcon, X } from "lucide-react";
+import { AlertTriangle, History, Settings as SettingsIcon, SquarePen, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Composer } from "@/components/chat/Composer";
@@ -36,6 +36,12 @@ export function ChatPage() {
   }, [backend, s.activeId, loadTasks]);
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setHistoryOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [historyOpen]);
   const active = s.conversations.find((c) => c.id === s.activeId) ?? null;
   const streamingHere = s.streaming !== null && (s.streaming.conversationId === s.activeId || s.streaming.conversationId === null);
   const streamingElsewhere = s.streaming !== null && !streamingHere;
@@ -52,19 +58,26 @@ export function ChatPage() {
           : undefined;
 
   return (
-    <div className="relative flex h-full min-h-0">
-      <ConversationList
-        conversations={s.conversations}
-        activeId={s.activeId}
-        busyId={s.streaming?.conversationId ?? null}
-        onSelect={(id) => {
-          setHistoryOpen(false);
-          void s.openConversation(id);
-        }}
-        onRename={s.rename}
-        onDelete={s.remove}
-        openOnNarrow={historyOpen}
-      />
+    <div className="relative flex h-full min-h-0 overflow-hidden">
+      {historyOpen && (
+        <>
+          <div className="anim-fade absolute inset-0 z-20 bg-black/30" onClick={() => setHistoryOpen(false)} aria-hidden="true" />
+          <div className="drawer-in absolute inset-y-0 left-0 z-30 w-72 shadow-[var(--shadow)]">
+            <ConversationList
+              conversations={s.conversations}
+              activeId={s.activeId}
+              busyId={s.streaming?.conversationId ?? null}
+              onSelect={(id) => {
+                setHistoryOpen(false);
+                void s.openConversation(id);
+              }}
+              onRename={s.rename}
+              onDelete={s.remove}
+              onClose={() => setHistoryOpen(false)}
+            />
+          </div>
+        </>
+      )}
 
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between gap-4 px-4 md:px-6">
@@ -74,15 +87,24 @@ export function ChatPage() {
               onClick={() => setHistoryOpen(true)}
               aria-label="Conversations"
               title="Conversations"
-              className="grid size-8 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-hover hover:text-fg md:hidden"
+              className="grid size-8 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-hover hover:text-fg"
             >
-              <History className="size-4" />
+              <History className="size-[18px]" />
             </button>
             {!empty && (
               <span className="size-6 shrink-0 [view-transition-name:igris-orb]" aria-hidden="true">
                 <AiCore state={coreState} size="100%" />
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => void s.openConversation(null)}
+              aria-label="New conversation"
+              title="New conversation"
+              className="grid size-8 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-hover hover:text-fg"
+            >
+              <SquarePen className="size-[18px]" />
+            </button>
             <h1 key={active?.id ?? "new"} className="anim-fade truncate text-sm font-medium text-fg">
               {active?.title ?? "New conversation"}
             </h1>

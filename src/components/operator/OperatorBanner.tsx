@@ -28,7 +28,7 @@ export function OperatorBanner() {
       <button
         type="button"
         onClick={() => void control(paused ? "resume" : "pause")}
-        className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg hover:bg-surface-hover"
+        className="flex items-center gap-1.5 rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover"
       >
         {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
         {paused ? "Resume" : "Pause"}

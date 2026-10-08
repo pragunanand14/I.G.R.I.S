@@ -68,14 +68,14 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
               <button
                 type="button"
                 onClick={() => onAnswer(a.id, false)}
-                className="rounded-md border border-line-strong px-3 py-1 text-xs text-fg hover:bg-surface-hover"
+                className="rounded-full bg-surface-strong px-3.5 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover"
               >
                 Deny
               </button>
             </div>
           </li>
         ) : (
-          <li key={a.id} className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs">
+          <li key={a.id} className="rounded-xl bg-surface-strong px-3 py-1.5 text-xs">
             <div className="flex items-center gap-2">
             {ICONS[a.status]}
             <span className="min-w-0 truncate text-fg" title={a.tool}>

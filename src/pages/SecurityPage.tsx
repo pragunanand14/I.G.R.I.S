@@ -59,7 +59,7 @@ export function SecurityPage() {
 
   if (backend !== "ready") {
     return (
-      <div className="p-8">
+      <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="Security" />
         <p className="text-sm text-danger">Security settings require the IGRIS desktop backend.</p>
       </div>
@@ -67,7 +67,7 @@ export function SecurityPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-8">
+    <div className="mx-auto max-w-4xl px-8 pt-8 pb-16">
       <PageHeader title="Security" description="What IGRIS is allowed to do, and a record of everything it did." />
       {error && <p className="mb-4 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</p>}
 

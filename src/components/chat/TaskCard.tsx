@@ -113,14 +113,14 @@ export function TaskCard({ conversationId, onResume, busy }: Props) {
   const waitingForUser = !t.live && (t.state === "paused" || t.state === "failed");
   const step = t.currentStep !== null ? t.plan[t.currentStep] : undefined;
   const tone = t.state === "failed" ? "border-danger/30" : t.state === "completed" ? "border-success/30" : "border-line";
-  const btn = "flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-fg hover:bg-surface-hover disabled:opacity-50";
+  const btn = "flex items-center gap-1.5 rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover disabled:opacity-50";
 
   return (
     <div role="status" aria-label="Task" data-testid="task-card" className={`mb-2 rounded-xl border ${tone} bg-surface/70 px-3.5 py-2.5 text-sm`}>
       <div className="flex items-center gap-2">
         {t.live && !final && t.state !== "paused" ? <Loader2 className="size-3.5 animate-spin text-accent" /> : <ListChecks className="size-3.5 text-muted" />}
         <span className="font-mono text-[11px] uppercase tracking-wider text-muted">{stateLabel(t)}</span>
-        {t.project && <span className="rounded border border-line px-1.5 text-[10px] text-faint">{t.project.name}</span>}
+        {t.project && <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-faint">{t.project.name}</span>}
         <span className="min-w-0 flex-1" />
         {t.live && !final && (
           <>

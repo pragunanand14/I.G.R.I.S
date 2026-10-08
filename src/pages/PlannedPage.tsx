@@ -7,9 +7,9 @@ export function PlannedPage({ item }: { item: NavItem }) {
   const Icon = item.icon;
   return (
     <div className="flex min-h-full items-center justify-center p-8">
-      <div className="w-full max-w-lg rounded-xl border border-line bg-surface p-8 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-[20px] bg-surface p-8">
         <div className="mb-5 flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-lg border border-line bg-surface-strong text-muted">
+          <div className="grid size-10 place-items-center rounded-xl bg-surface-strong text-muted">
             <Icon className="size-5" strokeWidth={1.6} />
           </div>
           <div>

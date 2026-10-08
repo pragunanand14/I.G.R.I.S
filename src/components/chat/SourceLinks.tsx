@@ -26,7 +26,7 @@ export function SourceLinks({ sources }: { sources: { title: string; url: string
               e.preventDefault();
               if (/^https?:\/\//i.test(s.url) && hasBackend()) void openUrl(s.url);
             }}
-            className="flex max-w-56 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] text-muted hover:border-accent hover:text-accent"
+            className="flex max-w-56 items-center gap-1 rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-muted hover:bg-surface-hover hover:text-fg"
           >
             <ExternalLink className="size-2.5 shrink-0" />
             <span className="truncate">{s.title || host(s.url)}</span>

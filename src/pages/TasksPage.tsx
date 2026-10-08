@@ -37,7 +37,7 @@ export function TasksPage() {
 
   if (backend !== "ready") {
     return (
-      <div className="p-8">
+      <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="Tasks" />
         <p className="text-sm text-danger">Tasks and reminders require the IGRIS desktop backend.</p>
       </div>
@@ -45,7 +45,7 @@ export function TasksPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-8">
+    <div className="mx-auto max-w-3xl px-8 pt-8 pb-16">
       <PageHeader
         title="Tasks"
         description="Your to-dos, reminders, timers and calendar. IGRIS can manage all of them from chat."

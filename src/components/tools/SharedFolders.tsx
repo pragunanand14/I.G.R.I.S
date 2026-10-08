@@ -100,7 +100,7 @@ export function SharedFolders({ onNotice }: { onNotice: (n: { ok: boolean; text:
             type="button"
             title={s.path}
             onClick={() => void run(() => api.addFolder(s.path, newWritable), `${s.label} shared.`)}
-            className="flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs text-fg hover:border-accent hover:text-accent"
+            className="flex items-center gap-1.5 rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover"
           >
             <Plus className="size-3" /> {s.label}
           </button>

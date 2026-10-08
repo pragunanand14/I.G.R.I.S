@@ -79,7 +79,7 @@ export function ReminderAlerts({ enabled }: { enabled: boolean }) {
                 key={m}
                 type="button"
                 onClick={() => void act(r.id, () => api.snoozeReminder(r.id, m))}
-                className="rounded-md border border-line px-2 py-1 text-[11px] text-muted hover:border-accent hover:text-accent"
+                className="rounded-full bg-surface-strong px-2.5 py-1 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-fg"
               >
                 Snooze {m} min
               </button>

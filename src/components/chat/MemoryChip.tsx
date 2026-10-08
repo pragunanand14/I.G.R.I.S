@@ -14,7 +14,7 @@ export function MemoryChip({ context }: { context: MemoryContext }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[10px] text-faint hover:border-line-strong hover:text-muted"
+        className="flex items-center gap-1 rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-faint hover:text-muted"
       >
         <Brain className="size-3" />
         {n} {n === 1 ? "memory" : "memories"} used

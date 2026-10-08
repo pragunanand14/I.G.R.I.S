@@ -63,7 +63,7 @@ export function SettingsPage() {
   const disabled = backend !== "ready" || status !== "ready" || saving;
 
   return (
-    <div className="mx-auto max-w-3xl p-8">
+    <div className="mx-auto max-w-3xl px-8 pt-8 pb-16">
       <PageHeader
         title="Settings"
         description="Preferences are stored locally in the IGRIS database."
@@ -205,7 +205,7 @@ function NameField({
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
         aria-label="Your name"
         placeholder="Not set"
-        className="h-8 w-56 rounded-lg border border-line bg-surface px-3 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-40"
+        className="h-8 w-56 rounded-xl bg-surface-strong px-3 text-sm text-fg placeholder:text-faint transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none disabled:opacity-40"
       />
     </div>
   );
@@ -350,7 +350,7 @@ function ModelField({
       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
       aria-label="Model override"
       placeholder={placeholder}
-      className="h-8 w-56 rounded-lg border border-line bg-surface px-3 font-mono text-xs text-fg placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-40"
+      className="h-8 w-56 rounded-xl bg-surface-strong px-3 font-mono text-xs text-fg placeholder:text-faint transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none disabled:opacity-40"
     />
   );
 }
@@ -431,7 +431,7 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
                 disabled={disabled}
                 onChange={(e) => void update({ ttsVoice: e.target.value })}
                 aria-label="Voice"
-                className="h-8 max-w-56 rounded-lg border border-line bg-surface px-2 text-xs text-fg focus:border-accent focus:outline-none"
+                className="h-8 max-w-56 rounded-xl bg-surface-strong px-2 text-xs text-fg transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none"
               >
                 <option value="">Most natural available</option>
                 {voices.map((v) => (
@@ -448,7 +448,7 @@ function VoicePanel({ disabled }: { disabled: boolean }) {
             type="button"
             disabled={phase === "speaking"}
             onClick={() => void say("Hello. I'm IGRIS, and this is how I sound.")}
-            className="rounded-lg border border-line px-3 py-1 text-xs text-fg hover:bg-surface-hover disabled:opacity-40"
+            className="rounded-full bg-surface-strong px-3.5 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover disabled:opacity-40"
           >
             {phase === "speaking" ? "Speaking…" : "Play sample"}
           </button>
@@ -512,7 +512,7 @@ function HotkeyField({ saved, disabled, onCommit }: { saved: string; disabled: b
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
       }}
-      className="h-8 w-44 rounded-lg border border-line bg-surface px-2.5 font-mono text-xs text-fg focus:border-accent focus:outline-none"
+      className="h-8 w-44 rounded-xl bg-surface-strong px-2.5 font-mono text-xs text-fg transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none"
     />
   );
 }

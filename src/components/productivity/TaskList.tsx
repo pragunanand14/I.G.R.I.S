@@ -60,7 +60,7 @@ function TaskEditor({ task, onDone }: { task: Task; onDone: (err?: string) => vo
   };
 
   return (
-    <div className="space-y-2 rounded-lg border border-line bg-surface-hover/40 p-3">
+    <div className="space-y-2 rounded-xl bg-surface-strong p-3">
       <input aria-label="Title" value={title} onChange={(e) => setTitle(e.target.value)} className={`${INPUT} w-full`} />
       <div className="flex flex-wrap items-center gap-2">
         <input

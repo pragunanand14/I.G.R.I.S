@@ -116,13 +116,13 @@ export function CalendarPanel({ onError }: { onError: (msg: string | null) => vo
   return (
     <div>
       <div className="mb-4 flex items-center gap-2">
-        <button type="button" aria-label="Earlier" onClick={() => setFrom((f) => addDays(f, -SPAN_DAYS))} className="grid size-8 place-items-center rounded-lg border border-line text-muted hover:text-fg">
+        <button type="button" aria-label="Earlier" onClick={() => setFrom((f) => addDays(f, -SPAN_DAYS))} className="grid size-8 place-items-center rounded-full bg-surface-strong text-muted hover:bg-surface-hover hover:text-fg">
           <ChevronLeft className="size-4" />
         </button>
-        <button type="button" onClick={() => setFrom(startOfDay(new Date()))} className="h-8 rounded-lg border border-line px-3 text-xs text-muted hover:text-fg">
+        <button type="button" onClick={() => setFrom(startOfDay(new Date()))} className="h-8 rounded-full bg-surface-strong px-3.5 text-xs font-medium text-muted hover:text-fg">
           Today
         </button>
-        <button type="button" aria-label="Later" onClick={() => setFrom((f) => addDays(f, SPAN_DAYS))} className="grid size-8 place-items-center rounded-lg border border-line text-muted hover:text-fg">
+        <button type="button" aria-label="Later" onClick={() => setFrom((f) => addDays(f, SPAN_DAYS))} className="grid size-8 place-items-center rounded-full bg-surface-strong text-muted hover:bg-surface-hover hover:text-fg">
           <ChevronRight className="size-4" />
         </button>
         <span className="text-sm text-muted">
@@ -149,7 +149,7 @@ export function CalendarPanel({ onError }: { onError: (msg: string | null) => vo
       )}
 
       {days.length === 0 ? (
-        <div className="rounded-xl border border-line bg-surface py-10 text-center text-sm text-faint">No events in these two weeks.</div>
+        <div className="rounded-[20px] bg-surface py-12 text-center text-sm text-faint">No events in these two weeks.</div>
       ) : (
         <div className="space-y-3">
           {days.map(({ day, items }) => (

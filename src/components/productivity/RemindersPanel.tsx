@@ -115,7 +115,7 @@ export function RemindersPanel({ onError }: { onError: (msg: string | null) => v
                 key={d}
                 type="button"
                 onClick={() => void run(() => api.startTimer(label, d))}
-                className="rounded-full border border-line px-2.5 py-1 text-xs text-fg hover:border-accent hover:text-accent"
+                className="rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover"
               >
                 {d.replace("minutes", "min")}
               </button>

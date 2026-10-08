@@ -130,7 +130,7 @@ export function ToolsPage() {
 
   if (backend !== "ready") {
     return (
-      <div className="p-8">
+      <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="Tools" />
         <p className="text-sm text-danger">Tools require the IGRIS desktop backend.</p>
       </div>
@@ -138,7 +138,7 @@ export function ToolsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-4 md:p-8">
+    <div className="mx-auto max-w-3xl px-8 pt-8 pb-16">
       <PageHeader
         title="Tools"
         description="The only actions IGRIS can take. Every call is validated, checked against your permission policy and written to the audit log."
@@ -197,7 +197,7 @@ export function ToolsPage() {
               </p>
 
               {candidates && (
-                <div className="mb-4 rounded-lg border border-line bg-surface p-3">
+                <div className="mb-4 rounded-xl bg-surface-strong p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-label">Found on this computer</p>
                     {candidates.length > 1 && (
@@ -216,7 +216,7 @@ export function ToolsPage() {
                           type="button"
                           title={c.path}
                           onClick={() => void add(c.name, c.path)}
-                          className="flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs text-fg hover:border-accent hover:text-accent"
+                          className="flex items-center gap-1.5 rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover"
                         >
                           <Plus className="size-3" /> {c.name}
                         </button>
@@ -278,7 +278,7 @@ export function ToolsPage() {
                     maxLength={60}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="VS Code"
-                    className="h-8 rounded-lg border border-line bg-surface px-2.5 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+                    className="h-9 rounded-xl bg-surface-strong px-3 text-sm text-fg transition-shadow duration-200 placeholder:text-faint focus:ring-2 focus:ring-accent/50 focus:outline-none"
                   />
                 </label>
                 <label className="flex min-w-48 flex-1 flex-col gap-1 text-[11px] text-muted">
@@ -289,9 +289,9 @@ export function ToolsPage() {
                       onChange={(e) => setPath(e.target.value)}
                       spellCheck={false}
                       placeholder={platform === "windows" ? "C:\\Program Files\\App\\app.exe" : "/usr/bin/app"}
-                      className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 font-mono text-xs text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+                      className="h-8 min-w-0 flex-1 rounded-xl bg-surface-strong px-2.5 font-mono text-xs text-fg placeholder:text-faint transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none"
                     />
-                    <button type="button" onClick={() => void browse()} className="flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs text-muted hover:bg-surface-hover hover:text-fg">
+                    <button type="button" onClick={() => void browse()} className="flex h-8 items-center gap-1.5 rounded-full bg-surface-strong px-3 text-xs font-medium text-muted hover:bg-surface-hover hover:text-fg">
                       <FolderOpen className="size-3.5" /> Browse…
                     </button>
                   </div>

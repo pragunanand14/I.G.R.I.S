@@ -34,7 +34,7 @@ export function SystemPage() {
 
   if (backend !== "ready") {
     return (
-      <div className="p-8">
+      <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="System" description="Live hardware and OS telemetry." />
         <p className="text-sm text-danger">System telemetry requires the IGRIS desktop backend.</p>
       </div>
@@ -43,7 +43,7 @@ export function SystemPage() {
 
   if (!s) {
     return (
-      <div className="p-8">
+      <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="System" description="Live hardware and OS telemetry." />
         <p className="text-sm text-muted">{error ? `Telemetry unavailable: ${error}` : "Reading system telemetry…"}</p>
       </div>

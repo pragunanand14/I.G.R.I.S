@@ -23,28 +23,33 @@ interface Props {
   onSelect: (id: string | null) => void;
   onRename: (id: string, title: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
-  /** Narrow screens: the list is a panel over the chat, shown on request. Wide screens always show it. */
-  openOnNarrow?: boolean;
+  /** Closes the panel. */
+  onClose?: () => void;
 }
 
-export function ConversationList({ conversations, activeId, busyId, onSelect, onRename, onDelete, openOnNarrow = false }: Props) {
+export function ConversationList({ conversations, activeId, busyId, onSelect, onRename, onDelete, onClose }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   return (
     <aside
-      className={`${openOnNarrow ? "absolute inset-0 z-20 flex w-full bg-elevated" : "hidden"} shrink-0 flex-col border-r border-line md:static md:z-auto md:flex md:w-64`}
+      className="flex h-full w-full flex-col border-r border-line bg-elevated"
     >
-      <div className="p-3">
+      <div className="flex items-center gap-2 p-3">
         <button
           type="button"
           onClick={() => onSelect(null)}
-          className="flex w-full items-center gap-2 rounded-xl bg-surface-strong px-3 py-2.5 text-sm font-medium text-fg transition-[background-color,transform] duration-200 hover:bg-surface-hover active:scale-[0.98]"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-surface-strong px-3 py-2.5 text-sm font-medium text-fg transition-[background-color,transform] duration-200 hover:bg-surface-hover active:scale-[0.98]"
         >
           <MessageSquarePlus className="size-4 text-accent" />
           New conversation
         </button>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="Close history" className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-hover hover:text-fg">
+            <X className="size-4" />
+          </button>
+        )}
       </div>
       <p className="text-label px-4 pt-1 pb-2">History</p>
       <ul className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3" aria-label="Conversations">

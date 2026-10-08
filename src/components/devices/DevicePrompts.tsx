@@ -27,7 +27,7 @@ export function DevicePrompts({ enabled, phone = false }: { enabled: boolean; ph
 
   const card = phone ? "m-card m-float p-4" : "anim-rise rounded-2xl border border-line-strong bg-elevated p-3.5 shadow-[var(--shadow)]";
   const primary = phone ? "m-button m-button-primary flex-1" : "rounded-md bg-accent px-3 py-1 text-xs font-semibold text-bg";
-  const secondary = phone ? "m-button flex-1" : "rounded-md border border-line px-2.5 py-1 text-xs text-muted hover:text-fg";
+  const secondary = phone ? "m-button flex-1" : "rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-muted hover:text-fg";
   const muted = phone ? "m-muted text-sm" : "text-xs text-muted";
   const title = phone ? "font-semibold" : "text-sm font-medium text-fg";
 

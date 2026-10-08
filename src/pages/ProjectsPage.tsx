@@ -97,7 +97,7 @@ export function ProjectsPage() {
 
   if (backend !== "ready") {
     return (
-      <div className="p-8">
+      <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="Projects" />
         <p className="text-sm text-danger">Projects require the IGRIS desktop backend.</p>
       </div>
@@ -113,7 +113,7 @@ export function ProjectsPage() {
           onChange={(e) => setEditing((s) => s && { ...s, input: { ...s.input, [key]: e.target.value } })}
           rows={3}
           placeholder={placeholder}
-          className="resize-y rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+          className="resize-y rounded-xl bg-surface-strong px-3 py-2 text-sm text-fg transition-shadow duration-200 placeholder:text-faint focus:ring-2 focus:ring-accent/50 focus:outline-none"
         />
       ) : (
         <input
@@ -121,14 +121,14 @@ export function ProjectsPage() {
           onChange={(e) => setEditing((s) => s && { ...s, input: { ...s.input, [key]: e.target.value } })}
           placeholder={placeholder}
           aria-label={label}
-          className="h-8 rounded-lg border border-line bg-surface px-2.5 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+          className="h-9 rounded-xl bg-surface-strong px-3 text-sm text-fg transition-shadow duration-200 placeholder:text-faint focus:ring-2 focus:ring-accent/50 focus:outline-none"
         />
       )}
     </label>
   );
 
   return (
-    <div className="mx-auto max-w-4xl p-8">
+    <div className="mx-auto max-w-3xl px-8 pt-8 pb-16">
       <PageHeader
         title="Projects"
         description="Register your projects so IGRIS can load their context when you ask about them."
@@ -158,10 +158,10 @@ export function ProjectsPage() {
                   onBlur={(e) => void detect(e.target.value)}
                   placeholder="C:\Users\you\Projects\SkillTrack"
                   aria-label="Folder"
-                  className="h-8 rounded-lg border border-line bg-surface px-2.5 font-mono text-xs text-fg placeholder:text-faint focus:border-accent focus:outline-none"
+                  className="h-8 rounded-xl bg-surface-strong px-2.5 font-mono text-xs text-fg placeholder:text-faint transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none"
                 />
               </label>
-              <button type="button" onClick={() => void chooseFolder()} className="flex h-8 items-center gap-1 rounded-lg border border-line px-2.5 text-xs text-muted hover:bg-surface-hover hover:text-fg">
+              <button type="button" onClick={() => void chooseFolder()} className="flex h-8 items-center gap-1.5 rounded-full bg-surface-strong px-3 text-xs font-medium text-muted hover:bg-surface-hover hover:text-fg">
                 <FolderOpen className="size-3.5" /> Choose…
               </button>
             </div>
@@ -202,7 +202,7 @@ export function ProjectsPage() {
       )}
 
       {projects.length === 0 && !editing ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-line bg-surface py-12 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-[20px] bg-surface py-12 text-center">
           <FolderGit2 className="size-6 text-faint" />
           <p className="text-sm text-muted">No projects yet.</p>
           <p className="text-xs text-faint">Add one, then ask IGRIS things like “What's the stack of SkillTrack?”</p>
@@ -210,7 +210,7 @@ export function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {projects.map((p) => (
-            <div key={p.id} className="group rounded-xl border border-line bg-surface p-4">
+            <div key={p.id} className="group rounded-[20px] bg-surface p-4">
               <div className="flex items-start gap-2">
                 <FolderGit2 className="mt-0.5 size-4 shrink-0 text-accent" />
                 <div className="min-w-0 flex-1">
@@ -240,7 +240,7 @@ export function ProjectsPage() {
                     .map((t) => t.trim())
                     .filter(Boolean)
                     .map((t) => (
-                      <span key={t} className="rounded-md border border-line px-1.5 py-0.5 text-[10px] text-muted">
+                      <span key={t} className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-muted">
                         {t}
                       </span>
                     ))}

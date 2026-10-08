@@ -8,7 +8,7 @@ import { useDeviceStore } from "@/stores/deviceStore";
 import type { DevicesOverview, PairedDevice } from "@/types/devices";
 import { CAPABILITY_LABEL, isActive, keyProtectionText, linkText, platformLabel, taskStatusText, taskTone } from "./deviceText";
 
-const BUTTON = "rounded-md border border-line px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-40";
+const BUTTON = "rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40";
 const PRIMARY = "rounded-md bg-accent px-3 py-1 text-xs font-semibold text-bg disabled:opacity-40";
 const toneDot = (t: "ok" | "warn" | "bad") => (t === "bad" ? "error" : t);
 
@@ -157,7 +157,7 @@ function PairedSection({ overview, disabled }: { overview: DevicesOverview; disa
       {devices.length === 0 ? (
         <p className="text-sm text-muted">No other devices yet. Pair one below.</p>
       ) : (
-        <ul className="divide-y divide-line rounded-lg border border-line">
+        <ul className="divide-y divide-line rounded-xl bg-surface-strong">
           {devices.map((d: PairedDevice) => {
             const active = d.trusted && !d.revokedAt;
             return (
@@ -183,7 +183,7 @@ function PairedSection({ overview, disabled }: { overview: DevicesOverview; disa
                   {active && d.capabilities.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {d.capabilities.map((c) => (
-                        <span key={c} className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted">
+                        <span key={c} className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-muted">
                           {CAPABILITY_LABEL[c] ?? c}
                         </span>
                       ))}
@@ -321,7 +321,7 @@ function TasksSection({ overview, disabled }: { overview: DevicesOverview; disab
       ) : (
         <ul className="space-y-1.5">
           {overview.tasks.slice(0, 10).map((t) => (
-            <li key={t.requestId} className="rounded-lg border border-line px-3 py-2">
+            <li key={t.requestId} className="rounded-xl bg-surface-strong px-3 py-2">
               <div className="flex items-start gap-2">
                 <span className="mt-1.5">
                   <StatusDot tone={toneDot(taskTone(t))} pulse={isActive(t)} />
