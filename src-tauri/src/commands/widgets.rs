@@ -2,8 +2,6 @@
 //! IGRIS, and the weather widget's place.
 
 use serde::{Deserialize, Serialize};
-#[cfg(mobile)]
-use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
 
