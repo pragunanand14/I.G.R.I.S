@@ -564,7 +564,7 @@ async fn task_turns_use_the_router_budget_and_compaction() {
     p.router = Arc::new(
         ModelRouter::new(Arc::new(AnthropicProvider::new("k".into(), Some(server.url())).unwrap()), "claude-opus-5-5")
             .with_role_model(crate::ai::ModelRole::Fast, Some("claude-haiku-4-5".into()))
-            .with_context_window(Some(6_000)),
+            .with_context_window(Some(6_300)),
     );
     let (cid, m) = env.turn_with(p, Some(&conv.id), "Write the plan to plan.md", &CancellationToken::new()).await;
     let reqs = server.requests().await;

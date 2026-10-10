@@ -11,7 +11,7 @@ and the same React UI, adapted for phones. What changes is the device layer.
 | Capability | Phone | Notes |
 |---|---|---|
 | Chat, streaming, model routing, context budgeting | ✅ | core, unchanged |
-| Memory, tasks, reminders, timers, calendar | ✅ | reminders fire as Android notifications |
+| Memory, tasks, reminders, timers, calendar | ✅ | reminders ring as Android notifications even when IGRIS is closed: each upcoming one is also scheduled as an exact Android alarm (`src-tauri/src/phone_alarms.rs`), kept in step on snooze/cancel |
 | Web search / reading pages | ✅ | when a search key is configured |
 | Images and PDFs in chat | ✅ | |
 | Voice (mic in the chat, cloud STT/TTS) | ✅ (untested on device) | Android asks for the microphone the first time |
@@ -19,10 +19,14 @@ and the same React UI, adapted for phones. What changes is the device layer.
 | Battery, network, device model | ✅ | `device_status`; also feeds the System page battery |
 | Open links | ✅ | `open_url` through Android's opener |
 | Your other devices (phone ↔ PC) | ✅ | pair with your PC, send it tasks, approve its actions, memory sync — see [CROSS_DEVICE.md](CROSS_DEVICE.md). Device keys sealed by the Android Keystore. Reachable only while IGRIS is open (no push service). |
-| Files, terminal, screenshots, operator mode (controlling the screen) | ❌ | not offered to the model and not claimed in its prompt |
+| Music | ✅ | `media_control` (media buttons, music volume), `now_playing` (playing or not — Android shares titles only with notification access, which IGRIS doesn't ask for), `play_music` (asks Spotify / YouTube Music / the default app to play a search); a now-playing bar on Home |
+| Send a link or note to the PC (handoff) | ✅ | Settings → Phone and computer, or ask IGRIS (`handoff_to_device`); end-to-end encrypted, kept in the receiver's inbox |
+| Home-screen widgets | ✅ | the orb (tap → IGRIS opens listening), a clock with the date, and weather for a place chosen in Settings → Home-screen widgets (Open-Meteo; only that place's coordinates are sent) |
+| Reading the screen, operating other apps | ✅ (needs the user to turn it on) | an accessibility service (`IgrisAccessibilityService`), off until the user enables it in Android's settings (sideloaded APKs: App info → ⋮ → Allow restricted settings first). `read_phone_screen` (SENSITIVE; password fields never read). `phone_control_start` (SENSITIVE, approved per task like operator mode) then `phone_tap` / `phone_type` / `phone_swipe` / `phone_button`; a Stop pill stays on screen; send/pay/delete-like taps and Enter always ask again; passwords are never typed |
+| Files, terminal, screenshots | ❌ | not offered to the model and not claimed in its prompt |
 
 The phone tool list is built in `src-tauri/src/tools/standard.rs` (`#[cfg(mobile)]`
-registry, 29 tools including the 4 cross-device tools). The system prompt has a phone variant
+registry, 42 tools). The system prompt has a phone variant
 (`igris-core/src/core/prompt.rs`, `DeviceKind::Phone`) that describes exactly
 these capabilities and says what the phone app can't do.
 
