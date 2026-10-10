@@ -40,6 +40,8 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 zeroize = "1"
 # Relay connection (WebSocket over TLS, bundled Mozilla roots on every platform).
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+# LG webOS TVs speak WebSocket over TLS with self-signed certificates: pinned on first pairing.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 # Relay wire protocol (frames only; the relay itself never runs inside IGRIS).
 igris-relay = { path = "../igris-relay" }
 

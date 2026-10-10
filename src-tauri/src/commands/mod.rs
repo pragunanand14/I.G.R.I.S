@@ -8,6 +8,7 @@ pub mod app;
 pub mod attachments;
 pub mod chat;
 pub mod devices;
+pub mod home;
 pub mod memory;
 pub mod operator;
 pub mod productivity;

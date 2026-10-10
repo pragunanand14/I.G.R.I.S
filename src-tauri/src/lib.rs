@@ -9,7 +9,7 @@
 //! re-exported under their usual paths.
 
 pub use igris_core::{
-    ai, attachments, config, conversations, core, db, device, error, files, memory, operator, orchestrator, productivity, projects, settings, voice,
+    ai, attachments, config, conversations, core, db, device, error, files, home, memory, operator, orchestrator, productivity, projects, settings, voice,
 };
 
 pub mod commands;
@@ -251,6 +251,13 @@ pub fn run() {
             commands::devices::devices_control_task,
             commands::devices::devices_answer_approval,
             commands::devices::devices_audit,
+            commands::home::home_devices,
+            commands::home::home_discover,
+            commands::home::home_pair,
+            commands::home::home_remove,
+            commands::home::home_rename,
+            commands::home::home_tv,
+            commands::home::home_tv_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");

@@ -13,6 +13,7 @@ import { DevicesScreen } from "./screens/DevicesScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
 import { AiScreen, AppearanceScreen, MoreScreen } from "./screens/MoreScreen";
+import { SmartHomeScreen } from "./screens/SmartHomeScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 
 restoreTheme();
@@ -47,6 +48,7 @@ const router = createHashRouter([
       { path: "chat", element: <ChatScreen /> },
       { path: "chats", element: <ChatsScreen /> },
       { path: "today", element: <TodayScreen /> },
+      { path: "smart-home", element: <SmartHomeScreen /> },
       { path: "settings", element: <MoreScreen /> },
       { path: "settings/ai", element: <AiScreen /> },
       { path: "settings/appearance", element: <AppearanceScreen /> },

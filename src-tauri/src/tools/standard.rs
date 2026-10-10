@@ -73,6 +73,9 @@ pub fn registry(d: Deps) -> ToolRegistry {
     for t in igris_core::tools::devices::all(&devices) {
         tools.register(t);
     }
+    for t in igris_core::tools::home::all(&db) {
+        tools.register(t);
+    }
     tools.register(Arc::new(WebSearchTool::new(config.clone())));
     tools.register(Arc::new(FetchUrlTool::default()));
     tools.register(Arc::new(CalculatorTool::default()));
@@ -148,6 +151,9 @@ pub fn registry(d: Deps) -> ToolRegistry {
     let Deps { db, config, orchestrator, open_url, phone, devices, .. } = d;
     let mut tools = ToolRegistry::default();
     for t in igris_core::tools::devices::all(&devices) {
+        tools.register(t);
+    }
+    for t in igris_core::tools::home::all(&db) {
         tools.register(t);
     }
     tools.register(Arc::new(WebSearchTool::new(config.clone())));

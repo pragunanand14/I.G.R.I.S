@@ -1,4 +1,4 @@
-import { ArrowUp, CalendarCheck, MessagesSquare, Mic, Settings } from "lucide-react";
+import { ArrowUp, CalendarCheck, MessagesSquare, Mic, Settings, Tv } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { AiCore } from "@/components/core/AiCore";
@@ -33,6 +33,9 @@ export function HomeScreen() {
         </IconLink>
         <div className="flex items-center gap-1">
           <TodayLink />
+          <IconLink to="/smart-home" label="Smart home">
+            <Tv className="size-[22px]" />
+          </IconLink>
           <IconLink to="/settings" label="Settings">
             <Settings className="size-[22px]" />
           </IconLink>

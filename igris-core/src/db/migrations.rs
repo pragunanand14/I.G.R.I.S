@@ -401,6 +401,25 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 13,
+        name: "home_devices",
+        sql: r#"
+            -- Smart-home devices on the local network (docs/SMART_HOME.md). The
+            -- pairing secret and pinned certificate never leave the native side.
+            CREATE TABLE home_devices (
+                id          TEXT PRIMARY KEY,
+                kind        TEXT NOT NULL,
+                name        TEXT NOT NULL,
+                host        TEXT NOT NULL,
+                mac         TEXT,
+                secret      TEXT,
+                cert_sha256 TEXT,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

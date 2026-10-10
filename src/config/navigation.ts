@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Settings,
   ShieldCheck,
+  Tv,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -40,6 +41,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Memory",
     icon: Brain,
     summary: "What IGRIS remembers — inspectable, editable, deletable.",
+  },
+  {
+    path: "/smart-home",
+    label: "Smart home",
+    icon: Tv,
+    summary: "Your TV and other devices at home, controlled directly.",
   },
   {
     path: "/projects",

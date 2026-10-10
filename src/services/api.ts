@@ -12,6 +12,7 @@ import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, 
 import { call, callRaw } from "./backend";
 import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
 import type { TaskControl, TaskEventRow, TaskInfo } from "@/types/task";
+import type { FoundDevice, HomeDevice, TvActionName, TvState } from "@/types/home";
 import type { DeviceAuditRow, DeviceSettings, DevicesOverview, PairedDevice, PairingCode, RemoteTask, ThisDevice } from "@/types/devices";
 
 /** All IPC commands in one place — mirrors `generate_handler!` in `src-tauri/src/lib.rs`. */
@@ -85,6 +86,13 @@ export const api = {
   updateEvent: (id: number, event: EventInput) => call<CalendarEvent>("update_event", { id, event }),
   deleteEvent: (id: number) => call<void>("delete_event", { id }),
   devicesOverview: () => call<DevicesOverview>("devices_overview"),
+  homeDevices: () => call<HomeDevice[]>("home_devices"),
+  homeDiscover: () => call<FoundDevice[]>("home_discover"),
+  homePair: (host: string, name?: string) => call<HomeDevice>("home_pair", { host, name }),
+  homeRemove: (id: string) => call<void>("home_remove", { id }),
+  homeRename: (id: string, name: string) => call<void>("home_rename", { id, name }),
+  homeTv: (id: string, action: TvActionName, value?: string | number) => call<string>("home_tv", { id, action, value }),
+  homeTvState: (id: string) => call<TvState>("home_tv_state", { id }),
   devicesConfigure: (relayUrl: string | null, enabled: boolean, syncMemory: boolean) =>
     call<DeviceSettings>("devices_configure", { relayUrl, enabled, syncMemory }),
   devicesStartPairing: () => call<PairingCode>("devices_start_pairing"),
