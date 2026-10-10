@@ -85,7 +85,9 @@ pub fn capability(name: &str) -> Option<Capability> {
         "create_file" | "create_folder" | "write_file" | "move_path" | "copy_path" | "trash_path" => FileChanges,
         "launch_application" | "close_application" | "open_url" | "open_path" | "open_phone_app" => Apps,
         "run_command" => Terminal,
-        "take_screenshot" => Screen,
+        "take_screenshot" | "read_phone_screen" => Screen,
+        "phone_control_start" => Operator,
+        "phone_control_finish" | "phone_tap" | "phone_type" | "phone_swipe" | "phone_button" => OperatorSession,
         "operator_start" => Operator,
         "operator_update" | "operator_finish" => OperatorSession,
         n if n.starts_with("computer_") || n.starts_with("browser_") => OperatorSession,
@@ -170,7 +172,7 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
         ],
     ),
     (Capability::Projects, &["project", "repo", "codebase", "workspace", "my app"]),
-    (Capability::Screen, &["screen", "screenshot", "what's on", "what is on", "look at my", "see my"]),
+    (Capability::Screen, &["screen", "screenshot", "what's on", "what is on", "look at my", "see my", "read this", "on my phone"]),
     (
         Capability::Home,
         &[
@@ -324,6 +326,8 @@ impl Toolset {
             .iter()
             .filter(|d| match capability(&d.name) {
                 Some(Capability::OperatorSession) => session,
+                // Looking at the phone is part of every phone-control step.
+                Some(Capability::Screen) if session && d.name == "read_phone_screen" => true,
                 // Only offered while something is actually hidden.
                 Some(Capability::Meta) => hides_something,
                 Some(c) => focus.as_ref().map_or(true, |f| f.contains(&c)),

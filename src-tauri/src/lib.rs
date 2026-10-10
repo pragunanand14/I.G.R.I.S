@@ -109,6 +109,10 @@ pub fn run() {
             #[cfg(desktop)]
             let media = platform::media(platform::url_opener(app.handle()));
             #[cfg(mobile)]
+            let screen = platform::phone_screen(app.handle());
+            #[cfg(mobile)]
+            platform::follow_phone_control(app.handle(), operator.clone());
+            #[cfg(mobile)]
             let media = platform::media(app.handle());
             app.manage(commands::media::MediaState(media.clone()));
             let tools = crate::tools::standard::registry(crate::tools::standard::Deps {
@@ -123,6 +127,8 @@ pub fn run() {
                 open_path: platform::path_opener(app.handle()),
                 open_url: platform::url_opener(app.handle()),
                 media,
+                #[cfg(mobile)]
+                screen,
                 devices: device_hub.clone(),
                 #[cfg(mobile)]
                 phone: platform::phone(app.handle()),
@@ -280,6 +286,8 @@ pub fn run() {
             commands::devices::devices_handoff,
             commands::devices::handoffs_list,
             commands::devices::handoff_dismiss,
+            commands::phone::phone_screen_access,
+            commands::phone::phone_screen_settings,
             commands::widgets::widget_launch_action,
             commands::widgets::widget_weather_place,
             commands::widgets::widget_set_weather_place,
@@ -475,5 +483,71 @@ mod platform {
             let used = self.0.igris_device().play_from_search(query, package).map_err(|e| e.to_string())?;
             Ok(format!("Asked {used} to play \"{query}\"."))
         }
+    }
+
+    /// The phone's screen, through the device plugin's accessibility service.
+    #[cfg(mobile)]
+    pub fn phone_screen(app: &tauri::AppHandle) -> crate::tools::phone_screen::SharedScreen {
+        Arc::new(PluginScreen(app.clone()))
+    }
+
+    #[cfg(mobile)]
+    struct PluginScreen(tauri::AppHandle);
+
+    #[cfg(mobile)]
+    impl crate::tools::phone_screen::PhoneScreen for PluginScreen {
+        fn enabled(&self) -> bool {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().screen_access().unwrap_or(false)
+        }
+        fn read(&self) -> Result<crate::tools::phone_screen::ScreenRead, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().screen_read().map_err(|e| e.to_string())
+        }
+        fn tap(&self, index: Option<usize>, x: f32, y: f32, long: bool) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().screen_tap(index, x, y, long).map_err(|e| e.to_string())
+        }
+        fn type_text(&self, text: &str, index: Option<usize>, enter: bool) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().screen_type(text, index, enter).map_err(|e| e.to_string())
+        }
+        fn swipe(&self, direction: &str) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().screen_swipe(direction).map_err(|e| e.to_string())
+        }
+        fn button(&self, action: &str) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().screen_button(action).map_err(|e| e.to_string())
+        }
+    }
+
+    /// While IGRIS operates the phone: keep the Stop pill showing what it's
+    /// doing, hide it when the task ends, and stop the task when it's tapped.
+    #[cfg(mobile)]
+    pub fn follow_phone_control(app: &tauri::AppHandle, op: Arc<crate::operator::Operator>) {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        let a = app.clone();
+        op.on_change(Arc::new(move |snap: &crate::operator::Snapshot| {
+            let text = snap.active.then(|| snap.task.as_ref().map(|t| t.status.to_lowercase()).unwrap_or_else(|| "working".into()));
+            let a = a.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let _ = a.igris_device().screen_overlay(text.as_deref());
+            });
+        }));
+        let a = app.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if !op.is_active() {
+                    continue;
+                }
+                let a2 = a.clone();
+                let stop = tauri::async_runtime::spawn_blocking(move || a2.igris_device().screen_take_stop().unwrap_or(false)).await.unwrap_or(false);
+                if stop {
+                    op.stop("You tapped Stop.");
+                }
+            }
+        });
     }
 }

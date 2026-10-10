@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use tauri::{AppHandle, Runtime};
 
-use crate::{Error, PhoneApp, PhoneStatus, Result};
+use crate::{Error, PhoneApp, PhoneStatus, Result, ScreenRead};
 
 /// Not a phone: every call says so.
 pub struct Device<R: Runtime>(PhantomData<fn() -> R>);
@@ -57,6 +57,42 @@ impl<R: Runtime> Device<R> {
     }
 
     pub fn weather_place(&self) -> Result<Option<String>> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_access(&self) -> Result<bool> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn open_accessibility_settings(&self) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_read(&self) -> Result<ScreenRead> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_tap(&self, _index: Option<usize>, _x: f32, _y: f32, _long: bool) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_type(&self, _text: &str, _index: Option<usize>, _enter: bool) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_swipe(&self, _direction: &str) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_button(&self, _action: &str) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_overlay(&self, _text: Option<&str>) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_take_stop(&self) -> Result<bool> {
         Err(Error::Unsupported)
     }
 }

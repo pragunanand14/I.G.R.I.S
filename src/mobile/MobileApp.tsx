@@ -16,6 +16,7 @@ import { HomeScreen } from "./screens/HomeScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
 import { PermissionsScreen } from "./screens/PermissionsScreen";
 import { AiScreen, AppearanceScreen, MoreScreen } from "./screens/MoreScreen";
+import { ScreenControlScreen } from "./screens/ScreenControlScreen";
 import { SmartHomeScreen } from "./screens/SmartHomeScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 import { WidgetsScreen } from "./screens/WidgetsScreen";
@@ -91,6 +92,7 @@ const router = createHashRouter([
       { path: "settings/activity", element: <ActivityScreen /> },
       { path: "settings/permissions", element: <PermissionsScreen /> },
       { path: "settings/widgets", element: <WidgetsScreen /> },
+      { path: "settings/screen", element: <ScreenControlScreen /> },
       { path: "settings/devices", element: <DevicesScreen /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

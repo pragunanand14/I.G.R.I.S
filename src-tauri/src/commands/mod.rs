@@ -12,6 +12,7 @@ pub mod home;
 pub mod media;
 pub mod memory;
 pub mod operator;
+pub mod phone;
 pub mod productivity;
 pub mod settings;
 pub mod system;

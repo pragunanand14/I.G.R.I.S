@@ -56,6 +56,19 @@ class PlaceArgs {
 }
 
 @InvokeArg
+class ScreenArgs {
+    var index: Int = -1
+    var x: Float = 0f
+    var y: Float = 0f
+    var long: Boolean = false
+    var text: String? = null
+    var enter: Boolean = false
+    var direction: String? = null
+    var action: String? = null
+    var show: Boolean = false
+}
+
+@InvokeArg
 class SealArgs {
     var data: String? = null
 }
@@ -386,6 +399,122 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     fun getWeatherPlace(invoke: Invoke) {
         val ret = JSObject()
         Weather.place(activity)?.let { ret.put("name", it.name) }
+        invoke.resolve(ret)
+    }
+
+    // ── Screen reading and control (accessibility) ──────────────────────
+
+    private fun screen(invoke: Invoke): IgrisAccessibilityService? {
+        val s = IgrisAccessibilityService.instance
+        if (s == null) invoke.reject("Screen control is off. Turn it on in IGRIS → Settings → Screen control.")
+        return s
+    }
+
+    /** Run a screen action, turning failures into a plain message. */
+    private fun act(invoke: Invoke, f: (IgrisAccessibilityService) -> Unit) {
+        val s = screen(invoke) ?: return
+        try {
+            f(s)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    @Command
+    fun screenAccess(invoke: Invoke) {
+        val ret = JSObject()
+        ret.put("enabled", IgrisAccessibilityService.instance != null)
+        invoke.resolve(ret)
+    }
+
+    /** Android's accessibility settings, where the user turns IGRIS's screen control on or off. */
+    @Command
+    fun openAccessibilitySettings(invoke: Invoke) {
+        try {
+            activity.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject("Couldn't open Android's settings: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** What's on screen: the app in front and its visible items (password fields never read). */
+    @Command
+    fun screenRead(invoke: Invoke) {
+        val s = screen(invoke) ?: return
+        try {
+            val screen = s.read()
+            val pm = activity.packageManager
+            val app = try { pm.getApplicationLabel(pm.getApplicationInfo(screen.packageName, 0)).toString() } catch (e: Exception) { screen.packageName }
+            val items = JSArray()
+            for (n in screen.nodes) {
+                val o = JSObject()
+                o.put("label", n.label)
+                o.put("role", n.role)
+                o.put("x", n.rect.left)
+                o.put("y", n.rect.top)
+                o.put("w", n.rect.width())
+                o.put("h", n.rect.height())
+                o.put("focused", n.info.isFocused)
+                items.put(o)
+            }
+            val ret = JSObject()
+            ret.put("package", screen.packageName)
+            ret.put("app", app)
+            ret.put("width", screen.width)
+            ret.put("height", screen.height)
+            ret.put("items", items)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    @Command
+    fun screenTap(invoke: Invoke) {
+        val a = invoke.parseArgs(ScreenArgs::class.java)
+        act(invoke) { s -> if (a.index >= 0) s.tapNode(a.index, a.long) else s.tap(a.x, a.y, a.long) }
+    }
+
+    @Command
+    fun screenType(invoke: Invoke) {
+        val a = invoke.parseArgs(ScreenArgs::class.java)
+        act(invoke) { s -> s.type(a.text ?: "", if (a.index >= 0) a.index else null, a.enter) }
+    }
+
+    @Command
+    fun screenSwipe(invoke: Invoke) {
+        val a = invoke.parseArgs(ScreenArgs::class.java)
+        act(invoke) { s -> s.swipe(a.direction ?: "") }
+    }
+
+    @Command
+    fun screenButton(invoke: Invoke) {
+        val a = invoke.parseArgs(ScreenArgs::class.java)
+        act(invoke) { s -> s.global(a.action ?: "") }
+    }
+
+    /** Show (with a status) or hide the Stop pill. */
+    @Command
+    fun screenOverlay(invoke: Invoke) {
+        val a = invoke.parseArgs(ScreenArgs::class.java)
+        val s = IgrisAccessibilityService.instance
+        if (a.show) {
+            IgrisAccessibilityService.stopRequested = false
+            s?.showOverlay(a.text ?: "working")
+        } else {
+            s?.hideOverlayAsync()
+        }
+        invoke.resolve()
+    }
+
+    /** Whether the user tapped Stop since the last check. */
+    @Command
+    fun screenTakeStop(invoke: Invoke) {
+        val ret = JSObject()
+        ret.put("stop", IgrisAccessibilityService.stopRequested)
+        IgrisAccessibilityService.stopRequested = false
         invoke.resolve(ret)
     }
 }

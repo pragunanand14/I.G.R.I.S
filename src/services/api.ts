@@ -25,6 +25,8 @@ export const api = {
   getSystemSnapshot: () => call<SystemSnapshot>("get_system_snapshot"),
   getAiStatus: () => call<AiStatus>("get_ai_status"),
   reloadConfig: () => call<ReloadResult>("reload_config"),
+  phoneScreenAccess: () => call<boolean>("phone_screen_access"),
+  phoneScreenSettings: () => call<void>("phone_screen_settings"),
   /** What a home-screen widget asked for when it opened IGRIS ("listen", "widgets"), once. */
   widgetLaunchAction: () => call<string | null>("widget_launch_action"),
   widgetWeatherPlace: () => call<string | null>("widget_weather_place"),

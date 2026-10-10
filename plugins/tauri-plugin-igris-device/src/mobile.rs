@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
-use crate::{Error, PhoneApp, PhoneStatus, Result};
+use crate::{Error, PhoneApp, PhoneStatus, Result, ScreenRead};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(_app: &AppHandle<R>, api: PluginApi<R, C>) -> std::result::Result<Device<R>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "android")]
@@ -134,4 +134,72 @@ impl<R: Runtime> Device<R> {
         }
         self.0.run_mobile_plugin::<R>("getWeatherPlace", ()).map(|r| r.name).map_err(failed)
     }
+
+    /// Whether the user turned IGRIS's screen control on (Android accessibility settings).
+    pub fn screen_access(&self) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct R {
+            enabled: bool,
+        }
+        self.0.run_mobile_plugin::<R>("screenAccess", ()).map(|r| r.enabled).map_err(failed)
+    }
+
+    pub fn open_accessibility_settings(&self) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("openAccessibilitySettings", ()).map(|_| ()).map_err(failed)
+    }
+
+    pub fn screen_read(&self) -> Result<ScreenRead> {
+        self.0.run_mobile_plugin::<ScreenRead>("screenRead", ()).map_err(failed)
+    }
+
+    fn screen(&self, cmd: &str, args: ScreenArgs) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>(cmd, args).map(|_| ()).map_err(failed)
+    }
+
+    /// Tap item `index` of the last read, or the point (x, y).
+    pub fn screen_tap(&self, index: Option<usize>, x: f32, y: f32, long: bool) -> Result<()> {
+        self.screen("screenTap", ScreenArgs { index: index.map(|i| i as i32).unwrap_or(-1), x, y, long, ..Default::default() })
+    }
+
+    /// Type into the focused field (or item `index`); `enter` presses the keyboard's Enter after.
+    pub fn screen_type(&self, text: &str, index: Option<usize>, enter: bool) -> Result<()> {
+        self.screen("screenType", ScreenArgs { index: index.map(|i| i as i32).unwrap_or(-1), text: Some(text.into()), enter, ..Default::default() })
+    }
+
+    pub fn screen_swipe(&self, direction: &str) -> Result<()> {
+        self.screen("screenSwipe", ScreenArgs { direction: Some(direction.into()), ..Default::default() })
+    }
+
+    /// back, home, recents or notifications.
+    pub fn screen_button(&self, action: &str) -> Result<()> {
+        self.screen("screenButton", ScreenArgs { action: Some(action.into()), ..Default::default() })
+    }
+
+    /// Show the Stop pill with `text`, or hide it (`None`).
+    pub fn screen_overlay(&self, text: Option<&str>) -> Result<()> {
+        self.screen("screenOverlay", ScreenArgs { show: text.is_some(), text: text.map(str::to_string), ..Default::default() })
+    }
+
+    /// Whether the user tapped Stop since the last check.
+    pub fn screen_take_stop(&self) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct R {
+            stop: bool,
+        }
+        self.0.run_mobile_plugin::<R>("screenTakeStop", ()).map(|r| r.stop).map_err(failed)
+    }
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ScreenArgs {
+    index: i32,
+    x: f32,
+    y: f32,
+    long: bool,
+    text: Option<String>,
+    enter: bool,
+    direction: Option<String>,
+    action: Option<String>,
+    show: bool,
 }

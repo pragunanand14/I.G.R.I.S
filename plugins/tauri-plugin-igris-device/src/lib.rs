@@ -34,6 +34,33 @@ pub struct PhoneStatus {
     pub network: Option<String>,
 }
 
+/// One visible item on the phone's screen (from accessibility).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenItem {
+    /// Its text or description ("(password field — not read)" for passwords).
+    pub label: String,
+    /// "button", "field", "checked"/"unchecked", "list" or "text".
+    pub role: String,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    #[serde(default)]
+    pub focused: bool,
+}
+
+/// What's on the phone's screen: the app in front and its visible items.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenRead {
+    pub package: String,
+    pub app: String,
+    pub width: i32,
+    pub height: i32,
+    pub items: Vec<ScreenItem>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("This is only available on Android.")]

@@ -65,6 +65,9 @@ pub struct Deps {
     /// The phone (Android): apps and device status.
     #[cfg(mobile)]
     pub phone: super::phone::SharedPhone,
+    /// The phone's screen (accessibility): reading it and operating it.
+    #[cfg(mobile)]
+    pub screen: super::phone_screen::SharedScreen,
 }
 
 /// Every tool IGRIS offers on a desktop.
@@ -153,8 +156,11 @@ pub fn registry(d: Deps) -> ToolRegistry {
 #[cfg(mobile)]
 pub fn registry(d: Deps) -> ToolRegistry {
     use super::phone::{DeviceStatusTool, ListPhoneAppsTool, OpenPhoneAppTool};
-    let Deps { db, config, orchestrator, open_url, phone, media, devices, .. } = d;
+    let Deps { db, config, orchestrator, operator, open_url, phone, screen, media, devices, .. } = d;
     let mut tools = ToolRegistry::default();
+    for t in super::phone_screen::all(&super::phone_screen::ScreenTools::new(screen, operator)) {
+        tools.register(t);
+    }
     for t in super::media::all(&media) {
         tools.register(t);
     }
