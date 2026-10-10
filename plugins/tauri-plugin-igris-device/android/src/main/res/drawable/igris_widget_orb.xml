@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The IGRIS orb: a glowing blue sphere with a bright core. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <gradient android:type="radial" android:gradientRadius="50%p" android:startColor="#665EB8FF" android:centerColor="#225EB8FF" android:endColor="#005EB8FF" />
+        </shape>
+    </item>
+    <item android:top="14%" android:bottom="14%" android:left="14%" android:right="14%">
+        <shape android:shape="oval">
+            <gradient android:type="radial" android:gradientRadius="50%p" android:centerX="0.42" android:centerY="0.38" android:startColor="#FFE9F5FF" android:centerColor="#FF5EB8FF" android:endColor="#FF1B3F8F" />
+        </shape>
+    </item>
+</layer-list>

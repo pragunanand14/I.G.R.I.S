@@ -25,6 +25,10 @@ export const api = {
   getSystemSnapshot: () => call<SystemSnapshot>("get_system_snapshot"),
   getAiStatus: () => call<AiStatus>("get_ai_status"),
   reloadConfig: () => call<ReloadResult>("reload_config"),
+  /** What a home-screen widget asked for when it opened IGRIS ("listen", "widgets"), once. */
+  widgetLaunchAction: () => call<string | null>("widget_launch_action"),
+  widgetWeatherPlace: () => call<string | null>("widget_weather_place"),
+  widgetSetWeatherPlace: (query: string) => call<{ name: string; latitude: number; longitude: number }>("widget_set_weather_place", { query }),
   mediaNowPlaying: () => call<NowPlaying>("media_now_playing"),
   mediaControl: (action: MediaAction) => call<NowPlaying>("media_control", { action }),
   /** Pick a settings (.env) file and make it IGRIS's; `null` when the picker was cancelled. */

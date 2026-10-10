@@ -16,4 +16,26 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
+
+    <!-- Home-screen widgets: the orb (tap to talk), clock and date, weather. -->
+    <application>
+        <receiver android:name="dev.igris.device.OrbWidget" android:exported="false" android:label="@string/igris_widget_orb_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/igris_widget_orb_info" />
+        </receiver>
+        <receiver android:name="dev.igris.device.ClockWidget" android:exported="false" android:label="@string/igris_widget_clock_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/igris_widget_clock_info" />
+        </receiver>
+        <receiver android:name="dev.igris.device.WeatherWidget" android:exported="false" android:label="@string/igris_widget_weather_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/igris_widget_weather_info" />
+        </receiver>
+    </application>
 </manifest>

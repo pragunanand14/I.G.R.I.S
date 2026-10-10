@@ -16,6 +16,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.view.KeyEvent
+import android.webkit.WebView
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
@@ -45,6 +46,13 @@ class MediaArgs {
 class PlayArgs {
     var query: String? = null
     var packageName: String? = null
+}
+
+@InvokeArg
+class PlaceArgs {
+    var name: String? = null
+    var latitude: Double = 0.0
+    var longitude: Double = 0.0
 }
 
 @InvokeArg
@@ -329,5 +337,55 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("Couldn't start the music: ${e.javaClass.simpleName}")
         }
+    }
+
+    // ── Widgets ──────────────────────────────────────────────────────────
+
+    /** What a widget asked for when it opened IGRIS ("listen"), until IGRIS takes it. */
+    @Volatile
+    private var launchAction: String? = null
+
+    override fun load(webView: WebView) {
+        remember(activity.intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        remember(intent)
+    }
+
+    private fun remember(intent: Intent?) {
+        val action = intent?.getStringExtra(EXTRA_ACTION) ?: return
+        intent.removeExtra(EXTRA_ACTION)
+        if (action == ACTION_LISTEN || action == ACTION_WIDGETS) launchAction = action
+    }
+
+    /** The pending widget action, once. */
+    @Command
+    fun takeLaunchAction(invoke: Invoke) {
+        val ret = JSObject()
+        launchAction?.let { ret.put("action", it) }
+        launchAction = null
+        invoke.resolve(ret)
+    }
+
+    /** The weather widget's place (chosen in IGRIS). */
+    @Command
+    fun setWeatherPlace(invoke: Invoke) {
+        val args = invoke.parseArgs(PlaceArgs::class.java)
+        val name = args.name?.trim()?.take(80)
+        if (name.isNullOrEmpty() || args.latitude !in -90.0..90.0 || args.longitude !in -180.0..180.0) {
+            invoke.reject("That place isn't valid.")
+            return
+        }
+        Weather.setPlace(activity, name, args.latitude, args.longitude)
+        WeatherWidget.refreshAll(activity)
+        invoke.resolve()
+    }
+
+    @Command
+    fun getWeatherPlace(invoke: Invoke) {
+        val ret = JSObject()
+        Weather.place(activity)?.let { ret.put("name", it.name) }
+        invoke.resolve(ret)
     }
 }

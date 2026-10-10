@@ -105,4 +105,33 @@ impl<R: Runtime> Device<R> {
         }
         self.0.run_mobile_plugin::<R>("playFromSearch", A { query, package_name: package }).map(|r| r.app).map_err(failed)
     }
+
+    /// What a home-screen widget asked for when it opened IGRIS ("listen"), once.
+    pub fn take_launch_action(&self) -> Result<Option<String>> {
+        #[derive(Deserialize)]
+        struct R {
+            action: Option<String>,
+        }
+        self.0.run_mobile_plugin::<R>("takeLaunchAction", ()).map(|r| r.action).map_err(failed)
+    }
+
+    /// Set the weather widget's place (name and coordinates) and refresh it.
+    pub fn set_weather_place(&self, name: &str, latitude: f64, longitude: f64) -> Result<()> {
+        #[derive(Serialize)]
+        struct A<'a> {
+            name: &'a str,
+            latitude: f64,
+            longitude: f64,
+        }
+        self.0.run_mobile_plugin::<Empty>("setWeatherPlace", A { name, latitude, longitude }).map(|_| ()).map_err(failed)
+    }
+
+    /// The weather widget's place, if one was chosen.
+    pub fn weather_place(&self) -> Result<Option<String>> {
+        #[derive(Deserialize)]
+        struct R {
+            name: Option<String>,
+        }
+        self.0.run_mobile_plugin::<R>("getWeatherPlace", ()).map(|r| r.name).map_err(failed)
+    }
 }

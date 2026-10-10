@@ -47,4 +47,16 @@ impl<R: Runtime> Device<R> {
     pub fn play_from_search(&self, _query: &str, _package: Option<&str>) -> Result<String> {
         Err(Error::Unsupported)
     }
+
+    pub fn take_launch_action(&self) -> Result<Option<String>> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn set_weather_place(&self, _name: &str, _latitude: f64, _longitude: f64) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn weather_place(&self) -> Result<Option<String>> {
+        Err(Error::Unsupported)
+    }
 }

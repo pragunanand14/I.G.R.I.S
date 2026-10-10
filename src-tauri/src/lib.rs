@@ -280,6 +280,9 @@ pub fn run() {
             commands::devices::devices_handoff,
             commands::devices::handoffs_list,
             commands::devices::handoff_dismiss,
+            commands::widgets::widget_launch_action,
+            commands::widgets::widget_weather_place,
+            commands::widgets::widget_set_weather_place,
             commands::media::media_now_playing,
             commands::media::media_control,
         ])

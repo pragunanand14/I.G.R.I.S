@@ -1,6 +1,8 @@
 import "./mobile.css";
 import { useEffect } from "react";
-import { createHashRouter, Navigate, Outlet, RouterProvider } from "react-router";
+import { createHashRouter, Navigate, Outlet, RouterProvider, useNavigate } from "react-router";
+import { api } from "@/services/api";
+import { useVoiceStore } from "@/stores/voiceStore";
 import { DevicePrompts } from "@/components/devices/DevicePrompts";
 import { ReminderAlerts } from "@/components/productivity/ReminderAlerts";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
@@ -16,6 +18,7 @@ import { PermissionsScreen } from "./screens/PermissionsScreen";
 import { AiScreen, AppearanceScreen, MoreScreen } from "./screens/MoreScreen";
 import { SmartHomeScreen } from "./screens/SmartHomeScreen";
 import { TodayScreen } from "./screens/TodayScreen";
+import { WidgetsScreen } from "./screens/WidgetsScreen";
 
 restoreTheme();
 
@@ -28,6 +31,7 @@ function MobileShell() {
     const t = setTimeout(rememberTheme, 0);
     return () => clearTimeout(t);
   }, [settings.theme]);
+  useWidgetActions(ready);
   return (
     <div className="m-app flex h-full flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
       <main className="relative min-h-0 flex-1 overflow-y-auto">
@@ -38,6 +42,36 @@ function MobileShell() {
       <Opening />
     </div>
   );
+}
+
+/** A home-screen widget opened IGRIS asking for something: the orb starts listening. */
+function useWidgetActions(ready: boolean) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!ready) return;
+    const check = () => {
+      if (document.visibilityState !== "visible") return;
+      api
+        .widgetLaunchAction()
+        .then((action) => {
+          if (action === "listen") {
+            navigate("/");
+            const voice = useVoiceStore.getState();
+            if (voice.phase !== "listening") void voice.toggle();
+          } else if (action === "widgets") {
+            navigate("/settings/widgets");
+          }
+        })
+        .catch(() => undefined);
+    };
+    check();
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+    };
+  }, [ready, navigate]);
 }
 
 const router = createHashRouter([
@@ -56,6 +90,7 @@ const router = createHashRouter([
       { path: "settings/memory", element: <MemoryScreen /> },
       { path: "settings/activity", element: <ActivityScreen /> },
       { path: "settings/permissions", element: <PermissionsScreen /> },
+      { path: "settings/widgets", element: <WidgetsScreen /> },
       { path: "settings/devices", element: <DevicesScreen /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

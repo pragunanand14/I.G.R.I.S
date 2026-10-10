@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="igris_widget_orb_label">IGRIS orb</string>
+    <string name="igris_widget_orb_description">Tap the orb to talk to IGRIS</string>
+    <string name="igris_widget_orb_action">Talk to IGRIS</string>
+    <string name="igris_widget_clock_label">IGRIS clock</string>
+    <string name="igris_widget_clock_description">The time and date</string>
+    <string name="igris_widget_weather_label">IGRIS weather</string>
+    <string name="igris_widget_weather_description">The weather where you choose</string>
+    <string name="igris_widget_weather_setup">Tap to choose a place</string>
+</resources>
