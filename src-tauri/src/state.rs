@@ -124,6 +124,8 @@ impl Drop for GenerationGuard<'_> {
 #[derive(Default)]
 pub struct PendingApprovals {
     inner: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    /// What "Always allow" would remember for each waiting call (tool, rule).
+    rules: Mutex<HashMap<String, (String, crate::permissions::AllowRule)>>,
 }
 
 impl PendingApprovals {
@@ -134,6 +136,15 @@ impl PendingApprovals {
             Some(tx) => tx.send(approved).is_ok(),
             None => false,
         }
+    }
+
+    /// The "Always allow" rule offered for a waiting call, decided by the
+    /// backend when it asked (the UI can't widen it).
+    pub fn rule_for(&self, call_id: &str) -> Option<(String, crate::permissions::AllowRule)> {
+        if !self.inner.lock().ok()?.contains_key(call_id) {
+            return None;
+        }
+        self.rules.lock().ok()?.get(call_id).cloned()
     }
 
     fn register(&self, call_id: &str) -> Option<oneshot::Receiver<bool>> {
@@ -148,6 +159,9 @@ impl PendingApprovals {
 
     fn forget(&self, call_id: &str) {
         if let Ok(mut m) = self.inner.lock() {
+            m.remove(call_id);
+        }
+        if let Ok(mut m) = self.rules.lock() {
             m.remove(call_id);
         }
     }
@@ -167,6 +181,9 @@ impl Approver for UiApprover {
         let Some(rx) = self.pending.register(&activity.id) else {
             return Approval::Denied; // duplicate id: fail closed
         };
+        if let (Some(rule), Ok(mut rules)) = (&activity.allow_rule, self.pending.rules.lock()) {
+            rules.insert(activity.id.clone(), (activity.tool.clone(), rule.clone()));
+        }
         let decision = tokio::select! {
             _ = cancel.cancelled() => Approval::Cancelled,
             r = tokio::time::timeout(self.timeout, rx) => match r {
@@ -212,6 +229,7 @@ mod tests {
             attachments: Vec::new(),
             failure: None,
             input_digest: None,
+            allow_rule: None,
         }
     }
 
@@ -239,6 +257,24 @@ mod tests {
         cancel.cancel();
         let approver = UiApprover { pending, timeout: Duration::from_secs(5) };
         assert_eq!(approver.request(&activity("c3"), &cancel).await, Approval::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn the_always_allow_rule_is_the_one_the_backend_offered() {
+        let pending = Arc::new(PendingApprovals::default());
+        let approver = UiApprover { pending: pending.clone(), timeout: Duration::from_secs(5) };
+        let mut a = activity("c4");
+        a.allow_rule = Some(crate::permissions::AllowRule { scope: "spotify".into(), label: "Close Spotify".into() });
+        let p2 = pending.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let (tool, rule) = p2.rule_for("c4").unwrap();
+            assert_eq!((tool.as_str(), rule.scope.as_str()), ("t", "spotify"));
+            assert!(p2.respond("c4", true));
+        });
+        assert_eq!(approver.request(&a, &CancellationToken::new()).await, Approval::Approved);
+        assert!(pending.rule_for("c4").is_none(), "nothing is left behind");
+        assert!(pending.rule_for("other").is_none());
     }
 
     #[test]

@@ -69,6 +69,9 @@ pub struct ToolActivity {
     /// arguments (see `device::approval`). Not persisted.
     #[serde(skip)]
     pub input_digest: Option<String>,
+    /// While awaiting approval: what "Always allow" would remember, if offered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_rule: Option<crate::permissions::AllowRule>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -179,11 +182,13 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
         attachments: Vec::new(),
         failure: None,
         input_digest: None,
+        allow_rule: None,
     };
     let mut approval = "auto";
 
     let finish = |activity: &mut ToolActivity, status: ActivityStatus, model_text: String, ui_text: String, is_error: bool, approval: &str| {
         activity.status = status;
+        activity.allow_rule = None;
         activity.result = Some(ui_text);
         activity.duration_ms = Some(started.elapsed().as_millis() as u64);
         if let Ok(conn) = ctx.db.conn() {
@@ -246,13 +251,21 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
     // inside an approved operator task or a trusted chat.
     let must_ask = tool.always_ask(&call.input);
     let needs_approval = must_ask || ctx.policy.requires_approval(spec.permission);
-    if needs_approval && !must_ask && tool.operator_scoped() && ctx.operator.is_some_and(|o| o.covers(ctx.conversation_id)) {
+    // "Always allow" never covers critical actions or calls that must always be confirmed.
+    let rule = if must_ask || spec.permission == PermissionLevel::Critical { None } else { tool.allow_rule(&call.input) };
+    let remembered =
+        needs_approval && rule.as_ref().is_some_and(|r| ctx.db.conn().map(|c| crate::permissions::allows(&c, spec.name, &r.scope)).unwrap_or(false));
+    if remembered {
+        approval = "always";
+        tracing::info!(event = "TOOL_APPROVAL_REMEMBERED", tool = spec.name);
+    } else if needs_approval && !must_ask && tool.operator_scoped() && ctx.operator.is_some_and(|o| o.covers(ctx.conversation_id)) {
         approval = "operator";
     } else if needs_approval && !must_ask && ctx.trust.is_some_and(|t| t.covers(ctx.conversation_id, spec.name)) {
         approval = "trusted";
         tracing::info!(event = "TOOL_APPROVAL_TRUSTED", tool = spec.name);
     } else if needs_approval {
         activity.status = ActivityStatus::AwaitingApproval;
+        activity.allow_rule = rule;
         on_update(&activity);
         tracing::info!(event = "TOOL_APPROVAL_REQUESTED", tool = spec.name, permission = spec.permission.as_str());
         match ctx.approver.request(&activity, ctx.cancel).await {
@@ -285,6 +298,7 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
 
     // 5. Execute with timeout and cancellation.
     activity.status = ActivityStatus::Running;
+    activity.allow_rule = None;
     on_update(&activity);
     tracing::info!(event = "TOOL_STARTED", tool = spec.name);
     let limit = tool.timeout(&call.input);
@@ -448,6 +462,47 @@ mod tests {
         c.invalid_input = Some("{\"expression\": \"1".into());
         let (res, _) = run(&r, &db, &c, &approver, Policy::default(), None).await;
         assert!(res.content.contains("INVALID_JSON"));
+    }
+
+    /// Records what the approval prompt offered, and approves.
+    struct Offered(Mutex<Vec<Option<crate::permissions::AllowRule>>>);
+
+    #[async_trait::async_trait]
+    impl Approver for Offered {
+        async fn request(&self, a: &ToolActivity, _c: &CancellationToken) -> Approval {
+            self.0.lock().unwrap().push(a.allow_rule.clone());
+            Approval::Approved
+        }
+    }
+
+    #[tokio::test]
+    async fn always_allowed_actions_run_without_asking_but_critical_ones_still_ask() {
+        let (_, db) = setup();
+        for (level, rememberable) in [(PermissionLevel::Sensitive, true), (PermissionLevel::Critical, false)] {
+            let tool = dangerous(level);
+            let mut r = ToolRegistry::default();
+            r.register(tool.clone());
+            let approver = Offered(Mutex::new(Vec::new()));
+            let (_, act) = run(&r, &db, &call("danger", json!({})), &approver, Policy::default(), None).await;
+            assert_eq!(act.status, ActivityStatus::Completed);
+            assert!(act.allow_rule.is_none(), "the offer isn't kept once answered");
+            let offered = approver.0.lock().unwrap()[0].clone();
+            assert_eq!(offered.is_some(), rememberable, "{level:?}");
+            // The user picks "Always allow" (for critical, nothing can be remembered,
+            // and even a rule stored for it is ignored).
+            crate::permissions::add(
+                &db.conn().unwrap(),
+                "danger",
+                &offered.unwrap_or(crate::permissions::AllowRule { scope: String::new(), label: "x".into() }),
+            )
+            .unwrap();
+            let (_, act) = run(&r, &db, &call("danger", json!({})), &approver, Policy::default(), None).await;
+            assert_eq!(act.status, ActivityStatus::Completed);
+            assert_eq!(approver.0.lock().unwrap().len(), if rememberable { 1 } else { 2 }, "{level:?}");
+            assert_eq!(audit::list(&db.conn().unwrap(), 1).unwrap()[0].approval, if rememberable { "always" } else { "approved" });
+            assert_eq!(*tool.1.lock().unwrap(), 2);
+            crate::permissions::clear(&db.conn().unwrap()).unwrap();
+        }
     }
 
     #[tokio::test]

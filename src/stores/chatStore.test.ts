@@ -131,7 +131,7 @@ describe("chat store", () => {
   it("forwards approval answers to the backend", async () => {
     const spy = vi.spyOn(api, "respondToolApproval").mockResolvedValue(true);
     await useChatStore.getState().answerApproval("t1", false);
-    expect(spy).toHaveBeenCalledWith("t1", false);
+    expect(spy).toHaveBeenCalledWith("t1", false, false);
     expect(useChatStore.getState().error).toBeNull();
     spy.mockResolvedValue(false);
     await useChatStore.getState().answerApproval("t1", true);

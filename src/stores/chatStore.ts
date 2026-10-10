@@ -54,8 +54,8 @@ interface ChatStore {
   resumeTask: (taskId: string, conversationId: string) => Promise<boolean>;
   cancel: () => Promise<void>;
   /** Answer a tool approval prompt. */
-  /** `trustChat`: also allow later trustable actions in this conversation. */
-  answerApproval: (callId: string, approved: boolean, trustChat?: boolean) => Promise<void>;
+  /** `always`: also remember this kind of action ("Always allow"). */
+  answerApproval: (callId: string, approved: boolean, always?: boolean) => Promise<void>;
   rename: (id: string, title: string) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
   dismissError: () => void;
@@ -248,11 +248,9 @@ export const useChatStore = create<ChatStore>((set, get) => {
       }
     },
 
-    answerApproval: async (callId, approved, trustChat = false) => {
+    answerApproval: async (callId, approved, always = false) => {
       try {
-        const conversationId = get().streaming?.conversationId ?? get().activeId;
-        if (approved && trustChat && conversationId) await api.trustConversation(conversationId);
-        const delivered = await api.respondToolApproval(callId, approved);
+        const delivered = await api.respondToolApproval(callId, approved, always);
         if (!delivered) set({ error: "That request is no longer waiting for an answer.", errorKind: "validation" });
       } catch (err) {
         fail(err);

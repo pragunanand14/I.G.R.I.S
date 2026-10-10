@@ -157,6 +157,13 @@ pub trait Tool: Send + Sync {
         false
     }
 
+    /// What "Always allow" would remember for this call, or `None` if it
+    /// can't be remembered. Default: the whole tool. Tools narrow it (the app,
+    /// the folder…) so "always" means this kind of action, not everything.
+    fn allow_rule(&self, _input: &Value) -> Option<crate::permissions::AllowRule> {
+        Some(crate::permissions::AllowRule { scope: String::new(), label: self.spec().title.to_string() })
+    }
+
     /// Time limit for one call.
     fn timeout(&self, _input: &Value) -> std::time::Duration {
         executor::TOOL_TIMEOUT

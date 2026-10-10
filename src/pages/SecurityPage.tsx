@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { AllowedActions } from "@/components/security/AllowedActions";
 import { Panel } from "@/components/ui/Panel";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
 import { Toggle } from "@/components/ui/Toggle";
@@ -22,7 +23,7 @@ const GUARANTEES = [
   "IGRIS can only act through the registered tools listed on the Tools page — there is no shell or arbitrary command execution.",
   "Every tool input is validated against its schema before anything runs; unknown tools are rejected.",
   "Applications can only be opened from your allowlist, by name. Paths and arguments never come from the model.",
-  "Sensitive and critical actions always wait for your explicit approval and expire after 5 minutes without an answer.",
+  "Sensitive and critical actions wait for your explicit approval and expire after 5 minutes without an answer — except actions you chose to \"Always allow\" (listed above, removable). Critical actions can't be always-allowed.",
   "API keys are read only by the native backend and are never sent to this interface or written to logs.",
   "Tool results are treated as data, not instructions.",
 ];
@@ -98,6 +99,10 @@ export function SecurityPage() {
               </li>
             ))}
           </ul>
+        </Panel>
+
+        <Panel title="Always allowed">
+          <AllowedActions />
         </Panel>
 
         <Panel title="Guarantees">

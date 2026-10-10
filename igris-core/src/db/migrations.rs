@@ -420,6 +420,22 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 14,
+        name: "permission_rules",
+        sql: r#"
+            -- "Always allow": actions the user approved for good (src/permissions.rs).
+            -- Kept on this device only; removable in Settings.
+            CREATE TABLE permission_rules (
+                id         TEXT PRIMARY KEY,
+                tool       TEXT NOT NULL,
+                scope      TEXT NOT NULL,
+                label      TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (tool, scope)
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

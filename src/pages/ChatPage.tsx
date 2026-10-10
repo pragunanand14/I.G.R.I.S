@@ -162,7 +162,7 @@ export function ChatPage() {
             streaming={streamingHere ? s.streaming : null}
             onRegenerate={() => void s.regenerate()}
             onEdit={s.edit}
-            onAnswerApproval={(id, ok, trust) => void s.answerApproval(id, ok, trust)}
+            onAnswerApproval={(id, ok, always) => void s.answerApproval(id, ok, always)}
           />
         )}
 

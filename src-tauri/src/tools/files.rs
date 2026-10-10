@@ -48,6 +48,13 @@ fn guarded(db: &Database, path: &str, access: Access) -> Result<GuardedPath, Too
     files::guard(&roots(db)?, path, access).map_err(ToolError::invalid)
 }
 
+/// The folder (resolved inside a shared folder) that an action on `path`
+/// happens in: "Always allow" for file actions covers that folder only.
+fn action_folder(db: &Database, path: &str) -> Option<String> {
+    let g = guarded(db, path, Access::Write).ok()?;
+    Some(g.path.parent()?.display().to_string())
+}
+
 fn path_schema(desc: &str) -> Value {
     json!({ "type": "string", "minLength": 1, "maxLength": 1024, "description": desc })
 }
@@ -436,6 +443,10 @@ impl Tool for WriteFileTool {
     fn spec(&self) -> &ToolSpec {
         &self.spec
     }
+    fn allow_rule(&self, input: &Value) -> Option<crate::permissions::AllowRule> {
+        let dir = action_folder(&self.db, input["path"].as_str()?)?;
+        Some(crate::permissions::AllowRule { label: format!("Overwrite files in {dir}"), scope: dir })
+    }
     fn describe(&self, input: &Value) -> String {
         let n = input["content"].as_str().map(|c| c.chars().count()).unwrap_or(0);
         format!("Overwrite {} ({n} characters)", input["path"].as_str().unwrap_or_default())
@@ -480,6 +491,12 @@ requires the user's approval. Use it to organise files.",
 impl Tool for MovePathTool {
     fn spec(&self) -> &ToolSpec {
         &self.spec
+    }
+    fn allow_rule(&self, input: &Value) -> Option<crate::permissions::AllowRule> {
+        let from = action_folder(&self.db, input["from"].as_str()?)?;
+        let to = action_folder(&self.db, input["to"].as_str()?)?;
+        let label = if from == to { format!("Move and rename files in {from}") } else { format!("Move files from {from} to {to}") };
+        Some(crate::permissions::AllowRule { scope: format!("{from}\n{to}"), label })
     }
     fn describe(&self, input: &Value) -> String {
         format!("Move {} → {}", input["from"].as_str().unwrap_or_default(), input["to"].as_str().unwrap_or_default())
@@ -631,6 +648,10 @@ the user's approval. Permanent deletion isn't available.",
 impl Tool for TrashPathTool {
     fn spec(&self) -> &ToolSpec {
         &self.spec
+    }
+    fn allow_rule(&self, input: &Value) -> Option<crate::permissions::AllowRule> {
+        let dir = action_folder(&self.db, input["path"].as_str()?)?;
+        Some(crate::permissions::AllowRule { label: format!("Move files in {dir} to the Recycle Bin"), scope: dir })
     }
     fn describe(&self, input: &Value) -> String {
         format!("Move {} to the Recycle Bin", input["path"].as_str().unwrap_or_default())

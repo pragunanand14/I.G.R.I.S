@@ -27,12 +27,11 @@ const STATUS_TEXT = {
 interface Props {
   activities: ToolActivity[];
   /** Present only while the turn is live; enables approval buttons. */
-  onAnswer?: (callId: string, approved: boolean, trustChat?: boolean) => void;
+  /** `always`: also remember this kind of action ("Always allow"). */
+  onAnswer?: (callId: string, approved: boolean, always?: boolean) => void;
 }
 
 /** Shows what IGRIS did (or tried to do) while answering. */
-/** Mirrors `TRUSTABLE` in src-tauri/src/tools/executor.rs. */
-const TRUSTABLE = ["write_file", "move_path", "close_application", "run_command"];
 
 export function ToolActivityList({ activities, onAnswer }: Props) {
   if (activities.length === 0) return null;
@@ -47,22 +46,22 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
               {a.permission && <PermissionBadge level={a.permission} />}
             </div>
             <p className="mt-1 pl-6 text-xs text-muted">IGRIS wants to do this. Nothing happens unless you allow it.</p>
-            <div className="mt-2 flex gap-2 pl-6">
+            <div className="mt-2 flex flex-wrap gap-2 pl-6">
               <button
                 type="button"
                 onClick={() => onAnswer(a.id, true)}
-                className="rounded-md bg-accent px-3 py-1 text-xs font-semibold text-bg hover:opacity-90"
+                className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-bg hover:opacity-90"
               >
                 Allow
               </button>
-              {TRUSTABLE.includes(a.tool) && (
+              {a.allowRule && (
                 <button
                   type="button"
                   onClick={() => onAnswer(a.id, true, true)}
-                  title="Also allow later overwrite, move, close-app and routine build/test command actions in this chat (until IGRIS restarts). Deleting, screenshots, installs and publishing still ask."
-                  className="rounded-md border border-accent/50 px-3 py-1 text-xs text-accent hover:bg-accent/10"
+                  title={`From now on, IGRIS won't ask before this: ${a.allowRule.label}. You can undo it in Settings → Security.`}
+                  className="rounded-full border border-accent/50 px-3.5 py-1.5 text-xs font-medium text-accent hover:bg-accent/10"
                 >
-                  Allow for this chat
+                  Always allow
                 </button>
               )}
               <button
@@ -73,6 +72,7 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
                 Deny
               </button>
             </div>
+            {a.allowRule && <p className="mt-1.5 pl-6 text-[11px] text-faint">“Always allow” covers: {a.allowRule.label}</p>}
           </li>
         ) : (
           <li key={a.id} className="rounded-xl bg-surface-strong px-3 py-1.5 text-xs">

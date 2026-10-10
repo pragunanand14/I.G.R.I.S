@@ -12,7 +12,7 @@ interface Props {
   streaming: StreamingState | null;
   onRegenerate: () => void;
   onEdit: (id: string, content: string) => Promise<boolean>;
-  onAnswerApproval: (callId: string, approved: boolean, trustChat?: boolean) => void;
+  onAnswerApproval: (callId: string, approved: boolean, always?: boolean) => void;
 }
 
 export function MessageList({ messages, pendingUser, streaming, onRegenerate, onEdit, onAnswerApproval }: Props) {

@@ -28,6 +28,7 @@ pub mod memory;
 pub mod net;
 pub mod operator;
 pub mod orchestrator;
+pub mod permissions;
 pub mod productivity;
 pub mod projects;
 pub mod settings;

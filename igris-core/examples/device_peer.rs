@@ -60,6 +60,7 @@ impl TaskRunner for ApprovalRunner {
             attachments: vec![],
             failure: None,
             input_digest: Some(igris_core::device::approval::input_digest(&input)),
+            allow_rule: None,
         };
         let decision = approver.request(&activity, &cancel).await;
         self.0.line(&format!("APPROVAL {decision:?}"));

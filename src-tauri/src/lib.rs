@@ -9,7 +9,8 @@
 //! re-exported under their usual paths.
 
 pub use igris_core::{
-    ai, attachments, config, conversations, core, db, device, error, files, home, memory, operator, orchestrator, productivity, projects, settings, voice,
+    ai, attachments, config, conversations, core, db, device, error, files, home, memory, operator, orchestrator, permissions, productivity, projects,
+    settings, voice,
 };
 
 pub mod commands;
@@ -186,6 +187,9 @@ pub fn run() {
             commands::chat::rename_conversation,
             commands::chat::delete_conversation,
             commands::chat::respond_tool_approval,
+            commands::chat::list_permission_rules,
+            commands::chat::remove_permission_rule,
+            commands::chat::clear_permission_rules,
             commands::chat::trust_conversation,
             commands::operator::get_operator_state,
             commands::operator::operator_control,

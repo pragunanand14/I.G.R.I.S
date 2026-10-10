@@ -229,6 +229,14 @@ impl Tool for RunCommandTool {
         classify(i["program"].as_str().unwrap_or_default().trim_end_matches(".exe"), &args_of(i)) != Ok(Class::Routine)
     }
 
+    /// Only routine commands get here (others always ask): "always" covers
+    /// routine commands of this program, in this folder.
+    fn allow_rule(&self, i: &Value) -> Option<crate::permissions::AllowRule> {
+        let program = i["program"].as_str()?.trim().trim_end_matches(".exe").to_lowercase();
+        let cwd = self.cwd(i).ok()?.display().to_string();
+        Some(crate::permissions::AllowRule { label: format!("Run routine `{program}` commands in {cwd}"), scope: format!("{program}\n{cwd}") })
+    }
+
     fn describe(&self, i: &Value) -> String {
         let program = i["program"].as_str().unwrap_or_default();
         let args = args_of(i);

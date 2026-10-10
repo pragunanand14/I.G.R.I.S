@@ -6,7 +6,7 @@ import { ToolActivityList } from "./ToolActivityList";
 interface Props {
   text: string;
   activities: ToolActivity[];
-  onAnswer?: (callId: string, approved: boolean, trustChat?: boolean) => void;
+  onAnswer?: (callId: string, approved: boolean, always?: boolean) => void;
   /** Show a streaming caret after the last text segment. */
   streaming?: boolean;
 }

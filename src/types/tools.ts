@@ -19,6 +19,17 @@ export interface ToolActivity {
   sources?: { title: string; url: string }[];
   /** Attachment ids of images the tool produced (screenshots). */
   attachments?: string[];
+  /** While awaiting approval: what "Always allow" would remember, if it's offered. */
+  allowRule?: { scope: string; label: string };
+}
+
+/** An action the user chose to always allow on this device. */
+export interface AllowedAction {
+  id: string;
+  tool: string;
+  scope: string;
+  label: string;
+  createdAt: string;
 }
 
 export interface ToolInfo {

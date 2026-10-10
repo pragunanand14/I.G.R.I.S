@@ -128,6 +128,7 @@ mod tests {
             attachments: vec![],
             failure,
             input_digest: None,
+            allow_rule: None,
         }
     }
 

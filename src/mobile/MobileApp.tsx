@@ -12,6 +12,7 @@ import { ChatScreen, ChatsScreen } from "./screens/ChatScreen";
 import { DevicesScreen } from "./screens/DevicesScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
+import { PermissionsScreen } from "./screens/PermissionsScreen";
 import { AiScreen, AppearanceScreen, MoreScreen } from "./screens/MoreScreen";
 import { SmartHomeScreen } from "./screens/SmartHomeScreen";
 import { TodayScreen } from "./screens/TodayScreen";
@@ -54,6 +55,7 @@ const router = createHashRouter([
       { path: "settings/appearance", element: <AppearanceScreen /> },
       { path: "settings/memory", element: <MemoryScreen /> },
       { path: "settings/activity", element: <ActivityScreen /> },
+      { path: "settings/permissions", element: <PermissionsScreen /> },
       { path: "settings/devices", element: <DevicesScreen /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

@@ -144,6 +144,11 @@ impl Tool for CloseApplicationTool {
     fn spec(&self) -> &ToolSpec {
         &self.spec
     }
+    fn allow_rule(&self, input: &Value) -> Option<crate::permissions::AllowRule> {
+        let name = input["name"].as_str()?.trim();
+        let name = name.strip_suffix(".exe").unwrap_or(name);
+        (!name.is_empty()).then(|| crate::permissions::AllowRule { scope: name.to_lowercase(), label: format!("Close {name}") })
+    }
     fn describe(&self, input: &Value) -> String {
         format!("Close {}", input["name"].as_str().unwrap_or_default())
     }

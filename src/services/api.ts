@@ -8,7 +8,7 @@ import type { VoiceStatus } from "@/types/voice";
 import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, ProjectInput } from "@/types/workspace";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
-import type { AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
+import type { AllowedAction, AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
 import { call, callRaw } from "./backend";
 import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
 import type { TaskControl, TaskEventRow, TaskInfo } from "@/types/task";
@@ -42,7 +42,11 @@ export const api = {
   taskControl: (taskId: string, action: TaskControl) => call<TaskInfo>("task_control", { taskId, action }),
   listTaskEvents: (taskId: string, limit?: number) => call<TaskEventRow[]>("list_task_events", { taskId, limit }),
   trustConversation: (conversationId: string) => call<void>("trust_conversation", { conversationId }),
-  respondToolApproval: (callId: string, approved: boolean) => call<boolean>("respond_tool_approval", { callId, approved }),
+  /** `always`: also remember this kind of action ("Always allow"). */
+  respondToolApproval: (callId: string, approved: boolean, always = false) => call<boolean>("respond_tool_approval", { callId, approved, always }),
+  listAllowedActions: () => call<AllowedAction[]>("list_permission_rules"),
+  removeAllowedAction: (id: string) => call<void>("remove_permission_rule", { id }),
+  clearAllowedActions: () => call<number>("clear_permission_rules"),
   listTools: () => call<ToolInfo[]>("list_tools"),
   listToolAudit: (limit?: number) => call<AuditEntry[]>("list_tool_audit", { limit }),
   getPermissionPolicy: () => call<PermissionRule[]>("get_permission_policy"),

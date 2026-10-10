@@ -178,11 +178,35 @@ pub fn trust_conversation(state: State<'_, AppState>, conversation_id: String) -
 }
 
 /// Answer a pending tool approval. Returns false if it already expired or finished.
+/// `always`: also remember this kind of action ("Always allow"), using the
+/// rule the backend offered for this call.
 #[tauri::command]
-pub fn respond_tool_approval(state: State<'_, AppState>, call_id: String, approved: bool) -> bool {
+pub fn respond_tool_approval(state: State<'_, AppState>, call_id: String, approved: bool, always: Option<bool>) -> AppResult<bool> {
+    if approved && always == Some(true) {
+        if let Some((tool, rule)) = state.approvals.rule_for(&call_id) {
+            crate::permissions::add(&*state.db.conn()?, &tool, &rule)?;
+        }
+    }
     let delivered = state.approvals.respond(&call_id, approved);
     tracing::info!(event = "TOOL_APPROVAL_ANSWERED", approved, delivered);
-    delivered
+    Ok(delivered)
+}
+
+/// Actions the user chose to always allow on this device.
+#[tauri::command]
+pub fn list_permission_rules(state: State<'_, AppState>) -> AppResult<Vec<crate::permissions::SavedRule>> {
+    crate::permissions::list(&*state.db.conn()?)
+}
+
+/// Stop always allowing one action: IGRIS asks again next time.
+#[tauri::command]
+pub fn remove_permission_rule(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::permissions::remove(&*state.db.conn()?, &id)
+}
+
+#[tauri::command]
+pub fn clear_permission_rules(state: State<'_, AppState>) -> AppResult<usize> {
+    crate::permissions::clear(&*state.db.conn()?)
 }
 
 /// Stop an in-flight generation. Returns false if it already finished.

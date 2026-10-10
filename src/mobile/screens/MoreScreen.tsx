@@ -64,6 +64,7 @@ export function MoreScreen() {
             disabled={!ready}
             onChange={(on) => void update({ confirmLowRisk: on })}
           />
+          <Row title="Always allowed" to="/settings/permissions" />
           <Row title="What IGRIS remembers" to="/settings/memory" />
           <Row title="What IGRIS has done" to="/settings/activity" />
         </Group>

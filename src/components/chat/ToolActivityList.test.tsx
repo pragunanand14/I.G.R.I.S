@@ -26,6 +26,16 @@ describe("ToolActivityList", () => {
     expect(onAnswer).toHaveBeenCalledWith("t1", true);
   });
 
+  it("offers Always allow only when the backend offered a rule, and says what it covers", async () => {
+    const onAnswer = vi.fn();
+    const { rerender } = render(<ToolActivityList activities={[base]} onAnswer={onAnswer} />);
+    expect(screen.queryByRole("button", { name: "Always allow" })).toBeNull();
+    rerender(<ToolActivityList activities={[{ ...base, allowRule: { scope: "spotify", label: "Close Spotify" } }]} onAnswer={onAnswer} />);
+    expect(screen.getByText(/covers: Close Spotify/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Always allow" }));
+    expect(onAnswer).toHaveBeenCalledWith("t1", true, true);
+  });
+
   it("never offers approval buttons on stored history", () => {
     render(<ToolActivityList activities={[base]} />);
     expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
