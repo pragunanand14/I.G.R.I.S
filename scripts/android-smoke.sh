@@ -14,6 +14,9 @@ apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
 echo "APK: $apk ($(du -h "$apk" | cut -f1))"
 
 adb install -r "$apk" || { echo "::error::Install failed"; exit 1; }
+# IGRIS asks for the notification permission once (reminder alarms); answer it as the user would, so the
+# system dialog doesn't cover the screen this test reads.
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS || true
 adb logcat -c || true
 adb shell am start -W -n "$PKG/.MainActivity"
 sleep 30
