@@ -173,6 +173,7 @@ pub fn run() {
             commands::system::get_system_snapshot,
             commands::ai::get_ai_status,
             commands::ai::reload_config,
+            commands::ai::import_settings_file,
             commands::chat::chat_send,
             commands::attachments::attach_file,
             commands::attachments::discard_attachment,

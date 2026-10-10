@@ -8,6 +8,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useSystemStore } from "@/stores/systemStore";
 import { useVoiceStore } from "@/stores/voiceStore";
 import type { Accent, Theme } from "@/types/settings";
+import { importedMessage } from "@/utils/importSettings";
 import { useStatus } from "../status";
 import { Dot, ErrorText, Group, Row, Screen, Section, Switch } from "../ui";
 
@@ -133,7 +134,6 @@ export function AiScreen() {
   const aiStatus = useChatStore((s) => s.aiStatus);
   const setAiStatus = useChatStore((s) => s.setAiStatus);
   const voice = useVoiceStore((s) => s.status);
-  const configDir = useAppStore((s) => s.info?.configDir ?? null);
   const ready = useAppStore((s) => s.backend) === "ready";
   const [checking, setChecking] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -146,6 +146,22 @@ export function AiScreen() {
       setConfig(r.config);
       setAiStatus(r.ai);
       setNote(r.ai.ready ? "All set — IGRIS is ready." : (r.ai.problem ?? "Still not set up."));
+    } catch (err) {
+      setNote(BackendError.from(err).message);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const importFile = async () => {
+    setChecking(true);
+    setNote(null);
+    try {
+      const r = await api.importSettingsFile();
+      if (!r) return;
+      setConfig(r.config);
+      setAiStatus(r.ai);
+      setNote(importedMessage(r).text);
     } catch (err) {
       setNote(BackendError.from(err).message);
     } finally {
@@ -179,18 +195,16 @@ export function AiScreen() {
       {!aiStatus?.ready && (
         <Section title="Setting it up">
           <p className="m-muted px-1 text-[15px]">
-            On phones, IGRIS reads its AI key from a settings file{configDir ? " in this folder:" : "."} Setting it up from inside the app isn't available
-            yet.
+            IGRIS reads its AI key from a settings file (<code>.env</code>). Save yours to the phone — Downloads is fine — then tap{" "}
+            <b>Import settings file</b> and pick it. IGRIS keeps a private copy; you can delete the one in Downloads afterwards.
           </p>
-          {configDir && (
-            <code className="m-card block px-4 py-3 text-xs break-all" data-selectable>
-              {configDir}
-            </code>
-          )}
         </Section>
       )}
 
       <div className="space-y-3">
+        <button type="button" className="m-button m-button-primary w-full" disabled={!ready || checking} onClick={() => void importFile()}>
+          Import settings file
+        </button>
         <button type="button" className="m-button w-full" disabled={!ready || checking} onClick={() => void recheck()}>
           {checking ? "Checking…" : "Check the AI setup again"}
         </button>

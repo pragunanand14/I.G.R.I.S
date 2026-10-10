@@ -1,4 +1,4 @@
-import { Check, RefreshCw } from "lucide-react";
+import { Check, FileUp, RefreshCw } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { DevicesPanel } from "@/components/devices/DevicesPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -17,6 +17,7 @@ import { isMobilePlatform } from "@/services/platform";
 import { VOICE_HOTKEY_LABEL } from "@/types/voice";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { Effort } from "@/types/ai";
+import { importedMessage } from "@/utils/importSettings";
 import { AI_MODEL_MAX_CHARS, USER_NAME_MAX_CHARS, type Accent, type Theme } from "@/types/settings";
 
 const ACCENTS: { value: Accent; label: string; swatch: string }[] = [
@@ -235,6 +236,22 @@ function AiPanel({ disabled, configDir }: { disabled: boolean; configDir: string
     }
   };
 
+  const importFile = async () => {
+    setReloading(true);
+    setReloadMsg(null);
+    try {
+      const r = await api.importSettingsFile();
+      if (!r) return;
+      setConfig(r.config);
+      setAiStatus(r.ai);
+      setReloadMsg(importedMessage(r));
+    } catch (err) {
+      setReloadMsg({ ok: false, text: BackendError.from(err).message });
+    } finally {
+      setReloading(false);
+    }
+  };
+
   const commitModel = async (value: string) => {
     if (value.trim() === settings.aiModel) return;
     if (await update({ aiModel: value })) {
@@ -247,15 +264,27 @@ function AiPanel({ disabled, configDir }: { disabled: boolean; configDir: string
     <Panel
       title="AI"
       action={
-        <button
-          type="button"
-          onClick={() => void reload()}
-          disabled={reloading || !config}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
-        >
-          <RefreshCw className={`size-3.5 ${reloading ? "animate-spin" : ""}`} />
-          Reload configuration
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => void importFile()}
+            disabled={reloading || !config}
+            title="Pick a .env file; IGRIS keeps a private copy as its settings file"
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+          >
+            <FileUp className="size-3.5" />
+            Import settings file
+          </button>
+          <button
+            type="button"
+            onClick={() => void reload()}
+            disabled={reloading || !config}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+          >
+            <RefreshCw className={`size-3.5 ${reloading ? "animate-spin" : ""}`} />
+            Reload configuration
+          </button>
+        </div>
       }
     >
       {aiStatus && config ? (

@@ -31,4 +31,8 @@ impl<R: Runtime> Device<R> {
     pub fn unseal_keys(&self, _sealed_b64: &str) -> Result<String> {
         Err(Error::Unsupported)
     }
+
+    pub fn pick_file(&self) -> Result<Option<String>> {
+        Err(Error::Unsupported)
+    }
 }

@@ -194,6 +194,61 @@ impl AppConfig {
     }
 }
 
+/// Largest settings file [`import_env`] accepts.
+const MAX_ENV_BYTES: usize = 64 * 1024;
+
+/// What [`import_env`] found: setting names only, never their values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvImport {
+    /// Settings IGRIS uses, in file order.
+    pub keys: Vec<String>,
+    /// Names IGRIS doesn't know (often a typo), in file order.
+    pub unknown: Vec<String>,
+}
+
+/// Check a settings file the user picked and make it `<config_dir>/.env`,
+/// replacing the old one. Nothing is written unless the whole file reads as
+/// `NAME=value` lines and sets at least one setting IGRIS uses. Errors never
+/// quote the file, so a key can't end up in a message or a log.
+pub fn import_env(config_dir: &Path, bytes: &[u8]) -> Result<EnvImport, String> {
+    if bytes.is_empty() {
+        return Err("That file is empty.".into());
+    }
+    if bytes.len() > MAX_ENV_BYTES {
+        return Err("That file is too big to be a settings file.".into());
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| "That isn't a text file.".to_string())?;
+    let mut keys = Vec::new();
+    let mut unknown = Vec::new();
+    for (i, item) in dotenvy::from_read_iter(text.as_bytes()).enumerate() {
+        let (k, _) = item.map_err(|_| format!("Setting {} isn't written as NAME=value.", i + 1))?;
+        let list = if KEYS.contains(&k.as_str()) { &mut keys } else { &mut unknown };
+        if !list.contains(&k) {
+            list.push(k);
+        }
+    }
+    if keys.is_empty() {
+        return Err("That file doesn't set anything IGRIS uses (like AI_PROVIDER or AI_API_KEY).".into());
+    }
+    std::fs::create_dir_all(config_dir).map_err(|e| format!("Couldn't create IGRIS's settings folder: {}", e.kind()))?;
+    let tmp = config_dir.join(".env.importing");
+    let write = || -> std::io::Result<()> {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+        std::io::Write::write_all(&mut opts.open(&tmp)?, bytes)?;
+        std::fs::rename(&tmp, config_dir.join(".env"))
+    };
+    write().map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("Couldn't save the settings: {}", e.kind())
+    })?;
+    tracing::info!(event = "CONFIG_ENV_IMPORTED", settings = keys.len(), unknown = unknown.len());
+    Ok(EnvImport { keys, unknown })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +304,36 @@ mod tests {
             assert_eq!(c.ai_model.as_deref(), Some("test-model-from-file"));
         }
         assert!(c.env_files.iter().any(|p| p.starts_with(dir.path())));
+    }
+
+    #[test]
+    fn an_imported_settings_file_becomes_the_env_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("config");
+        let r = import_env(&folder, b"# mine\nAI_PROVIDER=gemini\nAI_API_KEY=sk-imported-secret\nAI_MODLE=typo\n").unwrap();
+        assert_eq!(r.keys, vec!["AI_PROVIDER", "AI_API_KEY"]);
+        assert_eq!(r.unknown, vec!["AI_MODLE"]);
+        assert!(!serde_json::to_string(&r).unwrap().contains("sk-imported-secret"));
+        assert_eq!(std::fs::read_to_string(folder.join(".env")).unwrap().lines().count(), 4);
+        assert!(!folder.join(".env.importing").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(folder.join(".env")).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        if std::env::var("AI_PROVIDER").is_err() {
+            assert_eq!(AppConfig::load(Some(&folder)).ai_provider.as_deref(), Some("gemini"));
+        }
+    }
+
+    #[test]
+    fn a_wrong_file_is_refused_and_the_old_settings_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".env"), "AI_MODEL=old\n").unwrap();
+        for bad in [&b""[..], b"hello there", b"SOMETHING=else\n", &[0xff, 0xfe, 0x00][..], &vec![b'a'; 70_000][..]] {
+            let err = import_env(dir.path(), bad).unwrap_err();
+            assert!(!err.contains("else") && !err.contains("hello"), "{err}");
+        }
+        assert_eq!(std::fs::read_to_string(dir.path().join(".env")).unwrap(), "AI_MODEL=old\n");
     }
 }

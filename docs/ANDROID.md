@@ -72,21 +72,30 @@ it builds a debug APK for x86_64 and arm64 (uploaded as the
 `igris-android-debug-apk` artifact) and runs `scripts/android-smoke.sh` on an
 Android 14 emulator.
 
-## Configuring the AI provider (current limitation)
+## Configuring the AI provider
 
-Keys are still read only from a `.env` file in IGRIS's config folder (the path
-is shown in Settings → AI, which also has the button to reload it). On a phone that folder is private to the app, so
-today it can only be filled on a debug build:
+Keys are read from a `.env` file in IGRIS's private config folder. To put one
+there from the phone itself:
+
+1. Save your `.env` on the phone (Downloads is fine; any name works).
+2. IGRIS → Settings → AI and voice → **Import settings file**, and pick it.
+
+Android's own file picker hands the file to IGRIS's native side (the device
+plugin's `pickFile`), which checks it — text, under 64 KB, only `NAME=value`
+lines, at least one setting IGRIS uses — and saves it as `<config folder>/.env`
+(owner-only permissions), replacing the old one, then reloads. The UI only gets
+the setting *names* back, never values; names IGRIS doesn't know are listed so
+typos show up. A wrong file is refused and the old settings stay. Delete the
+copy in Downloads afterwards. The desktop app has the same button
+(Settings → AI) with the system file dialog.
+
+On a debug build `adb` still works too:
 
 ```text
 adb push .env /data/local/tmp/igris.env
 adb shell run-as dev.igris.app cp /data/local/tmp/igris.env <config folder>/.env
 adb shell rm /data/local/tmp/igris.env
 ```
-
-An in-app way to enter a key (stored only in the app's private storage, never
-returned to the UI) is the obvious next step; it needs a decision on the "keys
-never in the frontend" rule, so it hasn't been built.
 
 ## Test results
 

@@ -1,8 +1,8 @@
 //! IGRIS's Android device capabilities.
 //!
 //! The Kotlin side (`android/`) lists the apps that can be launched, opens one,
-//! reads battery and network status, and seals IGRIS's device identity keys
-//! with a key held by the Android Keystore. Nothing is exposed to the webview:
+//! reads battery and network status, lets the user pick a file, and seals
+//! IGRIS's device identity keys with a key held by the Android Keystore. Nothing is exposed to the webview:
 //! IGRIS's own tools call [`Device`] from Rust, so every use goes through the
 //! tool executor (permissions, approvals, audit). On other platforms every
 //! call fails with [`Error::Unsupported`].

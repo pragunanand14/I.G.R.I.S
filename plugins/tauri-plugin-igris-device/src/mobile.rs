@@ -30,6 +30,11 @@ struct LaunchArgs<'a> {
 #[derive(Deserialize)]
 struct Empty {}
 
+#[derive(Deserialize)]
+struct Picked {
+    data: Option<String>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Data {
     data: String,
@@ -60,5 +65,11 @@ impl<R: Runtime> Device<R> {
     /// Open what [`Device::seal_keys`] sealed.
     pub fn unseal_keys(&self, sealed_b64: &str) -> Result<String> {
         self.0.run_mobile_plugin::<Data>("unsealKeys", Data { data: sealed_b64.to_string() }).map(|d| d.data).map_err(failed)
+    }
+
+    /// Let the user pick a file; its bytes (standard base64), or `None` if they cancelled.
+    /// Blocks until they choose, so call it off the async runtime.
+    pub fn pick_file(&self) -> Result<Option<String>> {
+        self.0.run_mobile_plugin::<Picked>("pickFile", ()).map(|p| p.data).map_err(failed)
     }
 }

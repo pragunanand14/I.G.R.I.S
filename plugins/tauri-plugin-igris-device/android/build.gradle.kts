@@ -27,5 +27,6 @@ kotlin {
 }
 
 dependencies {
+    implementation("androidx.appcompat:appcompat:1.6.0")
     implementation(project(":tauri-android"))
 }

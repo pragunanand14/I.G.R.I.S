@@ -1,6 +1,6 @@
 import type { AiStatus } from "@/types/ai";
 import type { Attachment, AttachmentData } from "@/types/attachments";
-import type { AppInfo, PublicConfig, ReloadResult } from "@/types/app";
+import type { AppInfo, ImportResult, PublicConfig, ReloadResult } from "@/types/app";
 import type { Conversation, ConversationDetail } from "@/types/chat";
 import type { Memory, MemoryKind } from "@/types/memory";
 import type { CalendarEvent, EventInput, ParsedTime, Reminder, Task, TaskInput } from "@/types/productivity";
@@ -24,6 +24,8 @@ export const api = {
   getSystemSnapshot: () => call<SystemSnapshot>("get_system_snapshot"),
   getAiStatus: () => call<AiStatus>("get_ai_status"),
   reloadConfig: () => call<ReloadResult>("reload_config"),
+  /** Pick a settings (.env) file and make it IGRIS's; `null` when the picker was cancelled. */
+  importSettingsFile: () => call<ImportResult | null>("import_settings_file"),
   listConversations: () => call<Conversation[]>("list_conversations"),
   getConversation: (id: string) => call<ConversationDetail>("get_conversation", { id }),
   renameConversation: (id: string, title: string) => call<Conversation>("rename_conversation", { id, title }),

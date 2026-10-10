@@ -11,6 +11,8 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.activity.result.ActivityResult
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -37,6 +39,8 @@ class SealArgs {
 /** Alias of the Android Keystore key that seals IGRIS's device identity keys. */
 private const val KEY_ALIAS = "igris-device-identity"
 private const val GCM_IV_BYTES = 12
+/** Larger than any settings file; IGRIS refuses files this big. */
+private const val MAX_PICKED_BYTES = 64 * 1024 + 1
 
 /**
  * IGRIS's Android device capabilities. Called only from IGRIS's Rust tools
@@ -186,6 +190,52 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(ret)
         } catch (e: Exception) {
             invoke.reject("Couldn't unlock the device keys: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Let the user pick a file with Android's file picker and return its bytes
+     * (base64), at most [MAX_PICKED_BYTES]. `{}` when they cancel. Used to
+     * import IGRIS's settings file; the bytes go only to IGRIS's Rust side.
+     */
+    @Command
+    fun pickFile(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+        try {
+            startActivityForResult(invoke, intent, "pickFileResult")
+        } catch (e: Exception) {
+            invoke.reject("Couldn't open the file picker: ${e.javaClass.simpleName}")
+        }
+    }
+
+    @ActivityCallback
+    fun pickFileResult(invoke: Invoke, result: ActivityResult) {
+        val uri = result.data?.data
+        if (result.resultCode != Activity.RESULT_OK || uri == null) {
+            invoke.resolve(JSObject())
+            return
+        }
+        try {
+            val bytes = activity.contentResolver.openInputStream(uri)?.use { input ->
+                val buf = ByteArray(MAX_PICKED_BYTES)
+                var n = 0
+                while (n < buf.size) {
+                    val r = input.read(buf, n, buf.size - n)
+                    if (r < 0) break
+                    n += r
+                }
+                buf.copyOf(n).also { buf.fill(0) }
+            }
+            if (bytes == null) {
+                invoke.reject("Couldn't open that file.")
+                return
+            }
+            val ret = JSObject()
+            ret.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            bytes.fill(0)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Couldn't read that file: ${e.javaClass.simpleName}")
         }
     }
 }

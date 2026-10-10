@@ -29,3 +29,8 @@ export interface ReloadResult {
   config: PublicConfig;
   ai: import("./ai").AiStatus;
 }
+
+/** A settings file was imported: the names it set (never the values) and the reloaded setup. */
+export interface ImportResult extends ReloadResult {
+  settings: { keys: string[]; unknown: string[] };
+}
