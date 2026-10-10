@@ -19,6 +19,8 @@ pub mod devices;
 pub mod logging;
 #[cfg(desktop)]
 pub mod overlay;
+#[cfg(mobile)]
+mod phone_alarms;
 pub mod state;
 pub mod system;
 pub mod tools;
@@ -142,6 +144,8 @@ pub fn run() {
             }
 
             tauri::async_runtime::spawn(productivity::run_scheduler(db.clone(), reminder_notifier(app.handle().clone())));
+            #[cfg(mobile)]
+            phone_alarms::start(app.handle().clone(), db.clone());
 
             let tool_names: Vec<String> = tools.specs().iter().map(|s| s.name.to_string()).collect();
             app.manage(AppState {
@@ -282,8 +286,15 @@ fn reminder_notifier(app: tauri::AppHandle) -> productivity::OnFire {
             _ => "Reminder".to_string(),
         };
         let body = if f.late { format!("{} (was due while IGRIS was closed)", f.reminder.title) } else { f.reminder.title.clone() };
-        if let Err(e) = app.notification().builder().title(format!("IGRIS · {heading}")).body(body).show() {
-            tracing::warn!(event = "NOTIFICATION_FAILED", error = %e);
+        // On the phone, Android already rang it (scheduled alarm): just the in-app alert.
+        #[cfg(mobile)]
+        let notified = phone_alarms::is_scheduled(f.reminder.id);
+        #[cfg(not(mobile))]
+        let notified = false;
+        if !notified {
+            if let Err(e) = app.notification().builder().title(format!("IGRIS · {heading}")).body(body).show() {
+                tracing::warn!(event = "NOTIFICATION_FAILED", error = %e);
+            }
         }
         let _ = app.emit("reminder-fired", f);
     })
