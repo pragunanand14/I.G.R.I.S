@@ -83,5 +83,7 @@ windows = { version = "0.62", features = [
     "Foundation_Collections",
     "Graphics_Imaging",
     "Media_Ocr",
+    # Music control (system media transport controls).
+    "Media_Control",
     "Storage_Streams",
 ] }

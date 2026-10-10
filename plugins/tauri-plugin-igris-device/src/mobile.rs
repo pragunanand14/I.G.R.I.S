@@ -72,4 +72,37 @@ impl<R: Runtime> Device<R> {
     pub fn pick_file(&self) -> Result<Option<String>> {
         self.0.run_mobile_plugin::<Picked>("pickFile", ()).map(|p| p.data).map_err(failed)
     }
+
+    /// A media button or volume step ("play_pause", "next", "volume_up", …).
+    pub fn media_control(&self, action: &str) -> Result<()> {
+        #[derive(Serialize)]
+        struct A<'a> {
+            action: &'a str,
+        }
+        self.0.run_mobile_plugin::<Empty>("mediaControl", A { action }).map(|_| ()).map_err(failed)
+    }
+
+    /// Whether music is playing on the phone.
+    pub fn media_playing(&self) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct S {
+            playing: bool,
+        }
+        self.0.run_mobile_plugin::<S>("mediaState", ()).map(|s| s.playing).map_err(failed)
+    }
+
+    /// Ask a music app (or the default one) to play `query`; returns the app's name.
+    pub fn play_from_search(&self, query: &str, package: Option<&str>) -> Result<String> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct A<'a> {
+            query: &'a str,
+            package_name: Option<&'a str>,
+        }
+        #[derive(Deserialize)]
+        struct R {
+            app: String,
+        }
+        self.0.run_mobile_plugin::<R>("playFromSearch", A { query, package_name: package }).map(|r| r.app).map_err(failed)
+    }
 }

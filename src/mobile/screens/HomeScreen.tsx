@@ -2,6 +2,7 @@ import { ArrowUp, CalendarCheck, MessagesSquare, Mic, Settings, Tv } from "lucid
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { AiCore } from "@/components/core/AiCore";
+import { NowPlayingBar } from "@/components/media/NowPlayingBar";
 import { useCoreState } from "@/hooks/useCoreState";
 import { api } from "@/services/api";
 import { useAppStore } from "@/stores/appStore";
@@ -52,6 +53,9 @@ export function HomeScreen() {
         </h1>
         <div {...enter(2, "mt-2 w-full")}>
           <StatusLine />
+        </div>
+        <div className="mt-4 w-full">
+          <NowPlayingBar phone />
         </div>
       </div>
 

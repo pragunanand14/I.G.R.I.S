@@ -10,6 +10,7 @@ pub mod apps;
 pub mod browser;
 pub mod computer;
 pub mod files;
+pub mod media;
 pub mod phone;
 pub mod processes;
 pub mod screen;
@@ -28,6 +29,7 @@ mod tests {
             include_str!("browser.rs"),
             include_str!("computer.rs"),
             include_str!("files.rs"),
+            include_str!("media.rs"),
             include_str!("phone.rs"),
             include_str!("processes.rs"),
             include_str!("system_info.rs"),

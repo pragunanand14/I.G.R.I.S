@@ -6,7 +6,7 @@ set -uo pipefail
 
 PKG=dev.igris.app
 OUT=android-artifacts
-EXPECTED_TOOLS=31
+EXPECTED_TOOLS=34
 mkdir -p "$OUT"
 
 apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)

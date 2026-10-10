@@ -9,6 +9,7 @@ pub mod attachments;
 pub mod chat;
 pub mod devices;
 pub mod home;
+pub mod media;
 pub mod memory;
 pub mod operator;
 pub mod productivity;

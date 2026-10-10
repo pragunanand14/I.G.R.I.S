@@ -48,6 +48,9 @@ pub enum Capability {
     /// Smart-home devices on the local network (the TV): fixed actions on
     /// devices the user set up; not an action on this computer.
     Home,
+    /// Music and media playing on this device: play/pause/skip, volume,
+    /// starting a song in the user's music app.
+    Media,
 }
 
 impl Capability {
@@ -90,6 +93,7 @@ pub fn capability(name: &str) -> Option<Capability> {
         "request_tools" => Meta,
         "list_devices" | "send_to_device" | "device_task_status" | "device_task_control" => Devices,
         "home_devices" | "tv_control" => Home,
+        "media_control" | "now_playing" | "play_music" => Media,
         _ => return None,
     })
 }
@@ -192,6 +196,31 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
         ],
     ),
     (Capability::Devices, &["laptop", "pc", "computer", "desktop", "phone", "mobile", "device", "android", "windows", "other device"]),
+    (
+        Capability::Media,
+        &[
+            "music",
+            "song",
+            "songs",
+            "play",
+            "pause",
+            "resume",
+            "skip",
+            "next track",
+            "previous track",
+            "track",
+            "playlist",
+            "album",
+            "artist",
+            "spotify",
+            "youtube music",
+            "playing",
+            "volume",
+            "louder",
+            "quieter",
+            "mute",
+        ],
+    ),
 ];
 
 /// Names `request_tools` accepts, and the groups each adds.
@@ -203,6 +232,7 @@ pub const REQUESTABLE: &[(&str, &[Capability])] = &[
     ("screen", &[Capability::Screen]),
     ("devices", &[Capability::Devices]),
     ("home", &[Capability::Home]),
+    ("music", &[Capability::Media]),
 ];
 
 fn word_hit(text: &str, stem: &str) -> bool {
@@ -399,7 +429,7 @@ mod tests {
         // A question: the core only.
         let t = Toolset::new(all.clone()).with_focus(focus_for("What's 12 * 7?", &[]));
         assert_eq!(names(&t), ["calculator", "web_search", "read_file", "launch_application", "operator_start", "task_plan", "request_tools"]);
-        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen", "devices", "home"]);
+        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen", "devices", "home", "music"]);
         // Naming another device brings the cross-device tools.
         assert!(names(&Toolset::new(all.clone()).with_focus(focus_for("Open Notepad on my laptop", &[]))).contains(&"send_to_device".to_string()));
         assert_eq!(t.allowed().len(), all.len(), "hidden is not forbidden: the executor still decides");

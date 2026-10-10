@@ -82,6 +82,7 @@ fn setup() -> Ctx {
         browser_profile: data.join("browser-profile"),
         open_path: Arc::new(|p: &std::path::Path| std::process::Command::new("explorer").arg(p).spawn().map(|_| ()).map_err(|e| e.to_string())),
         open_url: Arc::new(|u: &str| std::process::Command::new("cmd").args(["/c", "start", "", u]).spawn().map(|_| ()).map_err(|e| e.to_string())),
+        media: Arc::new(igris_lib::tools::media::Unavailable),
         // No other devices in this harness (the device tools report that honestly).
         devices: Arc::new(std::sync::OnceLock::new()),
     }));

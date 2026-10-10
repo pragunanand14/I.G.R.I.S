@@ -35,4 +35,16 @@ impl<R: Runtime> Device<R> {
     pub fn pick_file(&self) -> Result<Option<String>> {
         Err(Error::Unsupported)
     }
+
+    pub fn media_control(&self, _action: &str) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn media_playing(&self) -> Result<bool> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn play_from_search(&self, _query: &str, _package: Option<&str>) -> Result<String> {
+        Err(Error::Unsupported)
+    }
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NowPlayingBar } from "@/components/media/NowPlayingBar";
 import { Link, useNavigate } from "react-router";
 import { Composer } from "@/components/chat/Composer";
 import { AiCore } from "@/components/core/AiCore";
@@ -71,6 +72,7 @@ export function HomePage() {
             </span>
           </div>
           {backendError && <p className="max-w-md text-xs text-danger">{backendError}</p>}
+          <NowPlayingBar />
         </div>
 
         <div {...enter(1, "mt-9 w-full max-w-2xl")}>

@@ -17,6 +17,8 @@ pub mod commands;
 pub mod computer;
 pub mod devices;
 pub mod logging;
+#[cfg(windows)]
+mod media_windows;
 #[cfg(desktop)]
 pub mod overlay;
 #[cfg(mobile)]
@@ -104,6 +106,11 @@ pub fn run() {
             }
             // Cross-device: the hub is filled in once the device keys are unlocked (see devices.rs).
             let device_hub: crate::tools::devices::HubSlot = Arc::new(std::sync::OnceLock::new());
+            #[cfg(desktop)]
+            let media = platform::media(platform::url_opener(app.handle()));
+            #[cfg(mobile)]
+            let media = platform::media(app.handle());
+            app.manage(commands::media::MediaState(media.clone()));
             let tools = crate::tools::standard::registry(crate::tools::standard::Deps {
                 db: db.clone(),
                 config: config.clone(),
@@ -115,6 +122,7 @@ pub fn run() {
                 browser_profile: data_dir.join("browser-profile"),
                 open_path: platform::path_opener(app.handle()),
                 open_url: platform::url_opener(app.handle()),
+                media,
                 devices: device_hub.clone(),
                 #[cfg(mobile)]
                 phone: platform::phone(app.handle()),
@@ -269,6 +277,8 @@ pub fn run() {
             commands::home::home_tv_state,
             commands::home::home_pointer,
             commands::home::home_pointer_stop,
+            commands::media::media_now_playing,
+            commands::media::media_control,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");
@@ -325,6 +335,8 @@ fn register_voice_hotkey(app: &tauri::AppHandle) {
 /// How this platform opens things and reaches the device.
 mod platform {
     use std::sync::Arc;
+
+    use crate::tools::media::{Media, MediaAction, MusicApp, NowPlaying, SharedMedia};
 
     use crate::tools::standard::{PathOpener, UrlOpener};
 
@@ -391,5 +403,71 @@ mod platform {
             time_to_empty_secs: None,
             time_to_full_secs: None,
         })
+    }
+
+    /// Music on this computer: the Windows media controls; elsewhere only "play" (opening a search).
+    #[cfg(desktop)]
+    pub fn media(open_url: UrlOpener) -> SharedMedia {
+        Arc::new(DesktopMedia(open_url))
+    }
+
+    #[cfg(desktop)]
+    struct DesktopMedia(UrlOpener);
+
+    #[cfg(desktop)]
+    impl Media for DesktopMedia {
+        fn control(&self, action: MediaAction) -> Result<(), String> {
+            #[cfg(windows)]
+            return crate::media_windows::control(action);
+            #[cfg(not(windows))]
+            {
+                let _ = action;
+                Err("Music control works on Windows and Android.".into())
+            }
+        }
+        fn now_playing(&self) -> Result<NowPlaying, String> {
+            #[cfg(windows)]
+            return crate::media_windows::now_playing();
+            #[cfg(not(windows))]
+            Err("Music control works on Windows and Android.".into())
+        }
+        fn play(&self, query: &str, app: MusicApp) -> Result<String, String> {
+            (self.0)(&crate::tools::media::search_link(query, app))?;
+            let place = if app == MusicApp::Spotify { "Spotify" } else { "YouTube Music" };
+            Ok(format!("Opened a search for \"{query}\" in {place}. On a computer it opens the results; the user picks what to play."))
+        }
+    }
+
+    /// Music on the phone, through the device plugin.
+    #[cfg(mobile)]
+    pub fn media(app: &tauri::AppHandle) -> SharedMedia {
+        Arc::new(PluginMedia(app.clone()))
+    }
+
+    #[cfg(mobile)]
+    struct PluginMedia(tauri::AppHandle);
+
+    #[cfg(mobile)]
+    impl Media for PluginMedia {
+        fn control(&self, action: MediaAction) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().media_control(action.as_str()).map_err(|e| e.to_string())
+        }
+        fn now_playing(&self) -> Result<NowPlaying, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            let playing = self.0.igris_device().media_playing().map_err(|e| e.to_string())?;
+            // Android shares only whether music is playing (titles need notification access).
+            Ok(NowPlaying { playing, active: playing, ..Default::default() })
+        }
+        fn play(&self, query: &str, app: MusicApp) -> Result<String, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            let package = match app {
+                MusicApp::Spotify => Some("com.spotify.music"),
+                MusicApp::YoutubeMusic => Some("com.google.android.apps.youtube.music"),
+                MusicApp::Default => None,
+            };
+            let used = self.0.igris_device().play_from_search(query, package).map_err(|e| e.to_string())?;
+            Ok(format!("Asked {used} to play \"{query}\"."))
+        }
     }
 }

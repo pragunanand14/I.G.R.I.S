@@ -58,6 +58,8 @@ pub struct Deps {
     pub browser_profile: PathBuf,
     pub open_path: PathOpener,
     pub open_url: UrlOpener,
+    /// Music on this device.
+    pub media: super::media::SharedMedia,
     /// The user's other devices (cross-device tools).
     pub devices: igris_core::tools::devices::HubSlot,
     /// The phone (Android): apps and device status.
@@ -68,8 +70,11 @@ pub struct Deps {
 /// Every tool IGRIS offers on a desktop.
 #[cfg(desktop)]
 pub fn registry(d: Deps) -> ToolRegistry {
-    let Deps { db, config, system, connectivity, attachments, operator, orchestrator, browser_profile, open_path, open_url, devices } = d;
+    let Deps { db, config, system, connectivity, attachments, operator, orchestrator, browser_profile, open_path, open_url, media, devices } = d;
     let mut tools = ToolRegistry::default();
+    for t in super::media::all(&media) {
+        tools.register(t);
+    }
     for t in igris_core::tools::devices::all(&devices) {
         tools.register(t);
     }
@@ -148,8 +153,11 @@ pub fn registry(d: Deps) -> ToolRegistry {
 #[cfg(mobile)]
 pub fn registry(d: Deps) -> ToolRegistry {
     use super::phone::{DeviceStatusTool, ListPhoneAppsTool, OpenPhoneAppTool};
-    let Deps { db, config, orchestrator, open_url, phone, devices, .. } = d;
+    let Deps { db, config, orchestrator, open_url, phone, media, devices, .. } = d;
     let mut tools = ToolRegistry::default();
+    for t in super::media::all(&media) {
+        tools.register(t);
+    }
     for t in igris_core::tools::devices::all(&devices) {
         tools.register(t);
     }

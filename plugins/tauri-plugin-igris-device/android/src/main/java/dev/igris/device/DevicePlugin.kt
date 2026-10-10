@@ -1,16 +1,21 @@
 package dev.igris.device
 
 import android.app.Activity
+import android.app.SearchManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
+import android.provider.MediaStore
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.view.KeyEvent
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
@@ -28,6 +33,17 @@ import javax.crypto.spec.GCMParameterSpec
 
 @InvokeArg
 class LaunchArgs {
+    var packageName: String? = null
+}
+
+@InvokeArg
+class MediaArgs {
+    var action: String? = null
+}
+
+@InvokeArg
+class PlayArgs {
+    var query: String? = null
     var packageName: String? = null
 }
 
@@ -236,6 +252,82 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(ret)
         } catch (e: Exception) {
             invoke.reject("Couldn't read that file: ${e.javaClass.simpleName}")
+        }
+    }
+
+    private fun audio(): AudioManager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    /** Media buttons (whatever app is playing) and the music volume. */
+    @Command
+    fun mediaControl(invoke: Invoke) {
+        val am = audio()
+        val volume = when (invoke.parseArgs(MediaArgs::class.java).action) {
+            "volume_up" -> AudioManager.ADJUST_RAISE
+            "volume_down" -> AudioManager.ADJUST_LOWER
+            "mute" -> AudioManager.ADJUST_TOGGLE_MUTE
+            else -> null
+        }
+        try {
+            if (volume != null) {
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, volume, AudioManager.FLAG_SHOW_UI)
+                invoke.resolve()
+                return
+            }
+            val code = when (invoke.parseArgs(MediaArgs::class.java).action) {
+                "play_pause" -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
+                "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
+                "next" -> KeyEvent.KEYCODE_MEDIA_NEXT
+                "previous" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                "stop" -> KeyEvent.KEYCODE_MEDIA_STOP
+                else -> {
+                    invoke.reject("Unknown media action.")
+                    return
+                }
+            }
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject("Couldn't control the music: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Whether music is playing (Android doesn't share titles without notification access). */
+    @Command
+    fun mediaState(invoke: Invoke) {
+        val ret = JSObject()
+        ret.put("playing", audio().isMusicActive)
+        invoke.resolve(ret)
+    }
+
+    /** Ask a music app to play a search ("play X"); returns the app's name. */
+    @Command
+    fun playFromSearch(invoke: Invoke) {
+        val args = invoke.parseArgs(PlayArgs::class.java)
+        val query = args.query?.trim()
+        if (query.isNullOrEmpty()) {
+            invoke.reject("Say what to play.")
+            return
+        }
+        val intent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+            .putExtra(SearchManager.QUERY, query)
+            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        args.packageName?.takeIf { it.isNotBlank() }?.let { intent.setPackage(it) }
+        try {
+            activity.startActivity(intent)
+            val pm = activity.packageManager
+            val name = args.packageName?.let { pkg ->
+                try { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { null }
+            } ?: "the music app"
+            val ret = JSObject()
+            ret.put("app", name)
+            invoke.resolve(ret)
+        } catch (e: ActivityNotFoundException) {
+            invoke.reject(if (args.packageName.isNullOrBlank()) "No music app on the phone can play a search." else "That music app isn't installed on the phone.")
+        } catch (e: Exception) {
+            invoke.reject("Couldn't start the music: ${e.javaClass.simpleName}")
         }
     }
 }

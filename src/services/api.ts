@@ -8,6 +8,7 @@ import type { VoiceStatus } from "@/types/voice";
 import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, ProjectInput } from "@/types/workspace";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
+import type { MediaAction, NowPlaying } from "@/types/media";
 import type { AllowedAction, AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
 import { call, callRaw } from "./backend";
 import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
@@ -24,6 +25,8 @@ export const api = {
   getSystemSnapshot: () => call<SystemSnapshot>("get_system_snapshot"),
   getAiStatus: () => call<AiStatus>("get_ai_status"),
   reloadConfig: () => call<ReloadResult>("reload_config"),
+  mediaNowPlaying: () => call<NowPlaying>("media_now_playing"),
+  mediaControl: (action: MediaAction) => call<NowPlaying>("media_control", { action }),
   /** Pick a settings (.env) file and make it IGRIS's; `null` when the picker was cancelled. */
   importSettingsFile: () => call<ImportResult | null>("import_settings_file"),
   listConversations: () => call<Conversation[]>("list_conversations"),
