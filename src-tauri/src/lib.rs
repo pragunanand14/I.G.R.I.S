@@ -258,6 +258,8 @@ pub fn run() {
             commands::home::home_rename,
             commands::home::home_tv,
             commands::home::home_tv_state,
+            commands::home::home_pointer,
+            commands::home::home_pointer_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running IGRIS");

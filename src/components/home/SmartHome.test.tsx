@@ -10,6 +10,8 @@ const api = vi.hoisted(() => ({
   homeRemove: vi.fn(),
   homeTv: vi.fn(),
   homeTvState: vi.fn(),
+  homePointer: vi.fn(),
+  homePointerStop: vi.fn(),
 }));
 vi.mock("@/services/api", () => ({ api }));
 
@@ -30,6 +32,8 @@ describe("smart home", () => {
   beforeEach(() => {
     useAppStore.setState({ backend: "ready" });
     Object.values(api).forEach((f) => f.mockReset());
+    api.homePointer.mockResolvedValue(undefined);
+    api.homePointerStop.mockResolvedValue(undefined);
   });
   afterEach(() => useAppStore.setState({ backend: "connecting" }));
 

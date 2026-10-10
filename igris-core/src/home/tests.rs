@@ -13,6 +13,8 @@ use super::*;
 struct Seen {
     requests: Vec<(String, Value)>,
     buttons: Vec<String>,
+    /// Everything that arrived on the input channel, as sent.
+    input: Vec<String>,
     prompts: usize,
 }
 
@@ -36,8 +38,11 @@ async fn fake_tv(allow: bool) -> FakeTv {
             tokio::spawn(async move {
                 let Ok(mut ws) = tokio_tungstenite::accept_async(sock).await else { return };
                 while let Some(Ok(WsMessage::Text(t))) = ws.next().await {
-                    let name = t.lines().find_map(|l| l.strip_prefix("name:")).unwrap_or_default().to_string();
-                    s.lock().unwrap().buttons.push(name);
+                    let mut seen = s.lock().unwrap();
+                    seen.input.push(t.to_string());
+                    if let Some(name) = t.lines().find_map(|l| l.strip_prefix("name:")) {
+                        seen.buttons.push(name.to_string());
+                    }
                 }
             });
         }
@@ -247,4 +252,29 @@ fn hosts_are_addresses_not_urls() {
     assert_eq!(validate_host(" 192.168.1.20 ").unwrap(), "192.168.1.20");
     assert!(validate_host("http://evil/").is_err());
     assert!(validate_host("").is_err());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_touchpad_moves_clicks_and_scrolls_over_one_kept_channel() {
+    use super::lg::PointerEvent;
+    let tv = fake_tv(true).await;
+    let h = home();
+    let id = h.pair_lg(&tv.host, None).await.unwrap().id;
+    h.pointer(&id, &[PointerEvent::Move { dx: 12, dy: -4 }, PointerEvent::Move { dx: 3, dy: 1 }]).await.unwrap();
+    h.pointer(&id, &[PointerEvent::Click]).await.unwrap();
+    h.pointer(&id, &[PointerEvent::Scroll { dx: 0, dy: 30 }]).await.unwrap();
+    let want = ["type:move\ndx:12\ndy:-4\ndown:0\n\n", "type:move\ndx:3\ndy:1\ndown:0\n\n", "type:click\n\n", "type:scroll\ndx:0\ndy:30\n\n"];
+    for _ in 0..50 {
+        if tv.seen.lock().unwrap().input.len() >= want.len() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    {
+        let seen = tv.seen.lock().unwrap();
+        assert_eq!(seen.input, want);
+        let opened = seen.requests.iter().filter(|(u, _)| u == "com.webos.service.networkinput/getPointerInputSocket").count();
+        assert_eq!(opened, 1, "the channel is opened once and kept");
+    }
+    h.pointer_stop(&id).await;
 }

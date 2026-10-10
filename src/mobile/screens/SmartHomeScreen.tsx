@@ -5,7 +5,7 @@ import { Screen } from "../ui";
 export function SmartHomeScreen() {
   return (
     <Screen title="Smart home" subtitle="Your TV, from your phone. Or just ask IGRIS." back="/">
-      <SmartHome />
+      <SmartHome phone />
     </Screen>
   );
 }

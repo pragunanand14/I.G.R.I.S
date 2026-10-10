@@ -53,3 +53,19 @@ pub async fn home_tv(state: State<'_, AppState>, id: String, action: String, val
 pub async fn home_tv_state(state: State<'_, AppState>, id: String) -> AppResult<TvState> {
     SmartHome::new(state.db.clone()).tv_state(&id).await
 }
+
+/// Touchpad: move the TV's cursor, click, scroll (a batch of inputs).
+#[tauri::command]
+pub async fn home_pointer(state: State<'_, AppState>, id: String, events: Vec<crate::home::lg::PointerEvent>) -> AppResult<()> {
+    if events.len() > 200 {
+        return Err(crate::error::AppError::validation("Too many touchpad inputs at once."));
+    }
+    SmartHome::new(state.db.clone()).pointer(&id, &events).await
+}
+
+/// Touchpad closed: release the TV's input channel.
+#[tauri::command]
+pub async fn home_pointer_stop(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    SmartHome::new(state.db.clone()).pointer_stop(&id).await;
+    Ok(())
+}

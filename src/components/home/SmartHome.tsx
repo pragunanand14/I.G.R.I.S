@@ -25,6 +25,7 @@ import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
 import type { FoundDevice, HomeDevice, TvActionName, TvState } from "@/types/home";
+import { Touchpad } from "./Touchpad";
 
 const SURFACE = "rounded-[20px] bg-surface";
 const PILL = "rounded-full bg-surface-strong px-4 py-2 text-sm font-medium text-fg hover:bg-surface-hover disabled:opacity-40";
@@ -35,7 +36,7 @@ const PRIMARY = "rounded-full bg-fg px-4 py-2 text-sm font-semibold text-bg disa
  * remote — power, volume, channels, arrows and OK, media, apps and inputs.
  * Every press reports what the TV really did (or why it couldn't).
  */
-export function SmartHome() {
+export function SmartHome({ phone = false }: { phone?: boolean }) {
   const ready = useAppStore((s) => s.backend) === "ready";
   const [devices, setDevices] = useState<HomeDevice[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export function SmartHome() {
           ))}
         </div>
       )}
-      {device && !adding && <Remote key={device.id} device={device} onChanged={load} />}
+      {device && !adding && <Remote key={device.id} device={device} phone={phone} onChanged={load} />}
       {(devices.length === 0 || adding) && (
         <AddTv
           onAdded={(d) => {
@@ -216,7 +217,7 @@ function AddTv({ onAdded, onCancel }: { onAdded: (d: HomeDevice) => void; onCanc
 }
 
 /** The remote for one TV. */
-function Remote({ device, onChanged }: { device: HomeDevice; onChanged: () => void }) {
+function Remote({ device, phone, onChanged }: { device: HomeDevice; phone: boolean; onChanged: () => void }) {
   const [state, setState] = useState<TvState | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -330,6 +331,8 @@ function Remote({ device, onChanged }: { device: HomeDevice; onChanged: () => vo
           </div>
         </div>
       </div>
+
+      {on && <Touchpad id={device.id} phone={phone} />}
 
       {on && state && state.apps.length > 0 && (
         <Chips

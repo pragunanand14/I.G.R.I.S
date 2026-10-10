@@ -213,17 +213,66 @@ impl Tv {
         if !BUTTONS.contains(&name.as_str()) {
             return Err(AppError::validation(format!("Unknown button \"{name}\". Buttons: {}.", BUTTONS.join(", "))));
         }
+        let mut input = self.pointer().await?;
+        input.send(&PointerEvent::Button(name)).await?;
+        input.close().await;
+        Ok(())
+    }
+
+    /// The TV's input channel (buttons, cursor, scrolling), kept open by the caller.
+    pub async fn pointer(&mut self) -> AppResult<Pointer> {
         let res = self.request("com.webos.service.networkinput/getPointerInputSocket", json!({})).await?;
         let path = res["socketPath"].as_str().ok_or_else(|| AppError::validation("The TV didn't open its remote-control channel."))?.to_string();
-        let (mut input, _) = open(&path, self.session.cert_sha256.as_deref())
+        let (ws, _) = open(&path, self.session.cert_sha256.as_deref())
             .await
             .map_err(|e| AppError::validation(format!("Couldn't open the TV's remote-control channel ({e}).")))?;
-        input
-            .send(WsMessage::Text(format!("type:button\nname:{name}\n\n").into()))
-            .await
-            .map_err(|e| AppError::validation(format!("Couldn't press {name} ({e}).")))?;
-        let _ = input.close(None).await;
-        Ok(())
+        Ok(Pointer { ws })
+    }
+
+    pub async fn close(mut self) {
+        let _ = self.ws.close(None).await;
+    }
+}
+
+/// One input on the TV's pointer channel. Movement is in screen pixels, relative.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PointerEvent {
+    Move {
+        dx: i32,
+        dy: i32,
+    },
+    Click,
+    Scroll {
+        dx: i32,
+        dy: i32,
+    },
+    #[serde(skip)]
+    Button(String),
+}
+
+impl PointerEvent {
+    /// The wire form (the input channel speaks "key:value" lines, ended by a blank line).
+    pub fn wire(&self) -> String {
+        // Guard against absurd values (a dropped batch shouldn't fling the cursor off screen).
+        let c = |v: i32| v.clamp(-2000, 2000);
+        match self {
+            PointerEvent::Move { dx, dy } => format!("type:move\ndx:{}\ndy:{}\ndown:0\n\n", c(*dx), c(*dy)),
+            PointerEvent::Click => "type:click\n\n".into(),
+            PointerEvent::Scroll { dx, dy } => format!("type:scroll\ndx:{}\ndy:{}\n\n", c(*dx), c(*dy)),
+            PointerEvent::Button(name) => format!("type:button\nname:{name}\n\n"),
+        }
+    }
+}
+
+/// The TV's open input channel.
+pub struct Pointer {
+    ws: Ws,
+}
+
+impl Pointer {
+    pub async fn send(&mut self, e: &PointerEvent) -> AppResult<()> {
+        self.ws.send(WsMessage::Text(e.wire().into())).await.map_err(|e| AppError::validation(format!("Lost the TV's remote-control channel ({e}).")))
     }
 
     pub async fn close(mut self) {
@@ -364,6 +413,17 @@ mod tests {
         let later = PinnedCert { pinned: Some(pin), seen: Arc::new(Mutex::new(None)), provider };
         assert!(later.verify_server_cert(&cert, &[], &name, &[], now).is_ok());
         assert!(later.verify_server_cert(&other, &[], &name, &[], now).is_err());
+    }
+
+    #[test]
+    fn pointer_events_on_the_wire() {
+        assert_eq!(PointerEvent::Move { dx: 5, dy: -3 }.wire(), "type:move\ndx:5\ndy:-3\ndown:0\n\n");
+        assert_eq!(PointerEvent::Click.wire(), "type:click\n\n");
+        assert_eq!(PointerEvent::Scroll { dx: 0, dy: 40 }.wire(), "type:scroll\ndx:0\ndy:40\n\n");
+        assert_eq!(PointerEvent::Move { dx: 99_999, dy: 0 }.wire(), "type:move\ndx:2000\ndy:0\ndown:0\n\n", "runaway values are clamped");
+        let parsed: Vec<PointerEvent> = serde_json::from_str(r#"[{"type":"move","dx":3,"dy":4},{"type":"click"},{"type":"scroll","dx":0,"dy":-2}]"#).unwrap();
+        assert_eq!(parsed, vec![PointerEvent::Move { dx: 3, dy: 4 }, PointerEvent::Click, PointerEvent::Scroll { dx: 0, dy: -2 }]);
+        assert!(serde_json::from_str::<PointerEvent>(r#"{"type":"button","name":"POWER"}"#).is_err(), "buttons don't come in through the pointer route");
     }
 
     #[tokio::test]

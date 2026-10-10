@@ -341,6 +341,88 @@ impl SmartHome {
     }
 }
 
+/// Open touchpad sessions: the TV connection and its input channel, kept while
+/// the user moves the cursor (closed after [`POINTER_IDLE`] without input).
+struct Held {
+    tv: lg::Tv,
+    input: lg::Pointer,
+    last: std::time::Instant,
+}
+
+const POINTER_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn pointers() -> &'static tokio::sync::Mutex<std::collections::HashMap<String, Held>> {
+    static P: std::sync::OnceLock<tokio::sync::Mutex<std::collections::HashMap<String, Held>>> = std::sync::OnceLock::new();
+    P.get_or_init(|| {
+        // Close idle sessions in the background.
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            rt.spawn(async {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    let idle: Vec<Held> = {
+                        let mut m = pointers().lock().await;
+                        let ids: Vec<String> = m.iter().filter(|(_, h)| h.last.elapsed() > POINTER_IDLE).map(|(k, _)| k.clone()).collect();
+                        ids.into_iter().filter_map(|k| m.remove(&k)).collect()
+                    };
+                    for h in idle {
+                        h.input.close().await;
+                        h.tv.close().await;
+                    }
+                }
+            });
+        }
+        tokio::sync::Mutex::new(std::collections::HashMap::new())
+    })
+}
+
+impl SmartHome {
+    /// Move the TV's cursor, click or scroll. Opens the input channel on first use and keeps it open.
+    pub async fn pointer(&self, id: &str, events: &[lg::PointerEvent]) -> AppResult<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let mut map = pointers().lock().await;
+        for attempt in 0..2 {
+            if !map.contains_key(id) {
+                let (mut tv, _) = self.open(id).await?;
+                let input = tv.pointer().await?;
+                map.insert(id.to_string(), Held { tv, input, last: std::time::Instant::now() });
+            }
+            let held = map.get_mut(id).expect("just inserted");
+            held.last = std::time::Instant::now();
+            let mut failed = None;
+            for e in events {
+                if let Err(err) = held.input.send(e).await {
+                    failed = Some(err);
+                    break;
+                }
+            }
+            match failed {
+                None => return Ok(()),
+                // The TV closed the channel (e.g. it slept): reconnect once and resend.
+                Some(err) => {
+                    if let Some(h) = map.remove(id) {
+                        h.tv.close().await;
+                    }
+                    if attempt == 1 {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Close the touchpad session (leaving the screen, or Esc on the desktop).
+    pub async fn pointer_stop(&self, id: &str) {
+        let held = pointers().lock().await.remove(id);
+        if let Some(h) = held {
+            h.input.close().await;
+            h.tv.close().await;
+        }
+    }
+}
+
 async fn run(tv: &mut lg::Tv, action: &TvAction) -> AppResult<String> {
     let simple = |uri: &'static str, done: &'static str| (uri, done);
     let (uri, done) = match action {

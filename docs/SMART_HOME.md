@@ -20,7 +20,14 @@ and sends a Wake-on-LAN signal.
 **What it can do:** power off/on, volume up/down/set/mute, channel up/down,
 play/pause/stop/rewind/fast-forward, open an installed app (Netflix, YouTube…),
 switch input (HDMI…), remote buttons (arrows, OK, back, home, menu, numbers),
-and show a message on the TV. From the remote screen, or by asking IGRIS
+the **cursor** (a touchpad), and show a message on the TV.
+
+**Touchpad.** Phone: slide a finger in the box to move the TV's cursor, tap
+to click, drag with two fingers to scroll. Laptop: **Use your touchpad**
+captures the pointer, so the laptop's own touchpad (or mouse) drives the TV
+cursor — click to click, two-finger swipe to scroll, **Esc** to stop; you can
+also drag inside the box. Movement is sent in small batches (every 30 ms) over
+one input channel kept open while you use it (closed after a minute idle). From the remote screen, or by asking IGRIS
 ("turn the TV volume down", "open YouTube on the TV").
 
 ### How it works
@@ -51,6 +58,7 @@ aiowebostv client (Apache-2.0).
 | Test | Result |
 |---|---|
 | Pairing (Allow / Decline), key kept private, no re-prompt, every action, button socket, errors in plain words, state, unreachable TV — against a simulated webOS TV (`igris-core/src/home/tests.rs`) | PASS |
+| Touchpad: moves, clicks and scrolls arrive on the TV's input channel in order, over one kept channel; wire format and limits (`home::tests`, `home::lg`); finger slide/tap/two-finger scroll and release on leave (`src/components/home/Touchpad.test.tsx`) | PASS |
 | SSDP discovery against a simulated TV; certificate pinning (accept the paired certificate, refuse another) | PASS |
 | Remote screen: add/pair flow, actions and errors, off TV (`src/components/home/SmartHome.test.tsx`) | PASS |
 | **A real LG TV** | **not yet** — please report how pairing and each control behave on your model. |

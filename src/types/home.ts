@@ -49,3 +49,6 @@ export type TvActionName =
   | "switch_input"
   | "button"
   | "show_message";
+
+/** One touchpad input for the TV's cursor (relative pixels). */
+export type PointerEvent = { type: "move"; dx: number; dy: number } | { type: "click" } | { type: "scroll"; dx: number; dy: number };
