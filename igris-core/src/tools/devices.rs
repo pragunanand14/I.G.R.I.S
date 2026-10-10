@@ -297,10 +297,70 @@ impl Tool for DeviceTaskControlTool {
 }
 
 /// All cross-device tools, for a platform registry.
+pub struct HandoffTool {
+    spec: ToolSpec,
+    hub: HubSlot,
+}
+
+impl HandoffTool {
+    pub fn new(hub: HubSlot) -> Self {
+        Self {
+            spec: ToolSpec {
+                name: "handoff_to_device",
+                title: "Send to my other device",
+                description: "Send a link or a short text to another of the user's devices (\"send this link to my phone\", \"put this \
+address on my laptop\"). It shows up there with Open and Copy buttons; nothing opens by itself. `kind`: \"link\" (an http(s) \
+link) or \"text\". `device` as the user named it. For asking the other device to DO something, use send_to_device instead.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "device": { "type": "string", "minLength": 1, "maxLength": 80 },
+                        "kind": { "type": "string", "enum": ["link", "text"] },
+                        "content": { "type": "string", "minLength": 1, "maxLength": crate::device::handoff::MAX_CHARS }
+                    },
+                    "required": ["device", "kind", "content"],
+                    "additionalProperties": false
+                }),
+                permission: PermissionLevel::Low,
+            },
+            hub,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Tool for HandoffTool {
+    fn spec(&self) -> &ToolSpec {
+        &self.spec
+    }
+    fn describe(&self, i: &Value) -> String {
+        let what = if i["kind"].as_str() == Some("link") { "a link" } else { "a note" };
+        format!("Send {what} to {}: {}", i["device"].as_str().unwrap_or("?"), crate::orchestrator::task::clip(i["content"].as_str().unwrap_or(""), 80))
+    }
+    async fn execute(&self, i: &Value) -> ToolResultT {
+        let hub = ready(&self.hub)?;
+        let kind = crate::device::handoff::HandoffKind::parse(i["kind"].as_str().unwrap_or_default())
+            .ok_or_else(|| ToolError::invalid("kind must be link or text."))?;
+        let devices: Vec<_> = hub.devices().map_err(|e| ToolError::failed(e.to_string()))?.into_iter().map(|d| d.device).collect();
+        let dev = match target::resolve(i["device"].as_str().unwrap_or_default(), &hub.this_device(), &devices) {
+            Ok(Target::Here) => return Err(ToolError::invalid("That's this device.")),
+            Ok(Target::Remote(d)) => *d,
+            Err(msg) => return Err(ToolError::invalid(msg)),
+        };
+        let now = hub.handoff(&dev.device_id, kind, i["content"].as_str().unwrap_or_default()).map_err(|e| ToolError::invalid(e.to_string()))?;
+        if now {
+            out(format!("Sent to {}. It shows up there with Open and Copy buttons.", dev.name), format!("Sent to {}", dev.name))
+        } else {
+            out(format!("Not sent yet: the connection between devices is down. It will go to {} when it's back.", dev.name), "Queued — not sent yet")
+        }
+    }
+}
+
 pub fn all(hub: &HubSlot) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(ListDevicesTool::new(hub.clone())),
         Arc::new(SendToDeviceTool::new(hub.clone())),
+        Arc::new(HandoffTool::new(hub.clone())),
         Arc::new(DeviceTaskStatusTool::new(hub.clone())),
         Arc::new(DeviceTaskControlTool::new(hub.clone())),
     ]

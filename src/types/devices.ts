@@ -133,4 +133,15 @@ export type DeviceEvent =
   | { type: "local_approval"; callId: string; requestId: string; deviceName: string; title: string; description: string }
   | { type: "pairing_request"; pairingId: string; deviceName: string; platform: Platform }
   | { type: "pairing_done"; ok: boolean; message: string }
-  | { type: "notice"; title: string; body: string };
+  | { type: "notice"; title: string; body: string }
+  | { type: "handoff"; item: Handoff };
+
+/** A link or text another device sent here. */
+export interface Handoff {
+  id: string;
+  fromDevice: string;
+  fromName: string;
+  kind: "link" | "text";
+  content: string;
+  receivedAt: string;
+}

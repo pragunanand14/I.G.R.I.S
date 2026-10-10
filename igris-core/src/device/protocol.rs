@@ -160,6 +160,12 @@ pub enum Message {
     SyncAck {
         upto: i64,
     },
+    /// A link or text for the user, sent from their other device.
+    Handoff {
+        id: String,
+        kind: super::handoff::HandoffKind,
+        content: String,
+    },
 }
 
 impl Message {
@@ -177,6 +183,7 @@ impl Message {
             Message::DeviceRevoked { .. } => "device_revoked",
             Message::SyncBatch { .. } => "sync_batch",
             Message::SyncAck { .. } => "sync_ack",
+            Message::Handoff { .. } => "handoff",
         }
     }
 

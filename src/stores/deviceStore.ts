@@ -5,6 +5,7 @@ import { BackendError, hasBackend } from "@/services/backend";
 import type {
   DeviceEvent,
   DevicesOverview,
+  Handoff,
   PairingCode,
   Platform,
   RemoteTask,
@@ -43,6 +44,8 @@ interface DeviceStore {
   /** Actions in tasks other devices sent here, waiting for approval (this device's own prompt). */
   localApprovals: LocalApproval[];
   notices: Notice[];
+  /** Links and text other devices sent here (newest first). */
+  handoffs: Handoff[];
   connect: () => () => void;
   refresh: () => Promise<void>;
   configure: (
@@ -66,6 +69,9 @@ interface DeviceStore {
   /** Answer, here, an approval for a task another device sent here. */
   answerLocal: (callId: string, approve: boolean) => Promise<void>;
   dismissNotice: (id: number) => void;
+  /** Send a link or text to another device; true when it went out now, false when queued. */
+  handoff: (deviceId: string, content: string) => Promise<boolean | null>;
+  dismissHandoff: (id: string) => Promise<void>;
   clearResult: () => void;
 }
 
@@ -88,6 +94,9 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
 
   const onEvent = (e: DeviceEvent) => {
     switch (e.type) {
+      case "handoff":
+        set({ handoffs: [e.item, ...get().handoffs.filter((h) => h.id !== e.item.id)] });
+        return;
       case "notice":
         set({
           notices: [
@@ -136,6 +145,7 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
     pairingResult: null,
     localApprovals: [],
     notices: [],
+    handoffs: [],
 
     connect: () => {
       if (!hasBackend()) return () => undefined;
@@ -148,6 +158,10 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
         },
       );
       void get().refresh();
+      void api
+        .handoffsList()
+        .then((handoffs) => set({ handoffs }))
+        .catch(() => undefined);
       return () => {
         closed = true;
         unlisten?.();
@@ -238,6 +252,16 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
           error:
             "That request already ended (answered on the other device, or it expired).",
         });
+    },
+
+    handoff: (deviceId, content) => {
+      const text = content.trim();
+      const kind = /^https?:\/\/\S+$/i.test(text) ? "link" : "text";
+      return run(() => api.devicesHandoff(deviceId, kind, text));
+    },
+    dismissHandoff: async (id) => {
+      set({ handoffs: get().handoffs.filter((h) => h.id !== id) });
+      await api.handoffDismiss(id).catch(() => undefined);
     },
 
     dismissNotice: (id) =>

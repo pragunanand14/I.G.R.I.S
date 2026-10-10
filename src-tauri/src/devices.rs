@@ -192,8 +192,13 @@ pub fn start(app: AppHandle, slot: HubSlot, tool_names: Vec<String>) {
         hub.set_local_approver(Arc::new(UiApprover { pending: state.approvals.clone(), timeout: APPROVAL_TIMEOUT }));
         let emitter = app.clone();
         hub.on_event(Arc::new(move |e: &HubEvent| {
-            if let HubEvent::Notice { title, body } = e {
-                notify(&emitter, title, body);
+            match e {
+                HubEvent::Notice { title, body } => notify(&emitter, title, body),
+                HubEvent::Handoff { item } => {
+                    let what = if item.kind == crate::device::handoff::HandoffKind::Link { "a link" } else { "a note" };
+                    notify(&emitter, &format!("{} sent {what}", item.from_name), &item.content);
+                }
+                _ => {}
             }
             let _ = emitter.emit("device-event", e);
         }));

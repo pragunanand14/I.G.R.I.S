@@ -1,4 +1,6 @@
 import { Link2, Monitor, Pause, Play, ShieldCheck, Smartphone, Square, Trash2 } from "lucide-react";
+import { HandoffInbox } from "./HandoffInbox";
+import { SendToDevice } from "./SendToDevice";
 import { useEffect, useState } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -40,6 +42,13 @@ export function DevicesPanel({ disabled }: { disabled: boolean }) {
           <ThisDeviceSection overview={overview} disabled={disabled} />
           <ConnectionSection overview={overview} disabled={disabled} />
           <PairedSection overview={overview} disabled={disabled} />
+          {overview.devices.some((d) => d.trusted && !d.revokedAt) && (
+            <section className="space-y-2">
+              <h3 className="text-xs font-medium text-faint">Send a link or note</h3>
+              <SendToDevice />
+              <HandoffInbox max={10} />
+            </section>
+          )}
           <PairingSection overview={overview} disabled={disabled} />
           <TasksSection overview={overview} disabled={disabled} />
         </div>

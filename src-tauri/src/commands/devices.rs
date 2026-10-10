@@ -118,3 +118,21 @@ pub async fn devices_answer_approval(state: State<'_, AppState>, call_id: String
 pub fn devices_audit(state: State<'_, AppState>, limit: Option<u32>) -> AppResult<Vec<AuditRow>> {
     registry::audit_log(&*state.db.conn()?, limit.unwrap_or(100))
 }
+
+/// Send a link or text to another device ("handoff").
+#[tauri::command]
+pub async fn devices_handoff(state: State<'_, AppState>, device_id: String, kind: String, content: String) -> AppResult<bool> {
+    let kind = crate::device::handoff::HandoffKind::parse(&kind).ok_or_else(|| AppError::validation("Send a link or text."))?;
+    hub(&state)?.handoff(&device_id, kind, &content)
+}
+
+/// Links and text other devices sent here, newest first.
+#[tauri::command]
+pub fn handoffs_list(state: State<'_, AppState>) -> AppResult<Vec<crate::device::handoff::Handoff>> {
+    crate::device::handoff::list(&*state.db.conn()?)
+}
+
+#[tauri::command]
+pub fn handoff_dismiss(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::device::handoff::dismiss(&*state.db.conn()?, &id)
+}

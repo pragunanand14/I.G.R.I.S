@@ -20,6 +20,7 @@
 pub mod approval;
 pub mod capability;
 pub mod envelope;
+pub mod handoff;
 pub mod hub;
 pub mod identity;
 pub mod link;

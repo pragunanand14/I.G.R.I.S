@@ -363,6 +363,40 @@ async fn an_offline_pc_gets_the_task_when_it_comes_back() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_link_sent_from_the_phone_lands_in_the_pcs_inbox() {
+    use crate::device::handoff::{self, HandoffKind};
+    let url = relay().await;
+    let mut pc = node("My PC", Platform::Windows);
+    let mut phone = node("Pixel", Platform::Android);
+    connected(&mut pc, &url).await;
+    connected(&mut phone, &url).await;
+    pair(&mut pc, &mut phone).await;
+
+    assert!(phone.hub.handoff(&pc.id, HandoffKind::Link, "javascript:alert(1)").is_err(), "only web links");
+    assert!(phone.hub.handoff(&pc.id, HandoffKind::Link, "https://example.com/recipe").unwrap());
+    let item = expect(&mut pc.events, "handoff", |e| match e {
+        HubEvent::Handoff { item } => Some(item.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!((item.from_name.as_str(), item.kind, item.content.as_str()), ("Pixel", HandoffKind::Link, "https://example.com/recipe"));
+    assert_eq!(handoff::list(&pc.db.conn().unwrap()).unwrap(), vec![item]);
+
+    // While the PC is closed, a note waits at the relay and arrives when it opens.
+    pc.hub.shutdown();
+    let (b, pc_id) = (phone.hub.clone(), pc.id.clone());
+    until("PC offline", || !b.is_online(&pc_id)).await;
+    phone.hub.handoff(&pc.id, HandoffKind::Text, "Flat 4B, 221 Baker Street").unwrap();
+    pc.hub.configure(Some(&url), true, true).unwrap();
+    let note = expect(&mut pc.events, "queued handoff", |e| match e {
+        HubEvent::Handoff { item } => Some(item.content.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(note, "Flat 4B, 221 Baker Street");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn memories_sync_both_ways_and_revocation_cuts_the_device_off() {
     let url = relay().await;
     let mut pc = node("My PC", Platform::Windows);

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HandoffInbox } from "@/components/devices/HandoffInbox";
 import { NowPlayingBar } from "@/components/media/NowPlayingBar";
 import { Link, useNavigate } from "react-router";
 import { Composer } from "@/components/chat/Composer";
@@ -73,6 +74,7 @@ export function HomePage() {
           </div>
           {backendError && <p className="max-w-md text-xs text-danger">{backendError}</p>}
           <NowPlayingBar />
+          <HandoffInbox />
         </div>
 
         <div {...enter(1, "mt-9 w-full max-w-2xl")}>

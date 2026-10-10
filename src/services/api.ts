@@ -14,7 +14,7 @@ import { call, callRaw } from "./backend";
 import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
 import type { TaskControl, TaskEventRow, TaskInfo } from "@/types/task";
 import type { FoundDevice, HomeDevice, PointerEvent as TvPointerEvent, TvActionName, TvState } from "@/types/home";
-import type { DeviceAuditRow, DeviceSettings, DevicesOverview, PairedDevice, PairingCode, RemoteTask, ThisDevice } from "@/types/devices";
+import type { DeviceAuditRow, DeviceSettings, Handoff, DevicesOverview, PairedDevice, PairingCode, RemoteTask, ThisDevice } from "@/types/devices";
 
 /** All IPC commands in one place — mirrors `generate_handler!` in `src-tauri/src/lib.rs`. */
 export const api = {
@@ -114,6 +114,9 @@ export const api = {
   devicesForget: (deviceId: string) => call<void>("devices_forget", { deviceId }),
   devicesRename: (deviceId: string, name: string) => call<PairedDevice>("devices_rename", { deviceId, name }),
   devicesRenameThis: (name: string) => call<ThisDevice>("devices_rename_this", { name }),
+  devicesHandoff: (deviceId: string, kind: "link" | "text", content: string) => call<boolean>("devices_handoff", { deviceId, kind, content }),
+  handoffsList: () => call<Handoff[]>("handoffs_list"),
+  handoffDismiss: (id: string) => call<void>("handoff_dismiss", { id }),
   devicesSendTask: (deviceId: string, objective: string) => call<RemoteTask>("devices_send_task", { deviceId, objective }),
   devicesControlTask: (requestId: string, action: TaskControl) => call<RemoteTask>("devices_control_task", { requestId, action }),
   devicesAnswerApproval: (callId: string, approve: boolean) => call<void>("devices_answer_approval", { callId, approve }),

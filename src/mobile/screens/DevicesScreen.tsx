@@ -2,6 +2,8 @@ import { Laptop, Pause, Play, Smartphone, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useDeviceStore } from "@/stores/deviceStore";
 import { CAPABILITY_LABEL, isActive, keyProtectionText, linkText, platformLabel, taskStatusText, taskTone } from "@/components/devices/deviceText";
+import { HandoffInbox } from "@/components/devices/HandoffInbox";
+import { SendToDevice } from "@/components/devices/SendToDevice";
 import { Dot, ErrorText, Group, Screen, Section, Switch } from "../ui";
 
 /** Settings → Phone and computer: pair with your PC, send it tasks, see what's happening. */
@@ -108,6 +110,13 @@ export function DevicesScreen() {
             Send to {target.name}
           </button>
           {!connected && <p className="m-muted px-1 text-sm">Not connected right now — it will be sent when the connection is back (within 10 minutes).</p>}
+        </Section>
+      )}
+
+      {devices.length > 0 && (
+        <Section title="Send a link or note">
+          <SendToDevice phone />
+          <HandoffInbox phone max={10} />
         </Section>
       )}
 

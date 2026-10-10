@@ -91,7 +91,7 @@ pub fn capability(name: &str) -> Option<Capability> {
         n if n.starts_with("computer_") || n.starts_with("browser_") => OperatorSession,
         "task_plan" => Tasks,
         "request_tools" => Meta,
-        "list_devices" | "send_to_device" | "device_task_status" | "device_task_control" => Devices,
+        "list_devices" | "send_to_device" | "handoff_to_device" | "device_task_status" | "device_task_control" => Devices,
         "home_devices" | "tv_control" => Home,
         "media_control" | "now_playing" | "play_music" => Media,
         _ => return None,

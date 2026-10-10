@@ -156,6 +156,10 @@ pub enum HubEvent {
         title: String,
         body: String,
     },
+    /// A link or text arrived from another device (also kept in the inbox).
+    Handoff {
+        item: super::handoff::Handoff,
+    },
 }
 
 pub type HubListener = Arc<dyn Fn(&HubEvent) + Send + Sync>;
@@ -712,7 +716,33 @@ impl DeviceHub {
                 lock(&self.sync_inflight).remove(&dev.device_id);
                 self.sync_to(&dev.device_id);
             }
+            Message::Handoff { id, kind, content } => {
+                let stored = self.db.conn().and_then(|c| super::handoff::receive(&c, &id, &dev.device_id, &dev.name, kind, &content));
+                match stored {
+                    Ok(Some(item)) => {
+                        tracing::info!(event = "HANDOFF_RECEIVED", kind = kind.as_str());
+                        self.emit(HubEvent::Handoff { item });
+                    }
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!(event = "HANDOFF_REFUSED", error = %e),
+                }
+            }
         }
+    }
+
+    // ── Handoff ────────────────────────────────────────────────────────────
+
+    /// Send a link or text to `device_id`. `true`: sent now; `false`: the
+    /// connection is down, it goes out when it's back.
+    pub fn handoff(&self, device_id: &str, kind: super::handoff::HandoffKind, content: &str) -> AppResult<bool> {
+        let content = super::handoff::validate(kind, content)?;
+        let id = super::identity::random_hex(16);
+        if let Ok(c) = self.db.conn() {
+            registry::audit(&c, Some(device_id), "handoff_sent", Some(kind.as_str()));
+        }
+        let sent = self.send(device_id, Message::Handoff { id, kind, content })?.is_some();
+        tracing::info!(event = "HANDOFF_SENT", kind = kind.as_str(), now = sent);
+        Ok(sent)
     }
 
     // ── Tasks this device sends ────────────────────────────────────────────

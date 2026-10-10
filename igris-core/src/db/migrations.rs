@@ -436,6 +436,21 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 15,
+        name: "handoffs",
+        sql: r#"
+            -- Links and text sent here from the user's other devices (device/handoff.rs).
+            CREATE TABLE handoffs (
+                id          TEXT PRIMARY KEY,
+                from_device TEXT NOT NULL,
+                from_name   TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                received_at TEXT NOT NULL
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

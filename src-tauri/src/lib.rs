@@ -277,6 +277,9 @@ pub fn run() {
             commands::home::home_tv_state,
             commands::home::home_pointer,
             commands::home::home_pointer_stop,
+            commands::devices::devices_handoff,
+            commands::devices::handoffs_list,
+            commands::devices::handoff_dismiss,
             commands::media::media_now_playing,
             commands::media::media_control,
         ])
