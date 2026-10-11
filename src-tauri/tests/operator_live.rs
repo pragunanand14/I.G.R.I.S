@@ -83,6 +83,7 @@ fn setup() -> Ctx {
         open_path: Arc::new(|p: &std::path::Path| std::process::Command::new("explorer").arg(p).spawn().map(|_| ()).map_err(|e| e.to_string())),
         open_url: Arc::new(|u: &str| std::process::Command::new("cmd").args(["/c", "start", "", u]).spawn().map(|_| ()).map_err(|e| e.to_string())),
         media: Arc::new(igris_lib::tools::media::Unavailable),
+        google: Arc::new(igris_lib::google::Google::new(db.clone(), Arc::new(igris_lib::device::Unprotected), Arc::new(|| None))),
         // No other devices in this harness (the device tools report that honestly).
         devices: Arc::new(std::sync::OnceLock::new()),
     }));

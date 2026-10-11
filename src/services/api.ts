@@ -8,6 +8,7 @@ import type { VoiceStatus } from "@/types/voice";
 import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, ProjectInput } from "@/types/workspace";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
+import type { GoogleStatus } from "@/types/google";
 import type { MediaAction, NowPlaying } from "@/types/media";
 import type { AllowedAction, AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
 import { call } from "./backend";
@@ -31,6 +32,10 @@ export const api = {
   widgetLaunchAction: () => call<string | null>("widget_launch_action"),
   widgetWeatherPlace: () => call<string | null>("widget_weather_place"),
   widgetSetWeatherPlace: (query: string) => call<{ name: string; latitude: number; longitude: number }>("widget_set_weather_place", { query }),
+  googleStatus: () => call<GoogleStatus>("google_status"),
+  /** Opens Google's sign-in in the browser; resolves when the user finishes (up to 5 minutes). */
+  googleConnect: () => call<GoogleStatus>("google_connect"),
+  googleDisconnect: () => call<GoogleStatus>("google_disconnect"),
   mediaNowPlaying: () => call<NowPlaying>("media_now_playing"),
   mediaControl: (action: MediaAction) => call<NowPlaying>("media_control", { action }),
   /** Pick a settings (.env) file and make it IGRIS's; `null` when the picker was cancelled. */

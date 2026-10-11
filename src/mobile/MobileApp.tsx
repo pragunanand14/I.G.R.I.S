@@ -9,6 +9,7 @@ import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { rememberTheme, restoreTheme } from "./motion";
 import { Opening } from "@/components/core/Opening";
+import { AccountsScreen } from "./screens/AccountsScreen";
 import { ActivityScreen } from "./screens/ActivityScreen";
 import { ChatScreen, ChatsScreen } from "./screens/ChatScreen";
 import { DevicesScreen } from "./screens/DevicesScreen";
@@ -93,6 +94,7 @@ const router = createHashRouter([
       { path: "settings/permissions", element: <PermissionsScreen /> },
       { path: "settings/widgets", element: <WidgetsScreen /> },
       { path: "settings/screen", element: <ScreenControlScreen /> },
+      { path: "settings/accounts", element: <AccountsScreen /> },
       { path: "settings/devices", element: <DevicesScreen /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

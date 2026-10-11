@@ -69,6 +69,12 @@ pub fn add_reminder(conn: &Connection, title: &str, when: &str) -> AppResult<Rem
     insert(conn, &title, "reminder", due, None)
 }
 
+/// A reminder at an exact instant (e.g. before a calendar event).
+pub fn add_at(conn: &Connection, title: &str, due: chrono::DateTime<Utc>) -> AppResult<Reminder> {
+    let title = clean(title, 200, "Reminder")?;
+    insert(conn, &title, "reminder", due, None)
+}
+
 pub fn start_timer(conn: &Connection, label: &str, duration: &str) -> AppResult<Reminder> {
     let d = time::parse_duration(duration).map_err(AppError::validation)?;
     let label = clean(label, 120, "Label")?;

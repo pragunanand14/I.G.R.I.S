@@ -186,5 +186,6 @@ docs/ARCHITECTURE.md     design, per phase
 docs/ANDROID.md          the Android app: capabilities, build, limits, test results
 docs/CROSS_DEVICE.md     phone ↔ PC: trust model, protocol, transports, limits
 docs/SMART_HOME.md       smart home: LG TV control (pairing, actions, safety)
+docs/GOOGLE.md           Gmail and Google Calendar: one-time setup, what always asks, privacy
 docs/SECURITY.md         threat model, controls, review findings
 ```

@@ -9,7 +9,7 @@
 //! re-exported under their usual paths.
 
 pub use igris_core::{
-    ai, attachments, config, conversations, core, db, device, error, files, home, memory, operator, orchestrator, permissions, productivity, projects,
+    ai, attachments, config, conversations, core, db, device, error, files, google, home, memory, operator, orchestrator, permissions, productivity, projects,
     settings, voice,
 };
 
@@ -106,6 +106,17 @@ pub fn run() {
             }
             // Cross-device: the hub is filled in once the device keys are unlocked (see devices.rs).
             let device_hub: crate::tools::devices::HubSlot = Arc::new(std::sync::OnceLock::new());
+            // The user's Google account (Gmail, Calendar): the refresh token is sealed like the device keys.
+            let google = {
+                let cfg = config.clone();
+                let creds: igris_core::google::Credentials = Arc::new(move || {
+                    let c = cfg.read().ok()?;
+                    Some((c.google_client_id.clone()?, c.google_client_secret.clone()?))
+                });
+                Arc::new(igris_core::google::Google::new(db.clone(), Arc::from(crate::devices::protector(app.handle())), creds))
+            };
+            app.manage(commands::google::GoogleState(google.clone()));
+            tauri::async_runtime::spawn(igris_core::google::watcher::run(google.clone()));
             #[cfg(desktop)]
             let media = platform::media(platform::url_opener(app.handle()));
             #[cfg(mobile)]
@@ -127,6 +138,7 @@ pub fn run() {
                 open_path: platform::path_opener(app.handle()),
                 open_url: platform::url_opener(app.handle()),
                 media,
+                google,
                 #[cfg(mobile)]
                 screen,
                 devices: device_hub.clone(),
@@ -286,6 +298,9 @@ pub fn run() {
             commands::devices::devices_handoff,
             commands::devices::handoffs_list,
             commands::devices::handoff_dismiss,
+            commands::google::google_status,
+            commands::google::google_connect,
+            commands::google::google_disconnect,
             commands::phone::phone_screen_access,
             commands::phone::phone_screen_settings,
             commands::widgets::widget_launch_action,

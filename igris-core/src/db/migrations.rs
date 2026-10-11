@@ -451,6 +451,28 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 16,
+        name: "google_account",
+        sql: r#"
+            -- The user's Google account (google/mod.rs). The refresh token is sealed
+            -- by the device's key protector (DPAPI / Android Keystore) and never leaves
+            -- the native side; access tokens live in memory only.
+            CREATE TABLE google_account (
+                id             INTEGER PRIMARY KEY CHECK (id = 1),
+                email          TEXT NOT NULL,
+                refresh_sealed BLOB NOT NULL,
+                scopes         TEXT NOT NULL,
+                connected_at   TEXT NOT NULL
+            );
+            -- Reminders IGRIS made for upcoming Google Calendar events.
+            CREATE TABLE google_meeting_reminders (
+                event_id    TEXT PRIMARY KEY,
+                starts_at   TEXT NOT NULL,
+                reminder_id INTEGER NOT NULL
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

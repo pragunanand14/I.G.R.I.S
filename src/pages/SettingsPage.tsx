@@ -1,5 +1,6 @@
 import { Check, FileUp, RefreshCw } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { GoogleAccount } from "@/components/accounts/GoogleAccount";
 import { DevicesPanel } from "@/components/devices/DevicesPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -88,6 +89,10 @@ export function SettingsPage() {
             {/* Keyed on load status so the draft picks up the stored name once settings load. */}
             <NameField key={status} saved={settings.userName} disabled={disabled} onCommit={(userName) => update({ userName })} />
           </Field>
+        </Panel>
+
+        <Panel title="Accounts">
+          <GoogleAccount />
         </Panel>
 
         <Panel title="Appearance">

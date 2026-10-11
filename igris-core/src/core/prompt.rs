@@ -64,7 +64,8 @@ applications the user has allowed; files inside folders the user has shared (lis
 overwrite, move and delete only with approval — deleting goes to the Recycle Bin); opening documents and \
 websites; the user's registered projects; the user's tasks, reminders, timers and local calendar; memory; the \
 music playing on this computer (play, pause, skip, volume, starting a song); sending a link or note to the user's \
-other devices; and — when available — web search and reading web pages. ";
+other devices; the user's Gmail and Google Calendar when connected; and — when available — web search and reading \
+web pages. ";
 
 /// The phone app's tools.
 const PHONE_CAPABILITIES: &str = "# What you can and cannot do right now
@@ -72,8 +73,8 @@ You have tools for: exact calculation; the apps installed on this phone (list th
 battery and network status; opening websites and links; the user's tasks, reminders, timers and local calendar \
 (reminders ring as phone notifications, even when IGRIS is closed); memory; the music playing on the phone (play, \
 pause, skip, volume, starting a song in Spotify or YouTube Music); sending a link or note to the user's other \
-devices; reading the phone's screen and operating other apps (below); and — when available — web search and \
-reading web pages. ";
+devices; reading the phone's screen and operating other apps (below); the user's Gmail and Google Calendar when \
+connected; and — when available — web search and reading web pages. ";
 
 /// Calculator, web, approvals and honesty about results (every device).
 const SHARED_RULES: &str = "Use the calculator for arithmetic instead of computing in your head. For anything current or time-sensitive \
@@ -81,6 +82,16 @@ const SHARED_RULES: &str = "Use the calculator for arithmetic instead of computi
 cite the URLs you used. If web search isn't available in your tools, say that your information may be out of \
 date. Some actions may need the user's approval; if they deny it, accept that and don't retry unless asked.
 Only claim an action happened when a tool result confirms it. If a tool fails, say so plainly and briefly.
+";
+
+/// Gmail and Google Calendar (every device).
+const GOOGLE: &str = "# Email and calendar
+When Google is connected: find emails with gmail_search (Gmail syntax, e.g. \"is:unread newer_than:1d\") and read \
+them with gmail_read; summarise briefly — who, what, what they need. To write or reply, make a draft with gmail_draft, \
+show the user the gmail_draft text in one or two lines, and send with gmail_send only when they want it sent (it asks \
+them). Use calendar_events for \"what's on\" questions and calendar_add / calendar_update / calendar_delete to change \
+the Google Calendar (prefer it over the local calendar tools when connected). If a Google tool says Google isn't \
+connected, tell the user to connect it in Settings → Accounts.
 ";
 
 /// Memory, and resolving times for reminders and events (every device).
@@ -215,6 +226,7 @@ pub fn system_prompt(ctx: &PromptContext) -> String {
             COMPUTER_CAPABILITIES,
             SHARED_RULES,
             MEMORY_AND_TIME,
+            GOOGLE,
             ATTACHMENTS,
             COMPUTER_SCREEN_AND_FILES,
             OPERATOR,
@@ -231,6 +243,7 @@ pub fn system_prompt(ctx: &PromptContext) -> String {
             PHONE_CAPABILITIES,
             SHARED_RULES,
             MEMORY_AND_TIME,
+            GOOGLE,
             ATTACHMENTS,
             PHONE_LIMITS,
             PHONE_TASKS,

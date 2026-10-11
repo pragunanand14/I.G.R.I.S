@@ -31,6 +31,8 @@ const KEYS: &[&str] = &[
     "TTS_MODEL",
     "TTS_VOICE",
     "IGRIS_LOG",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
 ];
 
 #[derive(Clone, Default)]
@@ -60,6 +62,9 @@ pub struct AppConfig {
     pub tts_model: Option<String>,
     pub tts_voice: Option<String>,
     pub log_filter: Option<String>,
+    /// The user's own Google OAuth client (docs/GOOGLE.md), for Gmail and Calendar.
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
     /// `.env` files that were found and read, in load order.
     pub env_files: Vec<PathBuf>,
 }
@@ -79,6 +84,8 @@ impl std::fmt::Debug for AppConfig {
             .field("stt_provider", &self.stt_provider)
             .field("voice_api_key", &self.voice_api_key.as_ref().map(|_| "<redacted>"))
             .field("voice_base_url", &self.voice_base_url)
+            .field("google_client_id", &self.google_client_id)
+            .field("google_client_secret", &self.google_client_secret.as_ref().map(|_| "<redacted>"))
             .field("env_files", &self.env_files)
             .finish()
     }
@@ -97,6 +104,8 @@ pub struct PublicConfig {
     pub web_search: Option<String>,
     pub tts_provider: Option<String>,
     pub stt_provider: Option<String>,
+    /// GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set (values never sent).
+    pub google_configured: bool,
     pub env_files: Vec<String>,
 }
 
@@ -163,6 +172,8 @@ impl AppConfig {
             tts_model: read("TTS_MODEL"),
             tts_voice: read("TTS_VOICE"),
             log_filter: read("IGRIS_LOG"),
+            google_client_id: read("GOOGLE_CLIENT_ID"),
+            google_client_secret: read("GOOGLE_CLIENT_SECRET"),
             env_files: Vec::new(),
         }
     }
@@ -189,6 +200,7 @@ impl AppConfig {
             web_search: self.web_search_mode().map(str::to_string),
             tts_provider: self.tts_provider.clone(),
             stt_provider: self.stt_provider.clone(),
+            google_configured: self.google_client_id.is_some() && self.google_client_secret.is_some(),
             env_files: self.env_files.iter().map(|p| p.display().to_string()).collect(),
         }
     }
@@ -267,11 +279,20 @@ mod tests {
 
     #[test]
     fn public_config_never_contains_secrets() {
-        let c = cfg(&[("AI_API_KEY", "sk-secret-value"), ("SEARCH_API_KEY", "search-secret"), ("VOICE_API_KEY", "voice-secret"), ("AI_PROVIDER", "Anthropic")]);
+        let c = cfg(&[
+            ("AI_API_KEY", "sk-secret-value"),
+            ("SEARCH_API_KEY", "search-secret"),
+            ("VOICE_API_KEY", "voice-secret"),
+            ("AI_PROVIDER", "Anthropic"),
+            ("GOOGLE_CLIENT_ID", "cid.apps.googleusercontent.com"),
+            ("GOOGLE_CLIENT_SECRET", "google-secret"),
+        ]);
         let public = serde_json::to_string(&c.public()).unwrap();
         assert!(!public.contains("sk-secret-value"));
         assert!(!public.contains("search-secret"));
         assert!(!public.contains("voice-secret"));
+        assert!(!public.contains("google-secret") && !format!("{c:?}").contains("google-secret"));
+        assert!(public.contains("\"googleConfigured\":true"));
         assert!(!format!("{c:?}").contains("voice-secret"));
         assert!(public.contains("\"aiKeyConfigured\":true"));
         assert!(public.contains("\"aiProvider\":\"anthropic\""));

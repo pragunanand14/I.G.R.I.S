@@ -10,6 +10,7 @@ pub mod audit;
 pub mod calculator;
 pub mod devices;
 pub mod executor;
+pub mod google;
 pub mod home;
 pub mod memory;
 pub mod productivity;
