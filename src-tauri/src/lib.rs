@@ -133,6 +133,7 @@ pub fn run() {
             let payments: Option<crate::expenses::PhoneFeed> = None;
             commands::life::watch(app.handle().clone(), db.clone(), google.clone(), payments.clone());
             app.manage(commands::life::PaymentFeed(payments));
+            commands::tidy::watch(db.clone());
             #[cfg(mobile)]
             platform::follow_phone_control(app.handle(), operator.clone());
             #[cfg(mobile)]
@@ -320,6 +321,10 @@ pub fn run() {
             commands::briefing::briefing_today,
             commands::briefing::weather_home,
             commands::briefing::weather_set_home,
+            commands::tidy::tidy_status,
+            commands::tidy::tidy_now,
+            commands::tidy::tidy_undo,
+            commands::tidy::tidy_set_auto,
             commands::life::people_list,
             commands::life::person_save,
             commands::life::person_forget,

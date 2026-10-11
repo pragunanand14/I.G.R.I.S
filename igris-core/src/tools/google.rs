@@ -124,6 +124,42 @@ impl Tool for GmailReadTool {
     }
 }
 
+fn attach_list(i: &Value) -> Vec<String> {
+    i["attach"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect()
+}
+
+fn file_name(path: &str) -> String {
+    std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
+}
+
+/// Files to attach, from the shared folders only (and never secret files like .env or keys).
+fn read_attachments(g: &Google, paths: &[String]) -> Result<Vec<gmail::FileAttachment>, ToolError> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let roots = crate::files::list(&*g.db().conn().map_err(failed)?).map_err(failed)?;
+    let mut out = Vec::new();
+    let mut total = 0u64;
+    for p in paths {
+        let guarded = crate::files::guard(&roots, p, crate::files::Access::Read).map_err(ToolError::refused)?;
+        if crate::files::is_secret_file(&guarded.path) {
+            return Err(ToolError::refused(format!("{} looks like a secrets file; IGRIS doesn't send those.", file_name(p))));
+        }
+        let meta = std::fs::metadata(&guarded.path).map_err(|_| ToolError::not_found(format!("{} doesn't exist.", file_name(p))))?;
+        if !meta.is_file() {
+            return Err(ToolError::invalid(format!("{} is a folder, not a file.", file_name(p))));
+        }
+        total += meta.len();
+        if total > gmail::MAX_ATTACH_BYTES as u64 {
+            return Err(ToolError::invalid("The attachments are over 5 MB together. Suggest sharing big files as a Google Drive link."));
+        }
+        let name = file_name(&guarded.path.to_string_lossy());
+        let bytes = std::fs::read(&guarded.path).map_err(|e| ToolError::failed(format!("Couldn't read {name}: {e}")))?;
+        out.push(gmail::FileAttachment { mime: gmail::mime_for(&name).into(), name, bytes });
+    }
+    Ok(out)
+}
+
 google_tool!(GmailDraftTool);
 impl GmailDraftTool {
     pub fn new(g: Arc<Google>) -> Self {
@@ -132,16 +168,18 @@ impl GmailDraftTool {
                 "gmail_draft",
                 "Draft an email",
                 "Write an email as a draft in the user's Gmail (nothing is sent). To reply, give reply_to (the email's id): the \
-recipient and \"Re:\" subject are filled in when left empty. Write in the user's voice, plainly. Then show the user the draft \
-and send it with gmail_send only when they want it sent.",
+recipient and \"Re:\" subject are filled in when left empty. Write in the user's voice, plainly. attach: full paths of files \
+in the shared folders (find them with search_files; up to 5 MB together), [] for none. Then show the user the draft and send \
+it with gmail_send only when they want it sent.",
                 json!({
                     "to": { "type": "string", "maxLength": 500, "description": "Addresses, comma-separated; \"\" when replying." },
                     "cc": { "type": "string", "maxLength": 500 },
                     "subject": { "type": "string", "maxLength": 200 },
                     "body": { "type": "string", "minLength": 1, "maxLength": 20000 },
-                    "reply_to": { "type": "string", "maxLength": 100, "description": "Id of the email being answered, or \"\"." }
+                    "reply_to": { "type": "string", "maxLength": 100, "description": "Id of the email being answered, or \"\"." },
+                    "attach": { "type": "array", "maxItems": 5, "items": { "type": "string", "minLength": 1, "maxLength": 1000 } }
                 }),
-                &["to", "cc", "subject", "body", "reply_to"],
+                &["to", "cc", "subject", "body", "reply_to", "attach"],
                 PermissionLevel::Low,
             ),
             g,
@@ -155,19 +193,26 @@ impl Tool for GmailDraftTool {
         &self.spec
     }
     fn describe(&self, i: &Value) -> String {
+        let files = attach_list(i);
+        let with = if files.is_empty() { String::new() } else { format!(" with {}", files.iter().map(|f| file_name(f)).collect::<Vec<_>>().join(", ")) };
         if i["reply_to"].as_str().is_some_and(|r| !r.is_empty()) {
-            "Draft a reply".into()
+            format!("Draft a reply{with}")
         } else {
-            format!("Draft an email to {}", i["to"].as_str().unwrap_or_default())
+            format!("Draft an email to {}{with}", i["to"].as_str().unwrap_or_default())
         }
     }
     async fn execute(&self, i: &Value) -> ToolResultT {
         let s = |k: &str| i[k].as_str().unwrap_or_default();
-        let d = gmail::draft(&self.g, gmail::NewDraft { to: s("to"), cc: s("cc"), subject: s("subject"), body: s("body"), reply_to: Some(s("reply_to")) })
-            .await
-            .map_err(failed)?;
+        let attachments = read_attachments(&self.g, &attach_list(i))?;
+        let d = gmail::draft(
+            &self.g,
+            gmail::NewDraft { to: s("to"), cc: s("cc"), subject: s("subject"), body: s("body"), reply_to: Some(s("reply_to")), attachments },
+        )
+        .await
+        .map_err(failed)?;
+        let files = if d.attachments.is_empty() { String::new() } else { format!(" Attached: {}.", d.attachments.join(", ")) };
         out(
-            format!("Draft saved (id {}). To: {}. Subject: {}. Not sent — send it with gmail_send if the user wants.", d.id, d.to, d.subject),
+            format!("Draft saved (id {}). To: {}. Subject: {}.{files} Not sent — send it with gmail_send if the user wants.", d.id, d.to, d.subject),
             format!("Draft to {}", clip(&d.to, 40)),
         )
     }
@@ -202,6 +247,9 @@ impl Tool for GmailSendTool {
     }
     fn describe(&self, i: &Value) -> String {
         match gmail::known_draft(i["draft_id"].as_str().unwrap_or_default()) {
+            Some(d) if !d.attachments.is_empty() => {
+                format!("Send email to {} — \"{}\" (attached: {}): {}", d.to, d.subject, d.attachments.join(", "), clip(&d.body, 300))
+            }
             Some(d) => format!("Send email to {} — \"{}\": {}", d.to, d.subject, clip(&d.body, 300)),
             None => "Send a Gmail draft".into(),
         }
@@ -459,4 +507,30 @@ pub fn all(g: &Arc<Google>) -> Vec<Arc<dyn Tool>> {
         Arc::new(CalendarUpdateTool::new(g.clone())),
         Arc::new(CalendarDeleteTool::new(g.clone())),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+
+    #[test]
+    fn attachments_come_only_from_shared_folders() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let g = crate::google::tests::google("http://127.0.0.1:9", db.clone());
+        let shared = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(shared.path().join("resume.pdf"), b"%PDF").unwrap();
+        std::fs::write(shared.path().join(".env"), b"KEY=1").unwrap();
+        std::fs::write(other.path().join("private.pdf"), b"%PDF").unwrap();
+        let p = |d: &tempfile::TempDir, n: &str| d.path().join(n).to_string_lossy().into_owned();
+
+        assert!(read_attachments(&g, &[p(&shared, "resume.pdf")]).unwrap_err().message.contains("No folders are shared"));
+        crate::files::add(&db.conn().unwrap(), &shared.path().to_string_lossy(), false).unwrap();
+        let a = read_attachments(&g, &[p(&shared, "resume.pdf")]).unwrap();
+        assert_eq!((a[0].name.as_str(), a[0].mime.as_str(), a[0].bytes.as_slice()), ("resume.pdf", "application/pdf", &b"%PDF"[..]));
+        assert!(read_attachments(&g, &[p(&shared, ".env")]).unwrap_err().message.contains("credentials or key file"));
+        assert!(read_attachments(&g, &[p(&other, "private.pdf")]).is_err(), "outside the shared folders");
+        assert!(read_attachments(&g, &[p(&shared, "missing.pdf")]).is_err());
+    }
 }

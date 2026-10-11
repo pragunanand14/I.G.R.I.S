@@ -1,10 +1,18 @@
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { AppWindow, FolderOpen, Play, Plus, ScanSearch, Trash2 } from "lucide-react";
+import {
+  AppWindow,
+  FolderOpen,
+  Play,
+  Plus,
+  ScanSearch,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
 import { SharedFolders } from "@/components/tools/SharedFolders";
+import { TidyDownloads } from "@/components/tools/TidyDownloads";
 import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { isMobilePlatform } from "@/services/platform";
@@ -27,8 +35,12 @@ export function ToolsPage() {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
 
-  const report = (err: unknown) => setNotice({ ok: false, text: BackendError.from(err).message });
-  const onFolderNotice = useCallback((n: { ok: boolean; text: string }) => setNotice(n), []);
+  const report = (err: unknown) =>
+    setNotice({ ok: false, text: BackendError.from(err).message });
+  const onFolderNotice = useCallback(
+    (n: { ok: boolean; text: string }) => setNotice(n),
+    [],
+  );
 
   useEffect(() => {
     if (backend !== "ready") return;
@@ -39,7 +51,11 @@ export function ToolsPage() {
         setTools(t);
         setApps(a);
       })
-      .catch((err) => live && setNotice({ ok: false, text: BackendError.from(err).message }));
+      .catch(
+        (err) =>
+          live &&
+          setNotice({ ok: false, text: BackendError.from(err).message }),
+      );
     return () => {
       live = false;
     };
@@ -48,9 +64,14 @@ export function ToolsPage() {
   const add = async (n: string, p: string) => {
     try {
       const entry = await api.addApplication(n, p);
-      setApps((list) => [...list, entry].sort((x, y) => x.name.localeCompare(y.name)));
+      setApps((list) =>
+        [...list, entry].sort((x, y) => x.name.localeCompare(y.name)),
+      );
       setCandidates((c) => c?.filter((x) => x.path !== p) ?? null);
-      setNotice({ ok: true, text: `${entry.name} added. IGRIS can now open it.` });
+      setNotice({
+        ok: true,
+        text: `${entry.name} added. IGRIS can now open it.`,
+      });
       return true;
     } catch (err) {
       report(err);
@@ -71,15 +92,28 @@ export function ToolsPage() {
         // Duplicates or vanished files are skipped.
       }
     }
-    setApps((cur) => [...cur, ...fresh].sort((x, y) => x.name.localeCompare(y.name)));
+    setApps((cur) =>
+      [...cur, ...fresh].sort((x, y) => x.name.localeCompare(y.name)),
+    );
     setCandidates([]);
-    setNotice({ ok: true, text: `Added ${added} app${added === 1 ? "" : "s"}. IGRIS can now open them by name.` });
+    setNotice({
+      ok: true,
+      text: `Added ${added} app${added === 1 ? "" : "s"}. IGRIS can now open them by name.`,
+    });
   };
 
   const browse = async () => {
     try {
-      const filters = platform === "windows" ? [{ name: "Applications", extensions: ["exe"] }] : undefined;
-      const picked = await openFileDialog({ multiple: false, directory: false, filters, title: "Choose an application" });
+      const filters =
+        platform === "windows"
+          ? [{ name: "Applications", extensions: ["exe"] }]
+          : undefined;
+      const picked = await openFileDialog({
+        multiple: false,
+        directory: false,
+        filters,
+        title: "Choose an application",
+      });
       if (typeof picked === "string") {
         setPath(picked);
         if (!name.trim()) {
@@ -120,7 +154,10 @@ export function ToolsPage() {
     try {
       await api.removeApplication(a.id);
       setApps((list) => list.filter((x) => x.id !== a.id));
-      setNotice({ ok: true, text: `${a.name} removed. IGRIS can no longer open it.` });
+      setNotice({
+        ok: true,
+        text: `${a.name} removed. IGRIS can no longer open it.`,
+      });
     } catch (err) {
       report(err);
     } finally {
@@ -132,7 +169,9 @@ export function ToolsPage() {
     return (
       <div className="mx-auto max-w-3xl px-8 pt-8">
         <PageHeader title="Tools" />
-        <p className="text-sm text-danger">Tools require the IGRIS desktop backend.</p>
+        <p className="text-sm text-danger">
+          Tools require the IGRIS desktop backend.
+        </p>
       </div>
     );
   }
@@ -145,7 +184,10 @@ export function ToolsPage() {
       />
 
       {notice && (
-        <p role="status" className={`mb-4 rounded-lg border px-3 py-2 text-xs ${notice.ok ? "border-success/30 bg-success/10 text-success" : "border-danger/30 bg-danger/10 text-danger"}`}>
+        <p
+          role="status"
+          className={`mb-4 rounded-lg border px-3 py-2 text-xs ${notice.ok ? "border-success/30 bg-success/10 text-success" : "border-danger/30 bg-danger/10 text-danger"}`}
+        >
           {notice.text}
         </p>
       )}
@@ -154,19 +196,29 @@ export function ToolsPage() {
         <Panel title={`Available tools (${tools.length})`}>
           <ul className="divide-y divide-line">
             {tools.map((t) => (
-              <li key={t.name} className="flex items-start gap-4 py-3 first:pt-0 last:pb-0">
+              <li
+                key={t.name}
+                className="flex items-start gap-4 py-3 first:pt-0 last:pb-0"
+              >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-fg">{t.title}</span>
-                    <code className="font-mono text-[10px] text-faint">{t.name}</code>
+                    <code className="font-mono text-[10px] text-faint">
+                      {t.name}
+                    </code>
                   </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs text-muted" title={t.description}>
+                  <p
+                    className="mt-0.5 line-clamp-2 text-xs text-muted"
+                    title={t.description}
+                  >
                     {t.description}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <PermissionBadge level={t.permission} />
-                  <span className="text-[10px] text-faint">{t.requiresApproval ? "Asks first" : "Runs automatically"}</span>
+                  <span className="text-[10px] text-faint">
+                    {t.requiresApproval ? "Asks first" : "Runs automatically"}
+                  </span>
                 </div>
               </li>
             ))}
@@ -177,6 +229,7 @@ export function ToolsPage() {
         {!mobile && (
           <>
             <SharedFolders onNotice={onFolderNotice} />
+            {backend === "ready" && <TidyDownloads />}
 
             <Panel
               title="Applications IGRIS may open"
@@ -193,7 +246,8 @@ export function ToolsPage() {
               }
             >
               <p className="mb-3 text-xs text-muted">
-                IGRIS can only open applications on this list, by name. It never receives paths, arguments or a command line.
+                IGRIS can only open applications on this list, by name. It never
+                receives paths, arguments or a command line.
               </p>
 
               {candidates && (
@@ -201,13 +255,20 @@ export function ToolsPage() {
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-label">Found on this computer</p>
                     {candidates.length > 1 && (
-                      <button type="button" onClick={() => void addAll()} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10">
+                      <button
+                        type="button"
+                        onClick={() => void addAll()}
+                        className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10"
+                      >
                         Add all ({candidates.length})
                       </button>
                     )}
                   </div>
                   {candidates.length === 0 ? (
-                    <p className="text-xs text-faint">No additional well-known apps found. Add one manually below.</p>
+                    <p className="text-xs text-faint">
+                      No additional well-known apps found. Add one manually
+                      below.
+                    </p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {candidates.map((c) => (
@@ -235,7 +296,11 @@ export function ToolsPage() {
                       <AppWindow className="size-4 shrink-0 text-muted" />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm text-fg">{a.name}</div>
-                        <div className="truncate font-mono text-[10px] text-faint" title={a.path} data-selectable>
+                        <div
+                          className="truncate font-mono text-[10px] text-faint"
+                          title={a.path}
+                          data-selectable
+                        >
                           {a.path}
                         </div>
                       </div>
@@ -245,14 +310,25 @@ export function ToolsPage() {
                         disabled={busyId === a.id}
                         className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-fg disabled:opacity-40"
                       >
-                        <Play className="size-3" /> {busyId === a.id ? "Opening…" : "Open"}
+                        <Play className="size-3" />{" "}
+                        {busyId === a.id ? "Opening…" : "Open"}
                       </button>
                       {confirmRemove === a.id ? (
-                        <button type="button" onClick={() => void remove(a)} onMouseLeave={() => setConfirmRemove(null)} className="rounded-md px-2 py-1 text-xs font-medium text-danger hover:bg-danger/10">
+                        <button
+                          type="button"
+                          onClick={() => void remove(a)}
+                          onMouseLeave={() => setConfirmRemove(null)}
+                          className="rounded-md px-2 py-1 text-xs font-medium text-danger hover:bg-danger/10"
+                        >
                           Remove?
                         </button>
                       ) : (
-                        <button type="button" aria-label={`Remove ${a.name}`} onClick={() => setConfirmRemove(a.id)} className="rounded-md p-1.5 text-faint hover:text-danger">
+                        <button
+                          type="button"
+                          aria-label={`Remove ${a.name}`}
+                          onClick={() => setConfirmRemove(a.id)}
+                          className="rounded-md p-1.5 text-faint hover:text-danger"
+                        >
                           <Trash2 className="size-3.5" />
                         </button>
                       )}
@@ -288,15 +364,27 @@ export function ToolsPage() {
                       value={path}
                       onChange={(e) => setPath(e.target.value)}
                       spellCheck={false}
-                      placeholder={platform === "windows" ? "C:\\Program Files\\App\\app.exe" : "/usr/bin/app"}
+                      placeholder={
+                        platform === "windows"
+                          ? "C:\\Program Files\\App\\app.exe"
+                          : "/usr/bin/app"
+                      }
                       className="h-8 min-w-0 flex-1 rounded-xl bg-surface-strong px-2.5 font-mono text-xs text-fg placeholder:text-faint transition-shadow duration-200 focus:ring-2 focus:ring-accent/50 focus:outline-none"
                     />
-                    <button type="button" onClick={() => void browse()} className="flex h-8 items-center gap-1.5 rounded-full bg-surface-strong px-3 text-xs font-medium text-muted hover:bg-surface-hover hover:text-fg">
+                    <button
+                      type="button"
+                      onClick={() => void browse()}
+                      className="flex h-8 items-center gap-1.5 rounded-full bg-surface-strong px-3 text-xs font-medium text-muted hover:bg-surface-hover hover:text-fg"
+                    >
                       <FolderOpen className="size-3.5" /> Browse…
                     </button>
                   </div>
                 </label>
-                <button type="submit" disabled={!name.trim() || !path.trim()} className="h-8 rounded-lg bg-accent px-3 text-xs font-semibold text-bg disabled:opacity-40">
+                <button
+                  type="submit"
+                  disabled={!name.trim() || !path.trim()}
+                  className="h-8 rounded-lg bg-accent px-3 text-xs font-semibold text-bg disabled:opacity-40"
+                >
                   Add
                 </button>
               </form>

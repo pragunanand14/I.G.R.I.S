@@ -86,6 +86,7 @@ pub fn registry(d: Deps) -> ToolRegistry {
     for t in igris_core::tools::life::all(&db, &google, None) {
         tools.register(t);
     }
+    tools.register(Arc::new(igris_core::tools::tidy::TidyDownloadsTool::new(db.clone(), crate::commands::tidy::downloads_dir())));
     for t in igris_core::tools::google::all(&google) {
         tools.register(t);
     }

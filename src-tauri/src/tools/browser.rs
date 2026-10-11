@@ -292,6 +292,10 @@ impl Tool for BrowserTypeTool {
     async fn execute(&self, i: &Value) -> ToolResultT {
         let r = reference(i)?;
         let text = i["text"].as_str().unwrap_or_default();
+        let label = self.b.element(r).map(|e| e.name).unwrap_or_default();
+        if let Some(why) = crate::memory::sensitive::refuse_typing(&label, text) {
+            return Err(ToolError::refused(why));
+        }
         self.b.ready("Typing on the page").await?;
         let (name, value) = self.b.browser.type_text(r, text, i["clear"].as_bool() == Some(true)).await.map_err(browser_failed)?;
         self.b.done("Typing on the page")?;

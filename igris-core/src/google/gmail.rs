@@ -49,6 +49,56 @@ pub struct Draft {
     pub cc: String,
     pub subject: String,
     pub body: String,
+    /// File names attached.
+    pub attachments: Vec<String>,
+}
+
+/// A file to attach to a draft.
+#[derive(Debug, Clone)]
+pub struct FileAttachment {
+    pub name: String,
+    pub mime: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Attachments are sent inside the draft request, which Gmail limits; bigger
+/// files are better shared as a Drive link.
+pub const MAX_ATTACH_BYTES: usize = 5 * 1024 * 1024;
+
+/// The MIME type for a file name (common types; anything else is binary).
+pub fn mime_for(name: &str) -> &'static str {
+    match name.rsplit('.').next().unwrap_or_default().to_lowercase().as_str() {
+        "pdf" => "application/pdf",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "txt" | "md" => "text/plain",
+        "csv" => "text/csv",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
+}
+
+/// A file name safe inside a MIME header.
+fn header_filename(name: &str) -> String {
+    let clean: String = name.chars().filter(|c| !c.is_control() && *c != '"' && *c != '\\').collect();
+    if clean.is_ascii() {
+        clean
+    } else {
+        encode_subject(&clean)
+    }
+}
+
+fn wrapped_b64(bytes: &[u8]) -> String {
+    let b = base64::engine::general_purpose::STANDARD.encode(bytes);
+    b.as_bytes().chunks(76).map(|c| std::str::from_utf8(c).unwrap_or_default()).collect::<Vec<_>>().join("\r\n")
 }
 
 fn drafts() -> &'static Mutex<HashMap<String, Draft>> {
@@ -166,6 +216,7 @@ pub struct NewDraft<'a> {
     pub body: &'a str,
     /// Reply to this message (same thread, quoted headers).
     pub reply_to: Option<&'a str>,
+    pub attachments: Vec<FileAttachment>,
 }
 
 /// Make a draft in the user's Gmail (nothing is sent).
@@ -195,18 +246,35 @@ pub async fn draft(g: &Google, d: NewDraft<'_>) -> AppResult<Draft> {
         return Err(AppError::validation("Say who the email is to."));
     }
     let cc_line = if cc.is_empty() { String::new() } else { format!("Cc: {cc}\r\n") };
-    let body64 = base64::engine::general_purpose::STANDARD.encode(d.body.replace("\r\n", "\n").replace('\n', "\r\n"));
-    let raw = format!(
-        "To: {to}\r\n{cc_line}Subject: {}\r\n{extra}MIME-Version: 1.0\r\nContent-Type: text/plain; charset=\"UTF-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{body64}",
-        encode_subject(&subject)
-    );
+    if d.attachments.iter().map(|a| a.bytes.len()).sum::<usize>() > MAX_ATTACH_BYTES {
+        return Err(AppError::validation("The attachments are over 5 MB together. Share big files as a Google Drive link instead."));
+    }
+    let body64 = wrapped_b64(d.body.replace("\r\n", "\n").replace('\n', "\r\n").as_bytes());
+    let text_part = format!("Content-Type: text/plain; charset=\"UTF-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{body64}");
+    let content = if d.attachments.is_empty() {
+        text_part
+    } else {
+        let b = format!("igris-{}", uuid::Uuid::new_v4().simple());
+        let mut m = format!("Content-Type: multipart/mixed; boundary=\"{b}\"\r\n\r\n--{b}\r\n{text_part}\r\n");
+        for a in &d.attachments {
+            let n = header_filename(&a.name);
+            m.push_str(&format!(
+                "--{b}\r\nContent-Type: {}; name=\"{n}\"\r\nContent-Disposition: attachment; filename=\"{n}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n",
+                a.mime,
+                wrapped_b64(&a.bytes)
+            ));
+        }
+        m.push_str(&format!("--{b}--"));
+        m
+    };
+    let raw = format!("To: {to}\r\n{cc_line}Subject: {}\r\n{extra}MIME-Version: 1.0\r\n{content}", encode_subject(&subject));
     let mut message = json!({ "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw) });
     if let Some(t) = thread {
         message["threadId"] = json!(t);
     }
     let v = g.post_json(&format!("{}/drafts", g.ep.gmail), &[], &json!({ "message": message })).await?;
     let id = v["id"].as_str().ok_or_else(|| AppError::internal("Gmail didn't return the draft"))?.to_string();
-    let draft = Draft { id: id.clone(), to, cc, subject, body: d.body.to_string() };
+    let draft = Draft { id: id.clone(), to, cc, subject, body: d.body.to_string(), attachments: d.attachments.iter().map(|a| a.name.clone()).collect() };
     if let Ok(mut m) = drafts().lock() {
         m.insert(id, draft.clone());
     }

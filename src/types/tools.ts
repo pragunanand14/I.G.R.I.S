@@ -1,7 +1,14 @@
 // Mirrors `src-tauri/src/tools`. Keep in sync.
 export type PermissionLevel = "safe" | "low" | "sensitive" | "critical";
 
-export type ActivityStatus = "running" | "awaitingApproval" | "completed" | "failed" | "denied" | "invalid" | "cancelled";
+export type ActivityStatus =
+  | "running"
+  | "awaitingApproval"
+  | "completed"
+  | "failed"
+  | "denied"
+  | "invalid"
+  | "cancelled";
 
 export interface ToolActivity {
   id: string;
@@ -72,9 +79,28 @@ export interface PermissionRule {
   configurable: boolean;
 }
 
-export const PERMISSION_INFO: Record<PermissionLevel, { label: string; summary: string }> = {
+export const PERMISSION_INFO: Record<
+  PermissionLevel,
+  { label: string; summary: string }
+> = {
   safe: { label: "Safe", summary: "Read-only. Runs without asking." },
-  low: { label: "Low", summary: "Contained local changes, like opening an allowed app." },
+  low: {
+    label: "Low",
+    summary: "Contained local changes, like opening an allowed app.",
+  },
   sensitive: { label: "Sensitive", summary: "Always asks for confirmation." },
-  critical: { label: "Critical", summary: "Always requires explicit confirmation. Never automatic." },
+  critical: {
+    label: "Critical",
+    summary: "Always requires explicit confirmation. Never automatic.",
+  },
 };
+
+export interface TidyStatus {
+  /** The Downloads folder; null when this device has none. */
+  dir: string | null;
+  auto: boolean;
+  /** What tidying now would move ("3 files: 2 Documents, 1 Images"). */
+  pending: string | null;
+  /** Files the last tidy moved (undo puts them back). */
+  last: number;
+}

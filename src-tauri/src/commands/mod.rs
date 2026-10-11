@@ -20,6 +20,7 @@ pub mod productivity;
 pub mod routines;
 pub mod settings;
 pub mod system;
+pub mod tidy;
 pub mod tools;
 pub mod voice;
 pub mod widgets;

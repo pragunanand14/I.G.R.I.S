@@ -84,6 +84,34 @@ fn contains_card_number(text: &str) -> bool {
     })
 }
 
+/// A payment card number (Luhn-valid) in `text`.
+pub fn card_number(text: &str) -> bool {
+    contains_card_number(text)
+}
+
+/// A form field the user fills in themselves: passwords, PINs, card numbers,
+/// CVV, one-time codes. IGRIS never types into these.
+pub fn secret_field(label: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"(?i)\b(password|passcode|passwd|pin|upi pin|mpin|cvv|cvc|csc|security code|card number|card no|otp|one[- ]time|verification code)\b")
+            .expect("valid regex")
+    })
+    // "PIN code" on Indian forms is the postal code.
+    .is_match(&label.to_lowercase().replace("pin code", "postcode").replace("pin-code", "postcode"))
+}
+
+/// Why IGRIS won't type `text` into a field labelled `label`, if it won't.
+pub fn refuse_typing(label: &str, text: &str) -> Option<&'static str> {
+    if secret_field(label) {
+        Some("That field is for a password, PIN, card detail or one-time code. Ask the user to type it themselves — IGRIS never does.")
+    } else if contains_card_number(text) {
+        Some("That looks like a card number. Ask the user to type card details themselves — IGRIS never does.")
+    } else {
+        None
+    }
+}
+
 pub fn detect(text: &str) -> Option<SensitiveKind> {
     if contains_card_number(text) {
         return Some(SensitiveKind::PaymentCard);
@@ -130,5 +158,17 @@ mod tests {
         ] {
             assert_eq!(detect(text), None, "{text}");
         }
+    }
+
+    #[test]
+    fn never_types_secrets() {
+        assert!(refuse_typing("Card number", "4111").is_some());
+        assert!(refuse_typing("CVV", "123").is_some());
+        assert!(refuse_typing("Enter OTP", "123456").is_some());
+        assert!(refuse_typing("Name on card", "4111 1111 1111 1111").is_some());
+        assert!(refuse_typing("Full name", "Ada Lovelace").is_none());
+        assert!(refuse_typing("Pincode", "400001").is_none(), "a postal PIN code is fine");
+        assert!(refuse_typing("PIN code", "400001").is_none());
+        assert!(refuse_typing("Enter UPI PIN", "1234").is_some());
     }
 }

@@ -43,6 +43,7 @@ import type {
   AppEntry,
   AuditEntry,
   PermissionRule,
+  TidyStatus,
   ToolActivity,
   ToolInfo,
 } from "@/types/tools";
@@ -103,6 +104,11 @@ export const api = {
   briefingToday: () => call<RoutineRun | null>("briefing_today"),
   weatherHome: () => call<Place | null>("weather_home"),
   weatherSetHome: (query: string) => call<Place>("weather_set_home", { query }),
+  tidyStatus: () => call<TidyStatus>("tidy_status"),
+  tidyNow: () =>
+    call<{ moved: number; summary: string; errors: string[] }>("tidy_now"),
+  tidyUndo: () => call<number>("tidy_undo"),
+  tidySetAuto: (on: boolean) => call<void>("tidy_set_auto", { on }),
   peopleList: () => call<PeopleView>("people_list"),
   personSave: (p: {
     name: string;

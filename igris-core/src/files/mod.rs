@@ -6,6 +6,8 @@
 //! allowed folder are rejected. Writes additionally require the folder to be
 //! marked writable. Known secret files are never readable.
 
+pub mod tidy;
+
 use std::path::{Component, Path, PathBuf};
 
 use rusqlite::{params, Connection, Row};

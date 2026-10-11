@@ -753,6 +753,9 @@ impl Tool for ComputerTypeTool {
 }
 
 async fn type_text(op: &Arc<Operator>, i: &Value) -> ToolResultT {
+    if let Some(why) = crate::memory::sensitive::refuse_typing("", i["text"].as_str().unwrap_or_default()) {
+        return Err(ToolError::refused(why));
+    }
     let text = i["text"].as_str().unwrap_or_default().to_string();
     let wants_target = i["element"].as_i64().unwrap_or(-1) >= 0 || i["x"].as_i64().unwrap_or(-1) >= 0;
     let (mut fg, obs) = preflight(op, wants_target).await?;

@@ -453,6 +453,12 @@ impl Tool for PhoneTypeTool {
             if t.label.contains("password field") {
                 return Err(ToolError::refused("That's a password field. Ask the user to type it themselves."));
             }
+            if let Some(why) = crate::memory::sensitive::refuse_typing(&t.label, "") {
+                return Err(ToolError::refused(why));
+            }
+        }
+        if let Some(why) = crate::memory::sensitive::refuse_typing("", i["text"].as_str().unwrap_or_default()) {
+            return Err(ToolError::refused(why));
         }
         let text = i["text"].as_str().unwrap_or_default().to_string();
         let enter = i["enter"].as_bool().unwrap_or(false);

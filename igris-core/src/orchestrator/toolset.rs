@@ -91,7 +91,7 @@ pub fn capability(name: &str) -> Option<Capability> {
         | "list_events" | "delete_event" => Productivity,
         "list_projects" | "get_project_context" => Projects,
         "list_directory" | "search_files" | "read_file" => FilesRead,
-        "create_file" | "create_folder" | "write_file" | "move_path" | "copy_path" | "trash_path" => FileChanges,
+        "create_file" | "create_folder" | "write_file" | "move_path" | "copy_path" | "trash_path" | "tidy_downloads" => FileChanges,
         "launch_application" | "close_application" | "open_url" | "open_path" | "open_phone_app" => Apps,
         "run_command" => Terminal,
         "take_screenshot" | "read_phone_screen" => Screen,
@@ -165,6 +165,10 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
         &[
             "file",
             "folder",
+            "downloads",
+            "tidy",
+            "organise",
+            "organize",
             "director",
             "document",
             "doc",
@@ -285,7 +289,7 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
             "afford",
         ],
     ),
-    (Capability::Email, &["email", "emails", "mail", "inbox", "gmail", "reply", "replied", "unread", "sender", "newsletter", "draft", "forward"]),
+    (Capability::Email, &["email", "emails", "mail", "inbox", "gmail", "reply", "replied", "unread", "sender", "newsletter", "draft", "forward", "attach"]),
     (
         Capability::Media,
         &[
@@ -591,6 +595,7 @@ mod tests {
             include_str!("../tools/routines.rs"),
             include_str!("../tools/screen.rs"),
             include_str!("../tools/task.rs"),
+            include_str!("../tools/tidy.rs"),
             include_str!("../tools/weather.rs"),
             include_str!("../tools/web.rs"),
         ];

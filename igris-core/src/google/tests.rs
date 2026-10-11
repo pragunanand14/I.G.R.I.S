@@ -158,15 +158,27 @@ async fn connect_read_draft_send_and_disconnect() {
     let m = gmail::read(&g, "m1").await.unwrap();
     assert!(m.body.contains("Can we meet at 5?"));
 
-    let d = gmail::draft(&g, gmail::NewDraft { to: "", cc: "", subject: "", body: "Yes, 5 works.", reply_to: Some("m1") }).await.unwrap();
+    let d = gmail::draft(&g, gmail::NewDraft { to: "", cc: "", subject: "", body: "Yes, 5 works.", reply_to: Some("m1"), attachments: vec![] }).await.unwrap();
     assert_eq!((d.to.as_str(), d.subject.as_str()), ("Rahul <rahul@example.com>", "Re: Meeting"));
     assert_eq!(gmail::known_draft("d1").unwrap().body, "Yes, 5 works.");
     let raw_req = seen.lock().unwrap().requests.iter().find(|r| r.1 == "/gmail/drafts").unwrap().2.clone();
     let raw = serde_json::from_str::<Value>(&raw_req).unwrap()["message"]["raw"].as_str().unwrap().to_string();
     let mime = String::from_utf8(base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(raw).unwrap()).unwrap();
     assert!(mime.contains("In-Reply-To: <abc@mail>") && mime.contains("Subject: Re: Meeting"));
+    let pdf = gmail::FileAttachment { name: "Résumé.pdf".into(), mime: gmail::mime_for("Résumé.pdf").into(), bytes: b"%PDF-1.4 hello".to_vec() };
+    let d = gmail::draft(&g, gmail::NewDraft { to: "hr@example.com", cc: "", subject: "CV", body: "Attached.", reply_to: None, attachments: vec![pdf] })
+        .await
+        .unwrap();
+    assert_eq!(d.attachments, ["Résumé.pdf"]);
+    let raw_req = seen.lock().unwrap().requests.iter().rev().find(|r| r.1 == "/gmail/drafts").unwrap().2.clone();
+    let raw = serde_json::from_str::<Value>(&raw_req).unwrap()["message"]["raw"].as_str().unwrap().to_string();
+    let mime = String::from_utf8(base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(raw).unwrap()).unwrap();
+    assert!(mime.contains("multipart/mixed") && mime.contains("Content-Type: application/pdf") && mime.contains("filename=\"=?UTF-8?B?"), "{mime}");
+    assert!(mime.contains(&base64::engine::general_purpose::STANDARD.encode(b"%PDF-1.4 hello")));
+    let big = gmail::FileAttachment { name: "big.bin".into(), mime: "application/octet-stream".into(), bytes: vec![0; gmail::MAX_ATTACH_BYTES + 1] };
+    assert!(gmail::draft(&g, gmail::NewDraft { to: "a@b.c", cc: "", subject: "x", body: "x", reply_to: None, attachments: vec![big] }).await.is_err());
     assert!(
-        gmail::draft(&g, gmail::NewDraft { to: "a@b.c\r\nBcc: evil@x", cc: "", subject: "x", body: "", reply_to: None }).await.is_err(),
+        gmail::draft(&g, gmail::NewDraft { to: "a@b.c\r\nBcc: evil@x", cc: "", subject: "x", body: "", reply_to: None, attachments: vec![] }).await.is_err(),
         "no header injection"
     );
     assert_eq!(gmail::send_draft(&g, "d1").await.unwrap(), "sent1");
