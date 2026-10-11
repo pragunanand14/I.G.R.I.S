@@ -338,9 +338,12 @@ async fn an_offline_pc_gets_the_task_when_it_comes_back() {
     connected(&mut pc, &url).await;
     connected(&mut phone, &url).await;
     pair(&mut pc, &mut phone).await;
+    // Seen online first, so "offline" below means the relay has dropped it
+    // (not that the phone hasn't heard about it yet).
+    let (b, pc_id) = (phone.hub.clone(), pc.id.clone());
+    until("PC online", || b.is_online(&pc_id)).await;
 
     pc.hub.shutdown();
-    let (b, pc_id) = (phone.hub.clone(), pc.id.clone());
     until("PC offline", || !b.is_online(&pc_id)).await;
     let rid = phone.hub.send_task(&pc.id, "what time is it there").unwrap().task.request_id;
     let p = phone.hub.clone();
