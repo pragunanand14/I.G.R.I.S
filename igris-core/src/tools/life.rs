@@ -79,14 +79,14 @@ impl SavePersonTool {
                 "Remember a person",
                 "Remember someone in the user's life, or update what's known (only the fields given change): relation to the user \
 (\"mom\", \"manager\", \"best friend\"), birthday (\"MM-DD\" or \"YYYY-MM-DD\"), notes (likes, dislikes, kids' names, gift ideas \
-— short). Use it when the user tells you about someone. Never store passwords or ID numbers.",
+— short). \"\" leaves a field as it is. Use it when the user tells you about someone. Never store passwords or ID numbers.",
                 json!({
                     "name": { "type": "string", "minLength": 1, "maxLength": 60 },
                     "relation": { "type": "string", "maxLength": 60 },
                     "birthday": { "type": "string", "maxLength": 10 },
                     "notes": { "type": "string", "maxLength": 500 }
                 }),
-                &["name"],
+                &["name", "relation", "birthday", "notes"],
                 PermissionLevel::Low,
             ),
             db,
@@ -103,7 +103,9 @@ impl Tool for SavePersonTool {
         format!("Remember {}", text(i, "name").unwrap_or_default())
     }
     async fn execute(&self, i: &Value) -> ToolResultT {
-        let c = Change { relation: text(i, "relation"), birthday: text(i, "birthday"), notes: text(i, "notes") };
+        // "" (or missing) keeps what's known.
+        let given = |k: &str| text(i, k).filter(|v| !v.trim().is_empty());
+        let c = Change { relation: given("relation"), birthday: given("birthday"), notes: given("notes") };
         let p = people::save(&*self.db.conn().map_err(invalid)?, text(i, "name").unwrap_or_default(), c).map_err(invalid)?;
         out(format!("Saved: {}", person_line(&p)), format!("Remembered {}", p.name))
     }
@@ -221,7 +223,7 @@ Health, Transfers, Other (\"\" to guess). date: YYYY-MM-DD, \"\" for today.",
                     "category": { "type": "string", "maxLength": 20 },
                     "date": { "type": "string", "maxLength": 10 }
                 }),
-                &["amount", "what"],
+                &["amount", "currency", "what", "category", "date"],
                 PermissionLevel::Low,
             ),
             db,
@@ -282,7 +284,7 @@ one, \"\" for all. Covers what was found in payment messages/emails (scan_expens
                     "period": { "type": "string", "enum": PERIODS },
                     "category": { "type": "string", "maxLength": 20 }
                 }),
-                &["period"],
+                &["period", "category"],
                 PermissionLevel::Safe,
             ),
             db,
@@ -393,13 +395,13 @@ impl ChangeExpenseTool {
                 "change_expense",
                 "Change an expense",
                 "Fix an expense by id (from spending): action \"category\" with a new category, or \"delete\" (e.g. it wasn't a real \
-expense, like moving money to your own account).",
+expense, like moving money to your own account). category: \"\" when deleting.",
                 json!({
                     "id": { "type": "integer", "minimum": 1 },
                     "action": { "type": "string", "enum": ["category", "delete"] },
                     "category": { "type": "string", "maxLength": 20 }
                 }),
-                &["id", "action"],
+                &["id", "action", "category"],
                 PermissionLevel::Low,
             ),
             db,
@@ -459,11 +461,18 @@ mod tests {
                 Found { id: None, text: "Mom: Dinner at 8?".into(), date: Local::now().date_naive() },
             ])
         });
-        let [save, find, forget, log, spending, scan, change]: [Arc<dyn Tool>; 7] = all(&db, &google, Some(feed)).try_into().ok().unwrap();
+        let tools = all(&db, &google, Some(feed));
+        // As the app does at startup: every schema must be strict-compatible.
+        let mut registry = crate::tools::ToolRegistry::default();
+        for t in &tools {
+            registry.register(t.clone());
+        }
+        let [save, find, forget, log, spending, scan, change]: [Arc<dyn Tool>; 7] = tools.try_into().ok().unwrap();
 
         save.execute(&json!({"name": "Mom", "relation": "mother", "birthday": "03-04", "notes": "loves orchids"})).await.unwrap();
+        save.execute(&json!({"name": "Mom", "relation": "", "birthday": "", "notes": ""})).await.unwrap();
         assert!(find.execute(&json!({"query": "my mother"})).await.unwrap().content.contains("Mom (mother) — birthday 03-04 — loves orchids"));
-        assert!(save.execute(&json!({"name": "Dad", "birthday": "yesterday"})).await.is_err());
+        assert!(save.execute(&json!({"name": "Dad", "relation": "", "birthday": "yesterday", "notes": ""})).await.is_err());
         forget.execute(&json!({"name": "mom"})).await.unwrap();
         assert!(find.execute(&json!({"query": ""})).await.unwrap().content.starts_with("Nobody"));
 
@@ -474,7 +483,7 @@ mod tests {
         let sp = spending.execute(&json!({"period": "today", "category": ""})).await.unwrap().content;
         assert!(sp.contains("Total ₹349.50: Food ₹349.50 (2)"), "{sp}");
         change.execute(&json!({"id": 1, "action": "category", "category": "Other"})).await.unwrap();
-        change.execute(&json!({"id": 2, "action": "delete"})).await.unwrap();
+        change.execute(&json!({"id": 2, "action": "delete", "category": ""})).await.unwrap();
         assert!(spending.execute(&json!({"period": "today", "category": "food"})).await.unwrap().content.starts_with("No spending"));
         assert_eq!(spending.spec().permission, PermissionLevel::Safe);
     }

@@ -112,6 +112,7 @@ mod tests {
         std::fs::File::options().write(true).open(d.path().join("a.pdf")).unwrap().set_modified(old).unwrap();
         let db = Arc::new(Database::open_in_memory().unwrap());
         let t = TidyDownloadsTool::new(db, Some(d.path().to_path_buf()));
+        crate::tools::ToolRegistry::default().register(Arc::new(TidyDownloadsTool::new(Arc::new(Database::open_in_memory().unwrap()), None)));
         assert_eq!(t.spec().permission, PermissionLevel::Sensitive);
         assert!(t.describe(&json!({"action": "tidy"})).contains("1 file: 1 Documents"));
         assert!(t.execute(&json!({"action": "preview"})).await.unwrap().content.contains("a.pdf → Documents"));
