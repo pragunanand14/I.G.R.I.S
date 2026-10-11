@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead};
+use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(_app: &AppHandle<R>, api: PluginApi<R, C>) -> std::result::Result<Device<R>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "android")]
@@ -247,6 +247,48 @@ impl<R: Runtime> Device<R> {
         }
         self.0.run_mobile_plugin::<R>("callNumber", MessageArgs { number: Some(number.into()), ..Default::default() }).map(|r| r.dialed).map_err(failed)
     }
+
+    /// Where the phone is now (Android asks for location the first time).
+    pub fn current_location(&self) -> Result<Location> {
+        self.0.run_mobile_plugin::<Location>("currentLocation", ()).map_err(failed)
+    }
+
+    /// Remind (a notification) when arriving at (`enter`) or leaving a place. One-shot.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_place_alert(&self, id: i32, latitude: f64, longitude: f64, radius: f32, enter: bool, title: &str, text: &str) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>(
+                "addPlaceAlert",
+                PlaceArgs { id, latitude, longitude, radius, enter, title: Some(title.into()), text: Some(text.into()) },
+            )
+            .map(|_| ())
+            .map_err(failed)
+    }
+
+    pub fn remove_place_alert(&self, id: i32) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("removePlaceAlert", PlaceArgs { id, ..Default::default() }).map(|_| ()).map_err(failed)
+    }
+
+    /// Whether that place alert has gone off.
+    pub fn place_alert_fired(&self, id: i32) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct R {
+            fired: bool,
+        }
+        self.0.run_mobile_plugin::<R>("placeAlertFired", PlaceArgs { id, ..Default::default() }).map(|r| r.fired).map_err(failed)
+    }
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PlaceArgs {
+    id: i32,
+    latitude: f64,
+    longitude: f64,
+    radius: f32,
+    enter: bool,
+    title: Option<String>,
+    text: Option<String>,
 }
 
 #[derive(Serialize, Default)]

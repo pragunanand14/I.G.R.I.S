@@ -31,6 +31,7 @@ pub mod net;
 pub mod operator;
 pub mod orchestrator;
 pub mod permissions;
+pub mod places;
 pub mod productivity;
 pub mod projects;
 pub mod routines;

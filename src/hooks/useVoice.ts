@@ -1,10 +1,18 @@
 import { listen } from "@tauri-apps/api/event";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { api } from "@/services/api";
 import { BackendError, hasBackend } from "@/services/backend";
+import { isMobilePlatform } from "@/services/platform";
 import { listenContinuously } from "@/services/voice/browserSpeech";
 import { WakeListener } from "@/services/voice/wakeListener";
-import { parseOperatorCommand, parseWakeCommand, parseWakeWord, parseYesNo } from "@/services/voice/wakeWord";
+import { useWakePrefs } from "@/services/voice/wakePrefs";
+import {
+  parseOperatorCommand,
+  parseWakeCommand,
+  parseWakeWord,
+  parseYesNo,
+} from "@/services/voice/wakeWord";
 import { useChatStore } from "@/stores/chatStore";
 import { useOperatorStore } from "@/stores/operatorStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -13,7 +21,12 @@ import type { ToolActivity } from "@/types/tools";
 
 /** Operator mode, or several tool calls: the turn is step-by-step work. */
 export function isStepwork(activities: ToolActivity[]): boolean {
-  return activities.length >= 3 || activities.some((a) => a.tool.startsWith("computer_") || a.tool.startsWith("operator_"));
+  return (
+    activities.length >= 3 ||
+    activities.some(
+      (a) => a.tool.startsWith("computer_") || a.tool.startsWith("operator_"),
+    )
+  );
 }
 
 /** The text written after the last tool call — the answer, not the commentary. */
@@ -26,7 +39,35 @@ export function finalAnswer(text: string, activities: ToolActivity[]): string {
 /** Connects voice to chat, the global hotkey, Esc, spoken replies and the wake word. */
 export function useVoice(enabled: boolean) {
   const navigate = useNavigate();
-  const wakeWord = useSettingsStore((s) => s.settings.wakeWordEnabled);
+  const wakeSetting = useSettingsStore((s) => s.settings.wakeWordEnabled);
+  const chargingOnly = useWakePrefs((s) => s.chargingOnly);
+  const [charging, setCharging] = useState(true);
+  const phone = isMobilePlatform();
+  // On the phone, optionally listen only while charging (checked every minute).
+  useEffect(() => {
+    if (!enabled || !phone || !chargingOnly || !wakeSetting) return;
+    let live = true;
+    const check = () =>
+      api
+        .getSystemSnapshot()
+        .then(
+          (s) =>
+            live &&
+            setCharging(
+              s.battery
+                ? s.battery.state === "charging" || s.battery.state === "full"
+                : true,
+            ),
+        )
+        .catch(() => undefined);
+    void check();
+    const t = setInterval(() => void check(), 60_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [enabled, phone, chargingOnly, wakeSetting]);
+  const wakeWord = wakeSetting && (!phone || !chargingOnly || charging);
   const phase = useVoiceStore((s) => s.phase);
 
   // Voice input goes through the same path as typed input.
@@ -54,9 +95,13 @@ export function useVoice(enabled: boolean) {
   useEffect(() => {
     if (!enabled || !hasBackend()) return;
     let unlisten: (() => void) | undefined;
-    void listen("voice-toggle", () => void useVoiceStore.getState().toggle()).then((u) => (unlisten = u));
+    void listen(
+      "voice-toggle",
+      () => void useVoiceStore.getState().toggle(),
+    ).then((u) => (unlisten = u));
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && useVoiceStore.getState().phase !== "idle") useVoiceStore.getState().cancel();
+      if (e.key === "Escape" && useVoiceStore.getState().phase !== "idle")
+        useVoiceStore.getState().cancel();
     };
     window.addEventListener("keydown", onKey);
     return () => {
@@ -76,9 +121,18 @@ export function useVoice(enabled: boolean) {
       if (cur && (!prev || cur.requestId !== prev.requestId)) quiet = false;
       if (cur && !quiet && isStepwork(cur.activities)) quiet = true;
       if (!quiet) {
-        if (cur && prev && cur.requestId === prev.requestId && cur.text.length > prev.text.length) {
+        if (
+          cur &&
+          prev &&
+          cur.requestId === prev.requestId &&
+          cur.text.length > prev.text.length
+        ) {
           useVoiceStore.getState().replyDelta(cur.text.slice(prev.text.length));
-        } else if (cur && (!prev || cur.requestId !== prev.requestId) && cur.text) {
+        } else if (
+          cur &&
+          (!prev || cur.requestId !== prev.requestId) &&
+          cur.text
+        ) {
           useVoiceStore.getState().replyDelta(cur.text);
         }
       }
@@ -93,11 +147,18 @@ export function useVoice(enabled: boolean) {
     });
   }, []);
 
-  const sttMode = useVoiceStore((s) => (s.status ? (s.status.stt.problem ? "unavailable" : s.status.stt.mode) : null));
+  const sttMode = useVoiceStore((s) =>
+    s.status
+      ? s.status.stt.problem
+        ? "unavailable"
+        : s.status.stt.mode
+      : null,
+  );
 
   // Wake word with the webview's own recogniser (systems where it works).
   useEffect(() => {
-    if (!enabled || !wakeWord || sttMode !== "browser" || phase !== "idle") return;
+    if (!enabled || !wakeWord || sttMode !== "browser" || phase !== "idle")
+      return;
     return listenContinuously(
       (transcript) => {
         const command = parseWakeWord(transcript);
@@ -111,7 +172,15 @@ export function useVoice(enabled: boolean) {
 
   // Always-on wake word via local speech detection + the configured speech service.
   useEffect(() => {
-    if (!enabled || !wakeWord || !hasBackend() || !sttMode || sttMode === "browser" || sttMode === "unavailable") return;
+    if (
+      !enabled ||
+      !wakeWord ||
+      !hasBackend() ||
+      !sttMode ||
+      sttMode === "browser" ||
+      sttMode === "unavailable"
+    )
+      return;
     let busy = false;
     let pausedUntil = 0;
     let stopped = false;
@@ -120,12 +189,23 @@ export function useVoice(enabled: boolean) {
     const operating = () => useOperatorStore.getState().snapshot.active;
     const sync = () => {
       const v = useVoiceStore.getState();
-      listener.setPaused(busy || v.phase !== "idle" || (v.replyPending && !operating()) || Date.now() < pausedUntil);
+      listener.setPaused(
+        busy ||
+          v.phase !== "idle" ||
+          (v.replyPending && !operating()) ||
+          Date.now() < pausedUntil,
+      );
     };
     const onPhrase = async (wav: Blob) => {
       const v = useVoiceStore.getState();
       const op = operating();
-      if (busy || v.phase !== "idle" || (!op && (v.replyPending || useChatStore.getState().streaming)) || Date.now() < pausedUntil) return;
+      if (
+        busy ||
+        v.phase !== "idle" ||
+        (!op && (v.replyPending || useChatStore.getState().streaming)) ||
+        Date.now() < pausedUntil
+      )
+        return;
       busy = true;
       sync();
       try {
@@ -145,7 +225,9 @@ export function useVoice(enabled: boolean) {
       } catch (err) {
         // e.g. the speech service's rate limit: back off instead of retrying every phrase.
         pausedUntil = Date.now() + 30_000;
-        useVoiceStore.setState({ error: `Wake word paused for 30 seconds: ${BackendError.from(err).message}` });
+        useVoiceStore.setState({
+          error: `Wake word paused for 30 seconds: ${BackendError.from(err).message}`,
+        });
       } finally {
         busy = false;
         sync();
@@ -156,7 +238,13 @@ export function useVoice(enabled: boolean) {
     listener
       .start()
       .then(() => !stopped && useVoiceStore.setState({ wakeActive: true }))
-      .catch((err) => useVoiceStore.setState({ wakeActive: false, error: err instanceof Error ? err.message : "Couldn't start listening." }));
+      .catch((err) =>
+        useVoiceStore.setState({
+          wakeActive: false,
+          error:
+            err instanceof Error ? err.message : "Couldn't start listening.",
+        }),
+      );
     return () => {
       stopped = true;
       unsubscribe();
@@ -170,21 +258,35 @@ export function useVoice(enabled: boolean) {
   useEffect(() => {
     const asked = new Set<string>();
     return useChatStore.subscribe((s) => {
-      const pending = s.streaming?.activities.find((a) => a.status === "awaitingApproval" && !asked.has(a.id));
+      const pending = s.streaming?.activities.find(
+        (a) => a.status === "awaitingApproval" && !asked.has(a.id),
+      );
       if (!pending) return;
       const v = useVoiceStore.getState();
       if (!v.replyPending && !v.wakeActive) return; // typed request at the keyboard: buttons only
       asked.add(pending.id);
       void (async () => {
         // Speak just the first sentence; the full text is on the approval card.
-        const first = (pending.description.split(/(?<=\.)\s/)[0] ?? pending.description).replace(/\.$/, "");
+        const first = (
+          pending.description.split(/(?<=\.)\s/)[0] ?? pending.description
+        ).replace(/\.$/, "");
         const what = first.charAt(0).toLowerCase() + first.slice(1);
-        const answer = await useVoiceStore.getState().ask(`I need your approval to ${what}. Say yes or no.`);
-        const stillWaiting = useChatStore.getState().streaming?.activities.some((a) => a.id === pending.id && a.status === "awaitingApproval");
+        const answer = await useVoiceStore
+          .getState()
+          .ask(`I need your approval to ${what}. Say yes or no.`);
+        const stillWaiting = useChatStore
+          .getState()
+          .streaming?.activities.some(
+            (a) => a.id === pending.id && a.status === "awaitingApproval",
+          );
         if (!stillWaiting) return; // answered with the buttons meanwhile
         const yes = answer === null ? null : parseYesNo(answer);
         if (yes === null) {
-          await useVoiceStore.getState().say("I didn't catch that. Use the buttons on screen to allow or deny.");
+          await useVoiceStore
+            .getState()
+            .say(
+              "I didn't catch that. Use the buttons on screen to allow or deny.",
+            );
           return;
         }
         await useChatStore.getState().answerApproval(pending.id, yes);

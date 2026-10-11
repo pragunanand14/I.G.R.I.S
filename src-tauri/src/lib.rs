@@ -9,8 +9,8 @@
 //! re-exported under their usual paths.
 
 pub use igris_core::{
-    ai, attachments, briefing, config, conversations, core, db, device, error, files, google, home, memory, operator, orchestrator, permissions, productivity,
-    projects, routines, settings, voice, weather,
+    ai, attachments, briefing, config, conversations, core, db, device, error, files, google, home, memory, operator, orchestrator, permissions, places,
+    productivity, projects, routines, settings, voice, weather,
 };
 
 pub mod commands;
@@ -126,6 +126,8 @@ pub fn run() {
             #[cfg(mobile)]
             let comms = platform::phone_comms(app.handle());
             #[cfg(mobile)]
+            let location = platform::phone_location(app.handle());
+            #[cfg(mobile)]
             platform::follow_phone_control(app.handle(), operator.clone());
             #[cfg(mobile)]
             let media = platform::media(app.handle());
@@ -147,6 +149,8 @@ pub fn run() {
                 screen,
                 #[cfg(mobile)]
                 comms,
+                #[cfg(mobile)]
+                location,
                 devices: device_hub.clone(),
                 #[cfg(mobile)]
                 phone: platform::phone(app.handle()),
@@ -585,6 +589,36 @@ mod platform {
                 }
             }
         });
+    }
+
+    /// The phone's location (places, location reminders), through the device plugin.
+    #[cfg(mobile)]
+    pub fn phone_location(app: &tauri::AppHandle) -> crate::tools::phone_places::SharedLocation {
+        Arc::new(PluginLocation(app.clone()))
+    }
+
+    #[cfg(mobile)]
+    struct PluginLocation(tauri::AppHandle);
+
+    #[cfg(mobile)]
+    impl crate::tools::phone_places::PhoneLocation for PluginLocation {
+        fn current(&self) -> Result<crate::tools::phone_places::Location, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().current_location().map_err(|e| e.to_string())
+        }
+        fn watch(&self, id: i32, place: &crate::places::Place, on_arrive: bool, text: &str) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            let radius = crate::tools::phone_places::RADIUS;
+            self.0.igris_device().add_place_alert(id, place.latitude, place.longitude, radius, on_arrive, "IGRIS · Reminder", text).map_err(|e| e.to_string())
+        }
+        fn unwatch(&self, id: i32) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().remove_place_alert(id).map_err(|e| e.to_string())
+        }
+        fn fired(&self, id: i32) -> bool {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().place_alert_fired(id).unwrap_or(false)
+        }
     }
 
     /// Messages and calls on the phone, through the device plugin.

@@ -73,6 +73,9 @@ pub struct Deps {
     /// The phone's messages and calls.
     #[cfg(mobile)]
     pub comms: super::phone_messages::SharedComms,
+    /// The phone's location (saved places, location reminders).
+    #[cfg(mobile)]
+    pub location: super::phone_places::SharedLocation,
 }
 
 /// Every tool IGRIS offers on a desktop.
@@ -168,9 +171,12 @@ pub fn registry(d: Deps) -> ToolRegistry {
 #[cfg(mobile)]
 pub fn registry(d: Deps) -> ToolRegistry {
     use super::phone::{DeviceStatusTool, ListPhoneAppsTool, OpenPhoneAppTool};
-    let Deps { db, config, orchestrator, operator, open_url, phone, screen, comms, media, google, devices, .. } = d;
+    let Deps { db, config, orchestrator, operator, open_url, phone, screen, comms, location, media, google, devices, .. } = d;
     let mut tools = ToolRegistry::default();
     for t in super::phone_messages::all(&super::phone_messages::Comms::new(comms, db.clone())) {
+        tools.register(t);
+    }
+    for t in super::phone_places::all(&super::phone_places::Places::new(location, db.clone())) {
         tools.register(t);
     }
     for t in igris_core::tools::google::all(&google) {

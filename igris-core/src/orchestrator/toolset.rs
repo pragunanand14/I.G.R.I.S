@@ -107,6 +107,7 @@ pub fn capability(name: &str) -> Option<Capability> {
         "read_messages" | "reply_message" | "send_message" | "call" => Messages,
         "gmail_search" | "gmail_read" | "gmail_draft" | "gmail_send" | "gmail_organise" => Email,
         "calendar_events" | "calendar_add" | "calendar_update" | "calendar_delete" => Productivity,
+        "save_place" | "list_places" | "place_reminder" | "cancel_place_reminder" => Productivity,
         _ => return None,
     })
 }
@@ -134,6 +135,12 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
             "remind",
             "reminder",
             "timer",
+            "when i leave",
+            "when i get to",
+            "when i reach",
+            "arrive",
+            "save this place",
+            "my places",
             "alarm",
             "todo",
             "to-do",

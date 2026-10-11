@@ -8,6 +8,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useSystemStore } from "@/stores/systemStore";
 import { useVoiceStore } from "@/stores/voiceStore";
 import type { Accent, Theme } from "@/types/settings";
+import { useWakePrefs } from "@/services/voice/wakePrefs";
 import { importedMessage } from "@/utils/importSettings";
 import { useStatus } from "../status";
 import { Dot, ErrorText, Group, Row, Screen, Section, Switch } from "../ui";
@@ -32,7 +33,10 @@ export function MoreScreen() {
   const update = useSettingsStore((s) => s.update);
   const error = useSettingsStore((s) => s.error);
   const aiReady = useChatStore((s) => s.aiStatus?.ready ?? false);
-  const paired = useDeviceStore((s) => s.overview?.devices.filter((d) => d.trusted && !d.revokedAt).length ?? 0);
+  const paired = useDeviceStore(
+    (s) =>
+      s.overview?.devices.filter((d) => d.trusted && !d.revokedAt).length ?? 0,
+  );
 
   return (
     <Screen title="Settings" back="/">
@@ -43,11 +47,31 @@ export function MoreScreen() {
       </Group>
 
       <Group>
-        <Row title="Phone and computer" value={paired > 0 ? "Paired" : undefined} to="/settings/devices" />
-        <Row title="AI and voice" value={aiReady ? "Connected" : "Set up"} to="/settings/ai" />
-        <Row title="Accounts" detail="Gmail and Google Calendar" to="/settings/accounts" />
-        <Row title="Routines" detail="Things IGRIS does by itself" to="/routines" />
-        <Row title="Appearance" value={THEMES.find((t) => t.value === settings.theme)?.label} to="/settings/appearance" />
+        <Row
+          title="Phone and computer"
+          value={paired > 0 ? "Paired" : undefined}
+          to="/settings/devices"
+        />
+        <Row
+          title="AI and voice"
+          value={aiReady ? "Connected" : "Set up"}
+          to="/settings/ai"
+        />
+        <Row
+          title="Accounts"
+          detail="Gmail and Google Calendar"
+          to="/settings/accounts"
+        />
+        <Row
+          title="Routines"
+          detail="Things IGRIS does by itself"
+          to="/routines"
+        />
+        <Row
+          title="Appearance"
+          value={THEMES.find((t) => t.value === settings.theme)?.label}
+          to="/settings/appearance"
+        />
         <Row title="Home-screen widgets" to="/settings/widgets" />
       </Group>
 
@@ -96,7 +120,9 @@ function NameRow({ disabled }: { disabled: boolean }) {
         placeholder="What should IGRIS call you?"
         aria-label="What should IGRIS call you?"
         onChange={(e) => setName(e.target.value)}
-        onBlur={() => name.trim() !== saved && void update({ userName: name.trim() })}
+        onBlur={() =>
+          name.trim() !== saved && void update({ userName: name.trim() })
+        }
       />
     </label>
   );
@@ -105,17 +131,33 @@ function NameRow({ disabled }: { disabled: boolean }) {
 function PhoneSection() {
   const snapshot = useSystemStore((s) => s.snapshot);
   const battery = snapshot?.battery ?? null;
-  const os = [snapshot?.host.osName, snapshot?.host.osVersion].filter(Boolean).join(" ");
-  const internet = snapshot ? (snapshot.network.connectivity === "online" ? "Online" : snapshot.network.connectivity === "offline" ? "Offline" : "Unknown") : "Unknown";
+  const os = [snapshot?.host.osName, snapshot?.host.osVersion]
+    .filter(Boolean)
+    .join(" ");
+  const internet = snapshot
+    ? snapshot.network.connectivity === "online"
+      ? "Online"
+      : snapshot.network.connectivity === "offline"
+        ? "Offline"
+        : "Unknown"
+    : "Unknown";
   return (
     <Section title="This phone">
       <Group>
-        <Row title="Battery" value={battery ? `${Math.round(battery.percent)}%${battery.state === "charging" ? ", charging" : ""}` : "Unknown"} />
+        <Row
+          title="Battery"
+          value={
+            battery
+              ? `${Math.round(battery.percent)}%${battery.state === "charging" ? ", charging" : ""}`
+              : "Unknown"
+          }
+        />
         <Row title="Internet" value={internet} />
         {os && <Row title="System" value={os} />}
       </Group>
       <p className="m-faint px-1 pt-1 text-sm">
-        IGRIS can open your apps and check battery and network. It can't see your screen, read your files or control other apps on this phone.
+        IGRIS can open your apps and check battery and network. It can't see
+        your screen, read your files or control other apps on this phone.
       </p>
     </Section>
   );
@@ -127,7 +169,8 @@ function About() {
     <p className="m-faint px-1 text-center text-sm">
       IGRIS {info ? `${info.version}${info.debug ? " (test build)" : ""}` : ""}
       <br />
-      Chats and memories are stored on this phone; messages go to your AI provider to be answered.
+      Chats and memories are stored on this phone; messages go to your AI
+      provider to be answered.
     </p>
   );
 }
@@ -151,7 +194,11 @@ export function AiScreen() {
       const r = await api.reloadConfig();
       setConfig(r.config);
       setAiStatus(r.ai);
-      setNote(r.ai.ready ? "All set — IGRIS is ready." : (r.ai.problem ?? "Still not set up."));
+      setNote(
+        r.ai.ready
+          ? "All set — IGRIS is ready."
+          : (r.ai.problem ?? "Still not set up."),
+      );
     } catch (err) {
       setNote(BackendError.from(err).message);
     } finally {
@@ -176,6 +223,9 @@ export function AiScreen() {
   };
 
   const voiceOk = voice ? !voice.stt.problem : null;
+  const wakeOn = useSettingsStore((s) => s.settings.wakeWordEnabled);
+  const updateSettings = useSettingsStore((s) => s.update);
+  const { chargingOnly, setChargingOnly } = useWakePrefs();
   return (
     <Screen title="AI and voice" back="/settings">
       <Group>
@@ -194,24 +244,57 @@ export function AiScreen() {
         />
         <Row
           title="Talking to IGRIS"
-          detail={voiceOk === null ? "—" : voiceOk ? "Ready — tap the mic on Home or in a chat." : (voice?.stt.problem ?? "Not available.")}
+          detail={
+            voiceOk === null
+              ? "—"
+              : voiceOk
+                ? "Ready — tap the mic on Home or in a chat."
+                : (voice?.stt.problem ?? "Not available.")
+          }
         />
+        <Switch
+          label="Always listen for “IGRIS”"
+          description="Say “Hey IGRIS…” while IGRIS is open. Each phrase near the mic goes to your speech service to check for the name."
+          checked={wakeOn}
+          disabled={!ready || !voiceOk}
+          onChange={(on) => void updateSettings({ wakeWordEnabled: on })}
+        />
+        {wakeOn && (
+          <Switch
+            label="Only while charging"
+            description="Saves battery."
+            checked={chargingOnly}
+            onChange={setChargingOnly}
+          />
+        )}
       </Group>
 
       {!aiStatus?.ready && (
         <Section title="Setting it up">
           <p className="m-muted px-1 text-[15px]">
-            IGRIS reads its AI key from a settings file (<code>.env</code>). Save yours to the phone — Downloads is fine — then tap{" "}
-            <b>Import settings file</b> and pick it. IGRIS keeps a private copy; you can delete the one in Downloads afterwards.
+            IGRIS reads its AI key from a settings file (<code>.env</code>).
+            Save yours to the phone — Downloads is fine — then tap{" "}
+            <b>Import settings file</b> and pick it. IGRIS keeps a private copy;
+            you can delete the one in Downloads afterwards.
           </p>
         </Section>
       )}
 
       <div className="space-y-3">
-        <button type="button" className="m-button m-button-primary w-full" disabled={!ready || checking} onClick={() => void importFile()}>
+        <button
+          type="button"
+          className="m-button m-button-primary w-full"
+          disabled={!ready || checking}
+          onClick={() => void importFile()}
+        >
           Import settings file
         </button>
-        <button type="button" className="m-button w-full" disabled={!ready || checking} onClick={() => void recheck()}>
+        <button
+          type="button"
+          className="m-button w-full"
+          disabled={!ready || checking}
+          onClick={() => void recheck()}
+        >
           {checking ? "Checking…" : "Check the AI setup again"}
         </button>
         {note && <p className="m-muted px-1 text-center text-sm">{note}</p>}
@@ -230,14 +313,25 @@ export function AppearanceScreen() {
       <Section title="Theme">
         <div className="m-segmented" role="radiogroup" aria-label="Theme">
           {THEMES.map((t) => (
-            <button key={t.value} type="button" role="radio" aria-checked={settings.theme === t.value} disabled={!ready} onClick={() => void update({ theme: t.value })}>
+            <button
+              key={t.value}
+              type="button"
+              role="radio"
+              aria-checked={settings.theme === t.value}
+              disabled={!ready}
+              onClick={() => void update({ theme: t.value })}
+            >
               {t.label}
             </button>
           ))}
         </div>
       </Section>
       <Section title="Colour">
-        <div className="m-card flex justify-between px-4 py-4" role="radiogroup" aria-label="Colour">
+        <div
+          className="m-card flex justify-between px-4 py-4"
+          role="radiogroup"
+          aria-label="Colour"
+        >
           {ACCENTS.map((a) => (
             <button
               key={a.value}
@@ -251,9 +345,18 @@ export function AppearanceScreen() {
             >
               <span
                 className="size-9 rounded-full"
-                style={{ background: a.color, outline: settings.accent === a.value ? "2px solid var(--m-text)" : "none", outlineOffset: 3 }}
+                style={{
+                  background: a.color,
+                  outline:
+                    settings.accent === a.value
+                      ? "2px solid var(--m-text)"
+                      : "none",
+                  outlineOffset: 3,
+                }}
               />
-              <span className={settings.accent === a.value ? "" : "m-muted"}>{a.label}</span>
+              <span className={settings.accent === a.value ? "" : "m-muted"}>
+                {a.label}
+              </span>
             </button>
           ))}
         </div>

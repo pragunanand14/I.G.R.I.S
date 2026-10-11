@@ -503,6 +503,28 @@ pub const MIGRATIONS: &[Migration] = &[
             CREATE INDEX routine_runs_by_routine ON routine_runs(routine_id, started_at);
         "#,
     },
+    Migration {
+        version: 18,
+        name: "places",
+        sql: r#"
+            -- Places the user named ("office"), and reminders for arriving at or
+            -- leaving one (places.rs). The phone watches for them.
+            CREATE TABLE places (
+                name       TEXT PRIMARY KEY COLLATE NOCASE,
+                latitude   REAL NOT NULL,
+                longitude  REAL NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE place_reminders (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                place      TEXT NOT NULL COLLATE NOCASE,
+                on_arrive  INTEGER NOT NULL,
+                text       TEXT NOT NULL,
+                status     TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL
+            );
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

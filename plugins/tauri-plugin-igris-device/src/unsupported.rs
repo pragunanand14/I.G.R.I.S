@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead};
+use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead};
 
 /// Not a phone: every call says so.
 pub struct Device<R: Runtime>(PhantomData<fn() -> R>);
@@ -121,6 +121,23 @@ impl<R: Runtime> Device<R> {
     }
 
     pub fn call_number(&self, _number: &str) -> Result<bool> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn current_location(&self) -> Result<Location> {
+        Err(Error::Unsupported)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_place_alert(&self, _id: i32, _latitude: f64, _longitude: f64, _radius: f32, _enter: bool, _title: &str, _text: &str) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn remove_place_alert(&self, _id: i32) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn place_alert_fired(&self, _id: i32) -> Result<bool> {
         Err(Error::Unsupported)
     }
 }

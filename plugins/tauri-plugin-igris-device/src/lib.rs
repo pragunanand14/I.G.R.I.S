@@ -76,6 +76,15 @@ pub struct PhoneMessage {
     pub can_reply: bool,
 }
 
+/// Where the phone is.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Location {
+    pub latitude: f64,
+    pub longitude: f64,
+    /// Metres.
+    pub accuracy: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Contact {
     pub name: String,

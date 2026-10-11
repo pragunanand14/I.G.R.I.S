@@ -84,6 +84,17 @@ class MessageArgs {
 }
 
 @InvokeArg
+class PlaceAlertArgs {
+    var id: Int = 0
+    var latitude: Double = 0.0
+    var longitude: Double = 0.0
+    var radius: Float = 150f
+    var enter: Boolean = true
+    var title: String? = null
+    var text: String? = null
+}
+
+@InvokeArg
 class SealArgs {
     var data: String? = null
 }
@@ -102,6 +113,8 @@ private const val MAX_PICKED_BYTES = 64 * 1024 + 1
     permissions = [
         Permission(strings = [Manifest.permission.READ_CONTACTS], alias = "contacts"),
         Permission(strings = [Manifest.permission.CALL_PHONE], alias = "call"),
+        Permission(strings = [Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION], alias = "location"),
+        Permission(strings = [Manifest.permission.ACCESS_BACKGROUND_LOCATION], alias = "backgroundLocation"),
     ]
 )
 class DevicePlugin(private val activity: Activity) : Plugin(activity) {
@@ -690,5 +703,111 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("Couldn't start the call: ${e.javaClass.simpleName}")
         }
+    }
+
+    // ── Location (saved places, location reminders) ─────────────────────
+
+    /** Where the phone is now (asks for location the first time). */
+    @Command
+    fun currentLocation(invoke: Invoke) {
+        if (getPermissionState("location") != PermissionState.GRANTED) {
+            requestPermissionForAlias("location", invoke, "locationCallback")
+            return
+        }
+        readLocation(invoke)
+    }
+
+    @PermissionCallback
+    private fun locationCallback(invoke: Invoke) {
+        if (getPermissionState("location") == PermissionState.GRANTED) readLocation(invoke)
+        else invoke.reject("IGRIS isn't allowed to use location. Allow it in Android Settings → Apps → IGRIS → Permissions → Location.")
+    }
+
+    @Suppress("MissingPermission")
+    private fun readLocation(invoke: Invoke) {
+        val lm = activity.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val done = { loc: android.location.Location? ->
+            if (loc == null) {
+                invoke.reject("Couldn't get the location right now — is Location turned on?")
+            } else {
+                val ret = JSObject()
+                ret.put("latitude", loc.latitude)
+                ret.put("longitude", loc.longitude)
+                ret.put("accuracy", loc.accuracy.toDouble())
+                invoke.resolve(ret)
+            }
+        }
+        val provider = if (lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) android.location.LocationManager.GPS_PROVIDER
+        else android.location.LocationManager.NETWORK_PROVIDER
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                lm.getCurrentLocation(provider, null, activity.mainExecutor) { done(it) }
+            } else {
+                done(lm.getLastKnownLocation(provider) ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER))
+            }
+        } catch (e: Exception) {
+            invoke.reject("Couldn't get the location: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Watch for arriving at / leaving a place. Needs location "all the time"
+     * (Android shows the choice; on Android 11+ in its settings page).
+     */
+    @Command
+    fun addPlaceAlert(invoke: Invoke) {
+        when {
+            getPermissionState("location") != PermissionState.GRANTED -> requestPermissionForAlias("location", invoke, "placeAlertCallback")
+            Build.VERSION.SDK_INT >= 29 && getPermissionState("backgroundLocation") != PermissionState.GRANTED ->
+                requestPermissionForAlias("backgroundLocation", invoke, "placeAlertBackgroundCallback")
+            else -> placeAlert(invoke)
+        }
+    }
+
+    @PermissionCallback
+    private fun placeAlertCallback(invoke: Invoke) {
+        when {
+            getPermissionState("location") != PermissionState.GRANTED ->
+                invoke.reject("IGRIS isn't allowed to use location, so it can't remind you at a place.")
+            // Android asks for "all the time" only after "while using the app".
+            Build.VERSION.SDK_INT >= 29 && getPermissionState("backgroundLocation") != PermissionState.GRANTED ->
+                requestPermissionForAlias("backgroundLocation", invoke, "placeAlertBackgroundCallback")
+            else -> placeAlert(invoke)
+        }
+    }
+
+    @PermissionCallback
+    private fun placeAlertBackgroundCallback(invoke: Invoke) {
+        when {
+            Build.VERSION.SDK_INT >= 29 && getPermissionState("backgroundLocation") != PermissionState.GRANTED ->
+                invoke.reject("Location reminders need location “Allow all the time”: Android Settings → Apps → IGRIS → Permissions → Location → Allow all the time.")
+            else -> placeAlert(invoke)
+        }
+    }
+
+    private fun placeAlert(invoke: Invoke) {
+        val a = invoke.parseArgs(PlaceAlertArgs::class.java)
+        try {
+            PlaceAlerts.add(activity, a.id, a.latitude, a.longitude, a.radius.coerceIn(80f, 2000f), a.enter, a.title ?: "IGRIS · Reminder", a.text ?: "")
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    @Command
+    fun removePlaceAlert(invoke: Invoke) {
+        PlaceAlerts.remove(activity, invoke.parseArgs(PlaceAlertArgs::class.java).id)
+        invoke.resolve()
+    }
+
+    /** Whether a place alert has gone off (then IGRIS marks the reminder done). */
+    @Command
+    fun placeAlertFired(invoke: Invoke) {
+        val id = invoke.parseArgs(PlaceAlertArgs::class.java).id
+        val prefs = activity.getSharedPreferences("igris_place_alerts", Context.MODE_PRIVATE)
+        val ret = JSObject()
+        ret.put("fired", prefs.getBoolean("fired_$id", false))
+        invoke.resolve(ret)
     }
 }
