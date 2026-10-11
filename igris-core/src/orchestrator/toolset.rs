@@ -252,6 +252,11 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
         &[
             "message",
             "messages",
+            "msg",
+            "msgs",
+            "texts",
+            "chat",
+            "chats",
             "whatsapp",
             "sms",
             "text him",

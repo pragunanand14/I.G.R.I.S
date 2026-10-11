@@ -8,9 +8,9 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useSystemStore } from "@/stores/systemStore";
 import { useVoiceStore } from "@/stores/voiceStore";
 import type { Accent, Theme } from "@/types/settings";
-import { useWakePrefs } from "@/services/voice/wakePrefs";
 import { importedMessage } from "@/utils/importSettings";
 import { useStatus } from "../status";
+import { HeyIgris } from "./HeyIgris";
 import { Dot, ErrorText, Group, Row, Screen, Section, Switch } from "../ui";
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -224,9 +224,6 @@ export function AiScreen() {
   };
 
   const voiceOk = voice ? !voice.stt.problem : null;
-  const wakeOn = useSettingsStore((s) => s.settings.wakeWordEnabled);
-  const updateSettings = useSettingsStore((s) => s.update);
-  const { chargingOnly, setChargingOnly } = useWakePrefs();
   return (
     <Screen title="AI and voice" back="/settings">
       <Group>
@@ -253,22 +250,9 @@ export function AiScreen() {
                 : (voice?.stt.problem ?? "Not available.")
           }
         />
-        <Switch
-          label="Always listen for “IGRIS”"
-          description="Say “Hey IGRIS…” while IGRIS is open. Each phrase near the mic goes to your speech service to check for the name."
-          checked={wakeOn}
-          disabled={!ready || !voiceOk}
-          onChange={(on) => void updateSettings({ wakeWordEnabled: on })}
-        />
-        {wakeOn && (
-          <Switch
-            label="Only while charging"
-            description="Saves battery."
-            checked={chargingOnly}
-            onChange={setChargingOnly}
-          />
-        )}
       </Group>
+
+      <HeyIgris ready={ready} />
 
       {!aiStatus?.ready && (
         <Section title="Setting it up">

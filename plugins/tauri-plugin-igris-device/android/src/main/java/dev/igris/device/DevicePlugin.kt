@@ -95,6 +95,12 @@ class PlaceAlertArgs {
 }
 
 @InvokeArg
+class WakeArgs {
+    var on: Boolean = false
+    var chargingOnly: Boolean = false
+}
+
+@InvokeArg
 class SealArgs {
     var data: String? = null
 }
@@ -115,6 +121,7 @@ private const val MAX_PICKED_BYTES = 64 * 1024 + 1
         Permission(strings = [Manifest.permission.CALL_PHONE], alias = "call"),
         Permission(strings = [Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION], alias = "location"),
         Permission(strings = [Manifest.permission.ACCESS_BACKGROUND_LOCATION], alias = "backgroundLocation"),
+        Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "microphone"),
     ]
 )
 class DevicePlugin(private val activity: Activity) : Plugin(activity) {
@@ -393,6 +400,26 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         remember(activity.intent)
+        WakeWordService.onWake = { wakeHeard = true }
+        // "Hey IGRIS" was on: start it again now that IGRIS is on screen (Android only allows that from the foreground).
+        if (WakeWordService.prefs(activity).getBoolean(WakeWordService.KEY_ON, false) &&
+            getPermissionState("microphone") == PermissionState.GRANTED && !WakeWordService.running
+        ) {
+            try {
+                WakeWordService.start(activity)
+            } catch (e: Exception) {
+                android.util.Log.w("IGRIS", "IGRIS_WAKE start failed: ${e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    // While IGRIS is on screen the wake phrase starts listening right here; otherwise it opens IGRIS.
+    override fun onResume() {
+        WakeWordService.onWake = { wakeHeard = true }
+    }
+
+    override fun onPause() {
+        WakeWordService.onWake = null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -557,6 +584,8 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     fun messagesAccess(invoke: Invoke) {
         val enabled = android.provider.Settings.Secure.getString(activity.contentResolver, "enabled_notification_listeners")
             ?.contains(activity.packageName) == true
+        // Turned on but not running (common after an update): ask Android to start it.
+        if (enabled) IgrisNotificationListener.rebind(activity)
         val ret = JSObject()
         ret.put("enabled", enabled)
         invoke.resolve(ret)
@@ -809,5 +838,134 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         val ret = JSObject()
         ret.put("fired", prefs.getBoolean("fired_$id", false))
         invoke.resolve(ret)
+    }
+
+    // ── "Hey IGRIS" and IGRIS as the phone's assistant ──────────────────
+
+    /** The wake phrase was heard while IGRIS was on screen (IGRIS asks, then it's cleared). */
+    @Volatile
+    private var wakeHeard = false
+
+    @Command
+    fun wakeTakeHeard(invoke: Invoke) {
+        val ret = JSObject()
+        ret.put("heard", wakeHeard)
+        wakeHeard = false
+        invoke.resolve(ret)
+    }
+
+    private fun assistantHeld(): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val rm = activity.getSystemService(android.app.role.RoleManager::class.java)
+            if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) {
+                return rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)
+            }
+        }
+        val s = android.provider.Settings.Secure.getString(activity.contentResolver, "assistant") ?: return false
+        return s.startsWith(activity.packageName + "/")
+    }
+
+    @Command
+    fun wakeStatus(invoke: Invoke) {
+        val prefs = WakeWordService.prefs(activity)
+        val ret = JSObject()
+        ret.put("on", prefs.getBoolean(WakeWordService.KEY_ON, false))
+        ret.put("chargingOnly", prefs.getBoolean(WakeWordService.KEY_CHARGING_ONLY, false))
+        ret.put("running", WakeWordService.running)
+        ret.put("listening", WakeWordService.listening)
+        WakeWordService.problem?.let { ret.put("problem", it) }
+        ret.put("canOpenItself", Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(activity))
+        val pm = activity.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        ret.put("batteryUnrestricted", Build.VERSION.SDK_INT < 23 || pm.isIgnoringBatteryOptimizations(activity.packageName))
+        ret.put("assistant", assistantHeld())
+        invoke.resolve(ret)
+    }
+
+    /** Turn "Hey IGRIS" on or off (asks for the microphone the first time). */
+    @Command
+    fun wakeSet(invoke: Invoke) {
+        val a = invoke.parseArgs(WakeArgs::class.java)
+        WakeWordService.prefs(activity).edit()
+            .putBoolean(WakeWordService.KEY_ON, a.on)
+            .putBoolean(WakeWordService.KEY_CHARGING_ONLY, a.chargingOnly)
+            .apply()
+        if (!a.on) {
+            WakeWordService.stop(activity)
+            invoke.resolve()
+        } else if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            requestPermissionForAlias("microphone", invoke, "wakeMicCallback")
+        } else {
+            startWake(invoke)
+        }
+    }
+
+    @PermissionCallback
+    private fun wakeMicCallback(invoke: Invoke) {
+        if (getPermissionState("microphone") == PermissionState.GRANTED) {
+            startWake(invoke)
+        } else {
+            WakeWordService.prefs(activity).edit().putBoolean(WakeWordService.KEY_ON, false).apply()
+            invoke.reject("IGRIS needs the microphone to hear “Hey IGRIS”. Allow it in Android Settings → Apps → IGRIS → Permissions.")
+        }
+    }
+
+    private fun startWake(invoke: Invoke) {
+        try {
+            if (WakeWordService.running) WakeWordService.hold("settings", false) else WakeWordService.start(activity)
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject("Couldn't start listening: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** IGRIS is using the microphone itself (recording or speaking): the wake listener lets go meanwhile. */
+    @Command
+    fun wakeHold(invoke: Invoke) {
+        val a = invoke.parseArgs(WakeArgs::class.java)
+        WakeWordService.hold("app", a.on)
+        if (!a.on) WakeWordService.hold("wake", false)
+        invoke.resolve()
+    }
+
+    private fun openSettings(invoke: Invoke, vararg intents: Intent) {
+        for (i in intents) {
+            try {
+                activity.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                invoke.resolve()
+                return
+            } catch (e: Exception) {
+                // Not on this phone: try the next page.
+            }
+        }
+        invoke.reject("Couldn't open Android's settings.")
+    }
+
+    /** "Display over other apps": lets IGRIS open itself when it hears its name. */
+    @Command
+    fun openOverlaySettings(invoke: Invoke) {
+        val uri = android.net.Uri.parse("package:" + activity.packageName)
+        openSettings(invoke, Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, uri), Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri))
+    }
+
+    /** Ask Android not to stop IGRIS to save battery (otherwise Samsung phones end "Hey IGRIS" after a while). */
+    @Command
+    fun openBatterySettings(invoke: Invoke) {
+        val uri = android.net.Uri.parse("package:" + activity.packageName)
+        openSettings(
+            invoke,
+            Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, uri),
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri),
+        )
+    }
+
+    /** Where the user picks the digital assistant app (IGRIS shows there). */
+    @Command
+    fun openAssistantSettings(invoke: Invoke) {
+        openSettings(
+            invoke,
+            Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS),
+            Intent("android.settings.MANAGE_DEFAULT_APPS_SETTINGS"),
+            Intent(android.provider.Settings.ACTION_SETTINGS),
+        )
     }
 }

@@ -189,12 +189,39 @@ async fn error_from(resp: reqwest::Response, label: &str) -> AiError {
     e
 }
 
+/// IGRIS listens for English, Hindi and Hinglish only. Speech services that
+/// guess the language often hear short Hindi/Hinglish as Urdu or Arabic.
+pub const LANGUAGES: [&str; 2] = ["en", "hi"];
+
+/// Whisper's `prompt`: an example in the style wanted (Hinglish in Roman
+/// letters, English as English) steers both the language and the script.
+const HINGLISH_PROMPT: &str =
+    "Hinglish aur English, Roman script mein. Kal subah 7 baje ka alarm laga do. Mummy ko call karo. What's the weather today? Mera next meeting kab hai?";
+
+/// A configured language IGRIS accepts ("en", "hi"; regions dropped), else none (English/Hindi/Hinglish).
+pub fn allowed_language(l: Option<&str>) -> Option<&'static str> {
+    let code = l?.split(['-', '_']).next()?.to_lowercase();
+    LANGUAGES.into_iter().find(|c| *c == code)
+}
+
+/// Text in a script other than Latin or Devanagari (Urdu/Arabic, Bengali, CJK, …): a wrong guess.
+pub fn foreign_script(text: &str) -> bool {
+    text.chars().any(|c| c.is_alphabetic() && !c.is_ascii() && !matches!(c, '\u{00C0}'..='\u{024F}' | '\u{0900}'..='\u{097F}' | '\u{A8E0}'..='\u{A8FF}'))
+}
+
 /// Context makes short commands far more accurate, and the explicit "nothing"
 /// rule stops the model inventing text for silence or noise.
 fn gemini_transcribe_prompt(language: Option<&str>) -> String {
     let lang = match language {
-        Some(l) => format!("The speaker is speaking language code \"{l}\"; write it in that language and never translate."),
-        None => "Write it in the language spoken; never translate.".to_string(),
+        Some("hi") => {
+            "The speaker is speaking Hindi or Hinglish: write it in Devanagari or in Roman letters as spoken, never in Urdu/Arabic script, and never translate."
+                .to_string()
+        }
+        Some(_) => "The speaker is speaking English: write it in English and never translate.".to_string(),
+        None => "The speaker speaks only English, Hindi or Hinglish (a mix of the two). Write English as English, and Hindi or Hinglish in Roman \
+letters the way Indians type it (e.g. \"kal subah alarm laga do\"). Never write any other language or script (no Urdu or Arabic script), \
+and never translate."
+            .to_string(),
     };
     format!(
         "You are a speech-to-text engine. The audio is someone talking to their desktop assistant (IGRIS): usually a short \
@@ -214,8 +241,28 @@ fn gemini_reasoning_effort(model: &str) -> &'static str {
     }
 }
 
-/// Transcribe recorded audio. Returns the recognised text (may be empty).
+/// Transcribe recorded audio as English, Hindi or Hinglish. Returns the
+/// recognised text (may be empty). `language` narrows it to "en" or "hi";
+/// anything else is ignored. If the service still answers in another script
+/// (it guessed Urdu, Arabic, …), it is asked again for Hindi, then English.
 pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str, language: Option<&str>) -> Result<String, AiError> {
+    let language = allowed_language(language);
+    let first = transcribe_as(h, audio.clone(), mime, language).await?;
+    if !foreign_script(&first) {
+        return Ok(first);
+    }
+    tracing::info!(event = "STT_FOREIGN_SCRIPT_RETRY");
+    for retry in ["hi", "en"].into_iter().filter(|l| Some(*l) != language) {
+        let text = transcribe_as(h, audio.clone(), mime, Some(retry)).await?;
+        if !foreign_script(&text) {
+            return Ok(text);
+        }
+    }
+    // Never pass on another language: nothing understood is better than a wrong command.
+    Ok(String::new())
+}
+
+async fn transcribe_as(h: &HttpVoice, audio: Vec<u8>, mime: &str, language: Option<&str>) -> Result<String, AiError> {
     if audio.is_empty() {
         return Err(AiError::new(AiErrorKind::InvalidRequest, "No audio was recorded."));
     }
@@ -232,8 +279,11 @@ pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str, language: Opt
         .map_err(|e| AiError::new(AiErrorKind::InvalidRequest, e.to_string()))?;
     let mut form = multipart::Form::new().text("model", h.model.clone()).text("response_format", "json").text("temperature", "0");
     if let Some(l) = language {
-        // Whisper takes ISO 639-1 ("en"); drop any region ("en-in" → "en").
-        form = form.text("language", l.split(['-', '_']).next().unwrap_or(l).to_string());
+        form = form.text("language", l.to_string());
+    }
+    // Hinglish in Roman letters for Hindi or mixed speech; English stays English.
+    if language != Some("en") {
+        form = form.text("prompt", HINGLISH_PROMPT);
     }
     let form = form.part("file", part);
     let mut rb = client()?.post(format!("{}/audio/transcriptions", h.base_url)).multipart(form);
@@ -503,7 +553,7 @@ mod tests {
         assert_eq!(req["model"], "gemini-x");
         assert_eq!(req["messages"][0]["content"][1]["input_audio"]["format"], "wav");
         assert_eq!(req["reasoning_effort"], "low");
-        assert!(req["messages"][0]["content"][0]["text"].as_str().unwrap().contains("\"en\""));
+        assert!(req["messages"][0]["content"][0]["text"].as_str().unwrap().contains("speaking English"));
         assert_eq!(gemini_reasoning_effort("gemini-2.5-flash"), "none");
         assert!(transcribe(&h, b"x".to_vec(), "audio/webm", None).await.unwrap_err().message.contains("WAV or MP3"));
     }
@@ -521,6 +571,30 @@ mod tests {
         assert!(req.body.contains("filename=\"speech.webm\""));
         assert!(req.body.contains("fake-webm-bytes"));
         assert!(req.body.contains("name=\"language\"\r\n\r\nen\r\n"), "region stripped for Whisper");
+    }
+
+    #[tokio::test]
+    async fn only_english_hindi_or_hinglish() {
+        assert_eq!((allowed_language(Some("hi-IN")), allowed_language(Some("ar")), allowed_language(None)), (Some("hi"), None, None));
+        assert!(foreign_script("کل صبح الارم") && foreign_script("مرحبا") && foreign_script("আজ"));
+        assert!(!foreign_script("Kal subah alarm laga do, café") && !foreign_script("कल सुबह अलार्म लगा दो"));
+
+        // Guessed Urdu → asked again for Hindi; a language other than en/hi in the settings is ignored.
+        let server = MockServer::start(vec![
+            (200, "application/json", json!({"text":"کل صبح الارم لگا دو"}).to_string()),
+            (200, "application/json", json!({"text":"kal subah alarm laga do"}).to_string()),
+        ])
+        .await;
+        let text = transcribe(&http(server.url()), b"audio".to_vec(), "audio/webm", Some("ur")).await.unwrap();
+        assert_eq!(text, "kal subah alarm laga do");
+        let reqs = server.requests().await;
+        assert!(!reqs[0].body.contains("name=\"language\"") && reqs[0].body.contains("name=\"prompt\"") && reqs[0].body.contains("Hinglish"));
+        assert!(reqs[1].body.contains("name=\"language\"\r\n\r\nhi\r\n"));
+
+        // Still another script after both retries: nothing, rather than a wrong command.
+        let ar = || (200, "application/json", json!({"text":"مرحبا"}).to_string());
+        let server = MockServer::start(vec![ar(), ar(), ar()]).await;
+        assert_eq!(transcribe(&http(server.url()), b"audio".to_vec(), "audio/webm", None).await.unwrap(), "");
     }
 
     #[tokio::test]

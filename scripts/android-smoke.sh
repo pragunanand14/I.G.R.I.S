@@ -17,6 +17,15 @@ adb install -r "$apk" || { echo "::error::Install failed"; exit 1; }
 # IGRIS asks for the notification permission once (reminder alarms); answer it as the user would, so the
 # system dialog doesn't cover the screen this test reads.
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS || true
+# Messages: a notification already in the shade before IGRIS's listener starts must still be seen.
+adb shell "cmd notification post -t 'Mom' igris_smoke 'Dinner at 8?'" || true
+adb shell cmd notification allow_listener "$PKG/dev.igris.device.IgrisNotificationListener" || true
+# "Hey IGRIS": turned on as the user would (microphone allowed, the switch on), so it starts with the app.
+adb shell pm grant "$PKG" android.permission.RECORD_AUDIO || true
+printf '%s' '<?xml version="1.0" encoding="utf-8" standalone="yes" ?><map><boolean name="on" value="true" /></map>' > "$OUT/igris_wake.xml"
+adb push "$OUT/igris_wake.xml" /data/local/tmp/igris_wake.xml >/dev/null && adb shell chmod 644 /data/local/tmp/igris_wake.xml
+adb shell "run-as $PKG sh -c 'mkdir -p shared_prefs && cp /data/local/tmp/igris_wake.xml shared_prefs/igris_wake.xml'" || true
+adb shell run-as "$PKG" cat shared_prefs/igris_wake.xml || true
 adb logcat -c || true
 adb shell am start -W -n "$PKG/.MainActivity"
 sleep 30
@@ -59,4 +68,10 @@ check "UI did not report the backend as unavailable" '! grep -q "backend is unav
 check "no desktop hotkey hint on the phone" '! grep -q "Ctrl+Shift+Space" "$OUT/ui.xml"'
 check "no unmeasured CPU zeros (\"0 threads\")" '! grep -q "\"0 threads\"" "$OUT/ui.xml"'
 check "no crash in logcat" '! grep -qE "FATAL EXCEPTION.*|panicked at" "$OUT/logcat.txt"'
+echo "--- messages / wake word / assistant ---"
+grep -E "IGRIS_MESSAGES_LISTENER|IGRIS_WAKE" "$OUT/logcat.txt" | head -10 || true
+check "message listener connected and read the notification already showing" 'grep -qE "IGRIS_MESSAGES_LISTENER connected, [1-9]" "$OUT/logcat.txt"'
+check "\"Hey IGRIS\" loaded its on-phone model and is listening" 'grep -q "IGRIS_WAKE listening" "$OUT/logcat.txt"'
+adb shell cmd package query-activities --brief -a android.intent.action.ASSIST > "$OUT/assist.txt" 2>&1 || true
+check "IGRIS can be chosen as the phone's assistant (ASSIST)" 'grep -q "$PKG/dev.igris.device.AssistActivity" "$OUT/assist.txt"'
 exit $fail

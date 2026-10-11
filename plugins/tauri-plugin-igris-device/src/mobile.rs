@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead};
+use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead, WakeStatus};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(_app: &AppHandle<R>, api: PluginApi<R, C>) -> std::result::Result<Device<R>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "android")]
@@ -248,6 +248,41 @@ impl<R: Runtime> Device<R> {
         self.0.run_mobile_plugin::<R>("callNumber", MessageArgs { number: Some(number.into()), ..Default::default() }).map(|r| r.dialed).map_err(failed)
     }
 
+    /// "Hey IGRIS" and assistant status.
+    pub fn wake_status(&self) -> Result<WakeStatus> {
+        self.0.run_mobile_plugin::<WakeStatus>("wakeStatus", ()).map_err(failed)
+    }
+
+    /// Turn "Hey IGRIS" on or off (Android asks for the microphone the first time).
+    pub fn wake_set(&self, on: bool, charging_only: bool) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("wakeSet", WakeArgs { on, charging_only }).map(|_| ()).map_err(failed)
+    }
+
+    /// IGRIS is using the microphone itself: the wake listener lets go until `on` is false.
+    pub fn wake_hold(&self, on: bool) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("wakeHold", WakeArgs { on, charging_only: false }).map(|_| ()).map_err(failed)
+    }
+
+    /// Whether the wake phrase was heard while IGRIS was on screen (cleared once read).
+    pub fn wake_take_heard(&self) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct R {
+            heard: bool,
+        }
+        self.0.run_mobile_plugin::<R>("wakeTakeHeard", ()).map(|r| r.heard).map_err(failed)
+    }
+
+    /// Android settings pages: "Display over other apps", battery, digital assistant app.
+    pub fn open_settings_page(&self, page: &str) -> Result<()> {
+        let cmd = match page {
+            "overlay" => "openOverlaySettings",
+            "battery" => "openBatterySettings",
+            "assistant" => "openAssistantSettings",
+            _ => return Err(Error::Unsupported),
+        };
+        self.0.run_mobile_plugin::<Empty>(cmd, ()).map(|_| ()).map_err(failed)
+    }
+
     /// Where the phone is now (Android asks for location the first time).
     pub fn current_location(&self) -> Result<Location> {
         self.0.run_mobile_plugin::<Location>("currentLocation", ()).map_err(failed)
@@ -277,6 +312,13 @@ impl<R: Runtime> Device<R> {
         }
         self.0.run_mobile_plugin::<R>("placeAlertFired", PlaceArgs { id, ..Default::default() }).map(|r| r.fired).map_err(failed)
     }
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct WakeArgs {
+    on: bool,
+    charging_only: bool,
 }
 
 #[derive(Serialize, Default)]

@@ -17,7 +17,10 @@ interface Recognition {
 type RecognitionCtor = new () => Recognition;
 
 function ctor(): RecognitionCtor | null {
-  const w = globalThis as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
+  const w = globalThis as unknown as {
+    SpeechRecognition?: RecognitionCtor;
+    webkitSpeechRecognition?: RecognitionCtor;
+  };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
@@ -43,9 +46,21 @@ function message(code: string): string {
 }
 
 /** Recognise one utterance with the webview's built-in recogniser. */
-export function recognizeOnce(lang = navigator.language || "en-US"): { result: Promise<string>; cancel: () => void } {
+/** English (India) understands English, Hindi words and Hinglish, and nothing outside them. */
+export const SPEECH_LANG = "en-IN";
+
+export function recognizeOnce(lang = SPEECH_LANG): {
+  result: Promise<string>;
+  cancel: () => void;
+} {
   const C = ctor();
-  if (!C) return { result: Promise.reject(new Error("Speech recognition isn't available in this webview.")), cancel: () => undefined };
+  if (!C)
+    return {
+      result: Promise.reject(
+        new Error("Speech recognition isn't available in this webview."),
+      ),
+      cancel: () => undefined,
+    };
   const r = new C();
   r.lang = lang;
   r.continuous = false;
@@ -54,9 +69,13 @@ export function recognizeOnce(lang = navigator.language || "en-US"): { result: P
   let cancelled = false;
   const result = new Promise<string>((resolve, reject) => {
     r.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) text += e.results[i]![0]!.transcript;
+      for (let i = e.resultIndex; i < e.results.length; i++)
+        text += e.results[i]![0]!.transcript;
     };
-    r.onerror = (e) => (e.error === "no-speech" || e.error === "aborted" ? undefined : reject(new Error(message(e.error))));
+    r.onerror = (e) =>
+      e.error === "no-speech" || e.error === "aborted"
+        ? undefined
+        : reject(new Error(message(e.error)));
     r.onend = () => resolve(cancelled ? "" : text.trim());
   });
   r.start();
@@ -70,10 +89,15 @@ export function recognizeOnce(lang = navigator.language || "en-US"): { result: P
 }
 
 /** Continuous recognition used for the wake word. Restarts itself until stopped. */
-export function listenContinuously(onFinal: (transcript: string) => void, onError: (msg: string) => void): () => void {
+export function listenContinuously(
+  onFinal: (transcript: string) => void,
+  onError: (msg: string) => void,
+): () => void {
   const C = ctor();
   if (!C) {
-    onError("Wake word needs speech recognition, which this webview doesn't provide.");
+    onError(
+      "Wake word needs speech recognition, which this webview doesn't provide.",
+    );
     return () => undefined;
   }
   let stopped = false;
@@ -81,14 +105,19 @@ export function listenContinuously(onFinal: (transcript: string) => void, onErro
   const begin = () => {
     if (stopped) return;
     r = new C();
-    r.lang = navigator.language || "en-US";
+    r.lang = SPEECH_LANG;
     r.continuous = true;
     r.interimResults = false;
     r.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i]!.isFinal) onFinal(e.results[i]![0]!.transcript);
+      for (let i = e.resultIndex; i < e.results.length; i++)
+        if (e.results[i]!.isFinal) onFinal(e.results[i]![0]!.transcript);
     };
     r.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "audio-capture") {
+      if (
+        e.error === "not-allowed" ||
+        e.error === "service-not-allowed" ||
+        e.error === "audio-capture"
+      ) {
         stopped = true;
         onError(message(e.error));
       }

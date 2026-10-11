@@ -16,7 +16,7 @@ import type {
   Task,
   TaskInput,
 } from "@/types/productivity";
-import type { VoiceStatus } from "@/types/voice";
+import type { VoiceStatus, WakeStatus } from "@/types/voice";
 import type {
   AllowedFolder,
   DetectedProject,
@@ -87,6 +87,13 @@ export const api = {
   phoneMessagesAllApps: () => call<boolean>("phone_messages_all_apps"),
   phoneSetMessagesAllApps: (on: boolean) =>
     call<boolean>("phone_set_messages_all_apps", { on }),
+  phoneWakeStatus: () => call<WakeStatus>("phone_wake_status"),
+  phoneWakeSet: (on: boolean, chargingOnly: boolean) =>
+    call<void>("phone_wake_set", { on, chargingOnly }),
+  phoneWakeHold: (on: boolean) => call<void>("phone_wake_hold", { on }),
+  /** "overlay" (Display over other apps), "battery", "assistant" (digital assistant app). */
+  phoneOpenSettings: (page: "overlay" | "battery" | "assistant") =>
+    call<void>("phone_open_settings", { page }),
   phoneScreenAccess: () => call<boolean>("phone_screen_access"),
   phoneScreenSettings: () => call<void>("phone_screen_settings"),
   /** What a home-screen widget asked for when it opened IGRIS ("listen", "widgets"), once. */

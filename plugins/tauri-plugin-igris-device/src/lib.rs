@@ -76,6 +76,25 @@ pub struct PhoneMessage {
     pub can_reply: bool,
 }
 
+/// "Hey IGRIS" on the phone, and whether IGRIS is the phone's assistant.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WakeStatus {
+    /// The user turned it on.
+    pub on: bool,
+    pub charging_only: bool,
+    /// The listening service is running / hearing right now.
+    pub running: bool,
+    pub listening: bool,
+    pub problem: Option<String>,
+    /// "Display over other apps": IGRIS can open itself when it hears its name.
+    pub can_open_itself: bool,
+    /// Battery saving won't stop it.
+    pub battery_unrestricted: bool,
+    /// IGRIS is the phone's digital assistant app.
+    pub assistant: bool,
+}
+
 /// Where the phone is.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Location {

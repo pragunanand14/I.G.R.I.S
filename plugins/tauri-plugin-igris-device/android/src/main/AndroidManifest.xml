@@ -15,6 +15,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- "Hey IGRIS": listen for the name in a foreground service (on only when the user turns it on),
+         open IGRIS when it's heard (needs "Display over other apps"), and not be stopped by battery saving. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Package visibility (Android 11+): only apps the launcher can open, not every package. -->
     <queries>
@@ -56,6 +62,31 @@
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/igris_accessibility" />
         </service>
         <receiver android:name="dev.igris.device.PlaceAlertReceiver" android:exported="false" />
+        <!-- "Hey IGRIS" / "Wake up IGRIS", recognised on the phone (WakeWordService.kt). -->
+        <service
+            android:name="dev.igris.device.WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- IGRIS as the phone's digital assistant (Settings → Default apps → Digital assistant app):
+             the assistant gesture and a headset's voice button open IGRIS listening. -->
+        <activity
+            android:name="dev.igris.device.AssistActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- Message notifications (summaries, replies): off until the user grants Notification access. -->
         <service
             android:name="dev.igris.device.IgrisNotificationListener"

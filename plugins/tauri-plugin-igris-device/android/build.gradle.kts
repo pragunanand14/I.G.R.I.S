@@ -28,5 +28,9 @@ kotlin {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.6.0")
+    // "Hey IGRIS": an offline recogniser and its small English model (bundled; nothing is downloaded at run time).
+    implementation("com.alphacephei:vosk-android:0.3.47")
+    implementation("net.java.dev.jna:jna:5.13.0@aar")
+    implementation("com.alphacephei:vosk-model-en:0.3.38")
     implementation(project(":tauri-android"))
 }

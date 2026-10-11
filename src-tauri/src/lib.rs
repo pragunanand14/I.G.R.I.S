@@ -137,6 +137,8 @@ pub fn run() {
             #[cfg(mobile)]
             platform::follow_phone_control(app.handle(), operator.clone());
             #[cfg(mobile)]
+            commands::phone::follow_wake_word(app.handle().clone());
+            #[cfg(mobile)]
             let media = platform::media(app.handle());
             app.manage(commands::media::MediaState(media.clone()));
             let tools = crate::tools::standard::registry(crate::tools::standard::Deps {
@@ -342,6 +344,10 @@ pub fn run() {
             commands::google::google_connect,
             commands::google::google_disconnect,
             commands::phone::phone_screen_access,
+            commands::phone::phone_wake_status,
+            commands::phone::phone_wake_set,
+            commands::phone::phone_wake_hold,
+            commands::phone::phone_open_settings,
             commands::phone::phone_messages_access,
             commands::phone::phone_messages_settings,
             commands::phone::phone_messages_all_apps,

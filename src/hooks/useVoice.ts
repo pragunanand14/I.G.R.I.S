@@ -1,12 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router";
 import { api } from "@/services/api";
 import { BackendError, hasBackend } from "@/services/backend";
 import { isMobilePlatform } from "@/services/platform";
 import { listenContinuously } from "@/services/voice/browserSpeech";
 import { WakeListener } from "@/services/voice/wakeListener";
-import { useWakePrefs } from "@/services/voice/wakePrefs";
 import {
   parseOperatorCommand,
   parseWakeCommand,
@@ -40,34 +39,10 @@ export function finalAnswer(text: string, activities: ToolActivity[]): string {
 export function useVoice(enabled: boolean) {
   const navigate = useNavigate();
   const wakeSetting = useSettingsStore((s) => s.settings.wakeWordEnabled);
-  const chargingOnly = useWakePrefs((s) => s.chargingOnly);
-  const [charging, setCharging] = useState(true);
   const phone = isMobilePlatform();
-  // On the phone, optionally listen only while charging (checked every minute).
-  useEffect(() => {
-    if (!enabled || !phone || !chargingOnly || !wakeSetting) return;
-    let live = true;
-    const check = () =>
-      api
-        .getSystemSnapshot()
-        .then(
-          (s) =>
-            live &&
-            setCharging(
-              s.battery
-                ? s.battery.state === "charging" || s.battery.state === "full"
-                : true,
-            ),
-        )
-        .catch(() => undefined);
-    void check();
-    const t = setInterval(() => void check(), 60_000);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, [enabled, phone, chargingOnly, wakeSetting]);
-  const wakeWord = wakeSetting && (!phone || !chargingOnly || charging);
+  // On the phone "Hey IGRIS" is heard natively, on the phone itself (Settings → AI and voice), not by the webview:
+  // the webview's microphone counts as a call and would turn the music down.
+  const wakeWord = wakeSetting && !phone;
   const phase = useVoiceStore((s) => s.phase);
 
   // Voice input goes through the same path as typed input.
@@ -109,6 +84,34 @@ export function useVoice(enabled: boolean) {
       window.removeEventListener("keydown", onKey);
     };
   }, [enabled]);
+
+  // Phone: "Hey IGRIS" heard while IGRIS is open starts listening here. While IGRIS records or speaks,
+  // the phone's wake listener lets go of the microphone (one app can't use it twice).
+  useEffect(() => {
+    if (!enabled || !phone || !hasBackend()) return;
+    let unlisten: (() => void) | undefined;
+    let live = true;
+    void listen("wake-heard", () => {
+      const v = useVoiceStore.getState();
+      if (v.phase === "idle") void v.listen();
+    }).then((u) => (live ? (unlisten = u) : u()));
+    let held = false;
+    const sync = () => {
+      const v = useVoiceStore.getState();
+      const busy = v.phase !== "idle" || v.replyPending;
+      if (busy !== held) {
+        held = busy;
+        void api.phoneWakeHold(busy).catch(() => undefined);
+      }
+    };
+    const off = useVoiceStore.subscribe(sync);
+    return () => {
+      live = false;
+      unlisten?.();
+      off();
+      if (held) void api.phoneWakeHold(false).catch(() => undefined);
+    };
+  }, [enabled, phone]);
 
   // Speak streamed replies to spoken requests. In multi-step tool work (operating
   // the computer, several tool calls) only the final answer is spoken, not the

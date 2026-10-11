@@ -1,29 +1,58 @@
-import { DEFAULT_SILENCE, rms, SilenceDetector, type SilenceOptions } from "./silence";
+import { isMobilePlatform } from "@/services/platform";
+import {
+  DEFAULT_SILENCE,
+  rms,
+  SilenceDetector,
+  type SilenceOptions,
+} from "./silence";
 
 export class MicUnavailableError extends Error {}
 
 export function micSupported(): boolean {
-  return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
+  return (
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    typeof MediaRecorder !== "undefined"
+  );
 }
 
 export async function openMic(): Promise<MediaStream> {
-  if (!micSupported()) throw new MicUnavailableError("This system doesn't provide microphone access to IGRIS.");
+  if (!micSupported())
+    throw new MicUnavailableError(
+      "This system doesn't provide microphone access to IGRIS.",
+    );
   try {
     try {
-      return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      // On the phone, echo cancellation makes Android treat the recording as a call and turn the music down.
+      const audio = isMobilePlatform()
+        ? {
+            echoCancellation: false,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        : { echoCancellation: true, noiseSuppression: true };
+      return await navigator.mediaDevices.getUserMedia({ audio });
     } catch (err) {
       // Some webviews reject processing constraints; fall back to a plain request.
       const name = err instanceof DOMException ? err.name : "";
-      if (name === "OverconstrainedError" || name === "TypeError" || (err instanceof Error && /constraint/i.test(err.message))) {
+      if (
+        name === "OverconstrainedError" ||
+        name === "TypeError" ||
+        (err instanceof Error && /constraint/i.test(err.message))
+      ) {
         return await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       throw err;
     }
   } catch (err) {
     const name = err instanceof DOMException ? err.name : "";
-    if (name === "NotAllowedError" || name === "SecurityError") throw new MicUnavailableError("Microphone permission was denied.");
-    if (name === "NotFoundError") throw new MicUnavailableError("No microphone was found.");
-    throw new MicUnavailableError(`Couldn't open the microphone${err instanceof Error ? `: ${err.message}` : "."}`);
+    if (name === "NotAllowedError" || name === "SecurityError")
+      throw new MicUnavailableError("Microphone permission was denied.");
+    if (name === "NotFoundError")
+      throw new MicUnavailableError("No microphone was found.");
+    throw new MicUnavailableError(
+      `Couldn't open the microphone${err instanceof Error ? `: ${err.message}` : "."}`,
+    );
   }
 }
 
@@ -81,20 +110,35 @@ export class UtteranceRecorder {
 
   async record(): Promise<Recording | null> {
     this.stream = await openMic();
-    const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? "";
-    const recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
+    const mimeType =
+      [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/mp4",
+      ].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? "";
+    const recorder = new MediaRecorder(
+      this.stream,
+      mimeType ? { mimeType } : undefined,
+    );
     this.recorder = recorder;
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
     const detector = new SilenceDetector(this.opts);
     let heardSpeech = false;
 
-    const done = new Promise<void>((resolve) => (recorder.onstop = () => resolve()));
+    const done = new Promise<void>(
+      (resolve) => (recorder.onstop = () => resolve()),
+    );
     this.monitor = new LevelMonitor(this.stream, (level) => {
       this.onLevel(level);
       const state = detector.update(level, performance.now());
       if (state === "speech") heardSpeech = true;
-      if ((state === "done" || state === "timeout") && recorder.state === "recording") recorder.stop();
+      if (
+        (state === "done" || state === "timeout") &&
+        recorder.state === "recording"
+      )
+        recorder.stop();
     });
     recorder.start(250);
     this.monitor.start();
@@ -125,7 +169,11 @@ export class UtteranceRecorder {
 }
 
 /** Watches the microphone while IGRIS speaks; calls `onSpeech` when the user starts talking. */
-export async function watchForBargeIn(onSpeech: () => void, threshold = 0.06, sustainMs = 300): Promise<() => void> {
+export async function watchForBargeIn(
+  onSpeech: () => void,
+  threshold = 0.06,
+  sustainMs = 300,
+): Promise<() => void> {
   const stream = await openMic();
   let since: number | null = null;
   let fired = false;
@@ -151,6 +199,7 @@ export async function watchForBargeIn(onSpeech: () => void, threshold = 0.06, su
 export async function blobToBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
 }
