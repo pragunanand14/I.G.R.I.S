@@ -57,6 +57,8 @@ pub enum Capability {
     /// Music and media playing on this device: play/pause/skip, volume,
     /// starting a song in the user's music app.
     Media,
+    /// The user's spending: expenses found in payment messages and emails, or logged.
+    Money,
 }
 
 impl Capability {
@@ -105,6 +107,8 @@ pub fn capability(name: &str) -> Option<Capability> {
         "media_control" | "now_playing" | "play_music" => Media,
         "create_routine" | "list_routines" | "change_routine" => Routines,
         "read_messages" | "reply_message" | "send_message" | "call" => Messages,
+        "save_person" | "find_people" | "forget_person" => Memory,
+        "log_expense" | "spending" | "scan_expenses" | "change_expense" => Money,
         "gmail_search" | "gmail_read" | "gmail_draft" | "gmail_send" | "gmail_organise" => Email,
         "calendar_events" | "calendar_add" | "calendar_update" | "calendar_delete" => Productivity,
         "save_place" | "list_places" | "place_reminder" | "cancel_place_reminder" => Productivity,
@@ -260,6 +264,27 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
             "dm",
         ],
     ),
+    (
+        Capability::Money,
+        &[
+            "spent",
+            "spend",
+            "spending",
+            "expense",
+            "expenses",
+            "budget",
+            "money",
+            "paid",
+            "payment",
+            "payments",
+            "rupees",
+            "₹",
+            "upi",
+            "bank",
+            "transaction",
+            "afford",
+        ],
+    ),
     (Capability::Email, &["email", "emails", "mail", "inbox", "gmail", "reply", "replied", "unread", "sender", "newsletter", "draft", "forward"]),
     (
         Capability::Media,
@@ -301,6 +326,7 @@ pub const REQUESTABLE: &[(&str, &[Capability])] = &[
     ("email", &[Capability::Email]),
     ("routines", &[Capability::Routines]),
     ("messages", &[Capability::Messages]),
+    ("money", &[Capability::Money]),
 ];
 
 fn word_hit(text: &str, stem: &str) -> bool {
@@ -499,7 +525,10 @@ mod tests {
         // A question: the core only.
         let t = Toolset::new(all.clone()).with_focus(focus_for("What's 12 * 7?", &[]));
         assert_eq!(names(&t), ["calculator", "web_search", "read_file", "launch_application", "operator_start", "task_plan", "request_tools"]);
-        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen", "devices", "home", "music", "email", "routines", "messages"]);
+        assert_eq!(
+            t.hidden_groups(),
+            ["productivity", "files", "terminal", "projects", "screen", "devices", "home", "music", "email", "routines", "messages", "money"]
+        );
         // Naming another device brings the cross-device tools.
         assert!(names(&Toolset::new(all.clone()).with_focus(focus_for("Open Notepad on my laptop", &[]))).contains(&"send_to_device".to_string()));
         assert_eq!(t.allowed().len(), all.len(), "hidden is not forbidden: the executor still decides");
@@ -555,6 +584,7 @@ mod tests {
             include_str!("../tools/devices.rs"),
             include_str!("../tools/google.rs"),
             include_str!("../tools/home.rs"),
+            include_str!("../tools/life.rs"),
             include_str!("../tools/memory.rs"),
             include_str!("../tools/productivity.rs"),
             include_str!("../tools/projects.rs"),

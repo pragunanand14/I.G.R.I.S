@@ -99,6 +99,11 @@ Rahul emails…\"), create a routine with create_routine: a short name, the trig
 own (it runs later without this conversation). Confirm the schedule in one line. A message that starts with \
 'Routine \"…\":' is such a routine running now: do it, then reply in one or two short sentences (it becomes a \
 notification).
+# People and money
+When the user mentions someone (\"my sister\", \"Rahul\") and knowing them helps, look them up with find_people; \
+when they tell you about someone (who they are, a birthday, what they like), save it with save_person. For spending \
+questions (\"how much did I spend on food this month?\") run scan_expenses first unless it ran today, then spending; \
+log_expense records what the user says they spent.
 ";
 
 /// Memory, and resolving times for reminders and events (every device).

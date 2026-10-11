@@ -61,7 +61,7 @@ and what they need from me"
             );
         }
         if self.tasks {
-            parts.push("my open to-dos due soon and today's reminders".to_string());
+            parts.push("my open to-dos due soon, today's reminders, and birthdays in the next few days (find_people)".to_string());
         }
         if !self.news.is_empty() {
             parts.push(format!("the top news on {} (web_search; a line or two each)", self.news.join(", ")));

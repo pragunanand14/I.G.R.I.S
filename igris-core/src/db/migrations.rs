@@ -525,6 +525,34 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 19,
+        name: "people_and_expenses",
+        sql: r#"
+            -- The people in the user's life (people.rs) and what they spend
+            -- (expenses.rs, from payment messages and emails or told directly).
+            CREATE TABLE people (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                relation   TEXT NOT NULL DEFAULT '',
+                birthday   TEXT NOT NULL DEFAULT '',
+                notes      TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE expenses (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                amount_minor INTEGER NOT NULL,
+                currency     TEXT NOT NULL,
+                merchant     TEXT NOT NULL,
+                category     TEXT NOT NULL,
+                spent_on     TEXT NOT NULL,
+                source       TEXT NOT NULL,
+                fingerprint  TEXT NOT NULL UNIQUE,
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX expenses_spent_on ON expenses (spent_on);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {

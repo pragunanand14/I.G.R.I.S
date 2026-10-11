@@ -3,6 +3,7 @@ import {
   CheckSquare,
   Cpu,
   FolderGit2,
+  Heart,
   Home,
   MessageSquare,
   Repeat,
@@ -24,7 +25,12 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { path: "/", label: "Home", icon: Home, summary: "IGRIS core and live system status." },
+  {
+    path: "/",
+    label: "Home",
+    icon: Home,
+    summary: "IGRIS core and live system status.",
+  },
   {
     path: "/chat",
     label: "Chat",
@@ -44,10 +50,17 @@ export const NAV_ITEMS: NavItem[] = [
     summary: "What IGRIS remembers — inspectable, editable, deletable.",
   },
   {
+    path: "/life",
+    label: "Life",
+    icon: Heart,
+    summary: "The people in your life and what you spend.",
+  },
+  {
     path: "/routines",
     label: "Routines",
     icon: Repeat,
-    summary: "Things IGRIS does by itself — on a schedule, or when an email arrives.",
+    summary:
+      "Things IGRIS does by itself — on a schedule, or when an email arrives.",
   },
   {
     path: "/smart-home",
@@ -61,7 +74,12 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FolderGit2,
     summary: "Your projects, so IGRIS can load their context.",
   },
-  { path: "/system", label: "System", icon: Cpu, summary: "Live hardware and OS telemetry." },
+  {
+    path: "/system",
+    label: "System",
+    icon: Cpu,
+    summary: "Live hardware and OS telemetry.",
+  },
   {
     path: "/tools",
     label: "Tools",
@@ -74,5 +92,10 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ShieldCheck,
     summary: "Permissions and audit trail.",
   },
-  { path: "/settings", label: "Settings", icon: Settings, summary: "Preferences and configuration." },
+  {
+    path: "/settings",
+    label: "Settings",
+    icon: Settings,
+    summary: "Preferences and configuration.",
+  },
 ];

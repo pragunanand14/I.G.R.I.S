@@ -1,6 +1,12 @@
 import "./mobile.css";
 import { useEffect } from "react";
-import { createHashRouter, Navigate, Outlet, RouterProvider, useNavigate } from "react-router";
+import {
+  createHashRouter,
+  Navigate,
+  Outlet,
+  RouterProvider,
+  useNavigate,
+} from "react-router";
 import { api } from "@/services/api";
 import { useVoiceStore } from "@/stores/voiceStore";
 import { DevicePrompts } from "@/components/devices/DevicePrompts";
@@ -19,6 +25,7 @@ import { MessagesScreen } from "./screens/MessagesScreen";
 import { PermissionsScreen } from "./screens/PermissionsScreen";
 import { AiScreen, AppearanceScreen, MoreScreen } from "./screens/MoreScreen";
 import { RoutinesScreen } from "./screens/RoutinesScreen";
+import { LifeScreen } from "./screens/LifeScreen";
 import { ScreenControlScreen } from "./screens/ScreenControlScreen";
 import { SmartHomeScreen } from "./screens/SmartHomeScreen";
 import { TodayScreen } from "./screens/TodayScreen";
@@ -98,6 +105,7 @@ const router = createHashRouter([
       { path: "settings/screen", element: <ScreenControlScreen /> },
       { path: "settings/accounts", element: <AccountsScreen /> },
       { path: "routines", element: <RoutinesScreen /> },
+      { path: "life", element: <LifeScreen /> },
       { path: "settings/messages", element: <MessagesScreen /> },
       { path: "settings/devices", element: <DevicesScreen /> },
       { path: "*", element: <Navigate to="/" replace /> },

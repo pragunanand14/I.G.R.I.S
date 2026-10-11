@@ -8,8 +8,10 @@ import { NotFoundPage } from "@/pages/NotFoundPage";
 import { PlannedPage } from "@/pages/PlannedPage";
 
 // Pages load on first visit; Home (the start screen) ships in the main bundle.
-const named = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, key: K) =>
-  lazy(() => load().then((m) => ({ default: m[key] })));
+const named = <K extends string>(
+  load: () => Promise<Record<K, React.ComponentType>>,
+  key: K,
+) => lazy(() => load().then((m) => ({ default: m[key] })));
 const PAGES = {
   chat: () => import("@/pages/ChatPage"),
   memory: () => import("@/pages/MemoryPage"),
@@ -21,6 +23,7 @@ const PAGES = {
   tools: () => import("@/pages/ToolsPage"),
   smartHome: () => import("@/pages/SmartHomePage"),
   routines: () => import("@/pages/RoutinesPage"),
+  life: () => import("@/pages/LifePage"),
 };
 const ChatPage = named(PAGES.chat, "ChatPage");
 const MemoryPage = named(PAGES.memory, "MemoryPage");
@@ -32,10 +35,17 @@ const TasksPage = named(PAGES.tasks, "TasksPage");
 const ToolsPage = named(PAGES.tools, "ToolsPage");
 const SmartHomePage = named(PAGES.smartHome, "SmartHomePage");
 const RoutinesPage = named(PAGES.routines, "RoutinesPage");
+const LifePage = named(PAGES.life, "LifePage");
 
 // Once the window is up, fetch the other pages in the background so moving between them never waits.
 if (typeof window !== "undefined" && !isMobilePlatform()) {
-  setTimeout(() => Object.values(PAGES).forEach((load) => void load().catch(() => undefined)), 2500);
+  setTimeout(
+    () =>
+      Object.values(PAGES).forEach(
+        (load) => void load().catch(() => undefined),
+      ),
+    2500,
+  );
 }
 
 function Page({ children }: { children: React.ReactNode }) {
@@ -53,6 +63,7 @@ const IMPLEMENTED: Record<string, React.ReactNode> = {
   "/settings": <SettingsPage />,
   "/smart-home": <SmartHomePage />,
   "/routines": <RoutinesPage />,
+  "/life": <LifePage />,
 };
 
 // Hash routing: the app is served from a custom protocol in production.
@@ -64,7 +75,11 @@ const router = createHashRouter([
       { index: true, element: <HomePage /> },
       ...NAV_ITEMS.filter((n) => n.path !== "/").map((item) => ({
         path: item.path.slice(1),
-        element: IMPLEMENTED[item.path] ? <Page>{IMPLEMENTED[item.path]}</Page> : <PlannedPage item={item} />,
+        element: IMPLEMENTED[item.path] ? (
+          <Page>{IMPLEMENTED[item.path]}</Page>
+        ) : (
+          <PlannedPage item={item} />
+        ),
       })),
       { path: "*", element: <NotFoundPage /> },
     ],

@@ -312,6 +312,28 @@ impl Tool for CallTool {
     }
 }
 
+/// The phone's recent message notifications (last day) as payment candidates
+/// for expense tracking. Only the parsed amounts leave this device.
+pub fn payment_feed(phone: SharedComms, db: Arc<Database>) -> crate::expenses::PhoneFeed {
+    Arc::new(move || {
+        if !phone.access() {
+            return Err("message access is off (IGRIS → Settings → Messages).".into());
+        }
+        let all = Comms::new(phone.clone(), db.clone()).all_apps();
+        Ok(phone
+            .recent(1440, all)?
+            .into_iter()
+            .map(|m| crate::expenses::Found {
+                id: None,
+                date: chrono::DateTime::from_timestamp_millis(m.time)
+                    .map(|t| t.with_timezone(&chrono::Local).date_naive())
+                    .unwrap_or_else(|| chrono::Local::now().date_naive()),
+                text: format!("{} {}", m.title, m.text),
+            })
+            .collect())
+    })
+}
+
 pub fn all(c: &Comms) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(ReadMessagesTool::new(c.clone())),
@@ -394,5 +416,8 @@ mod tests {
         assert!(call.always_ask(&json!({})));
         call.execute(&json!({"to": "+91 98000 00002"})).await.unwrap();
         assert_eq!(*fake.did.lock().unwrap(), ["reply k1 Yes!", "whatsapp +919800000001 Running late", "call +919800000002"]);
+
+        let feed = payment_feed(fake.clone(), db.clone())().unwrap();
+        assert!(feed.iter().any(|f| f.text == "Mom Dinner at 8?"));
     }
 }

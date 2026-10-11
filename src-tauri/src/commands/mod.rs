@@ -11,6 +11,7 @@ pub mod chat;
 pub mod devices;
 pub mod google;
 pub mod home;
+pub mod life;
 pub mod media;
 pub mod memory;
 pub mod operator;

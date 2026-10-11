@@ -83,6 +83,9 @@ pub struct Deps {
 pub fn registry(d: Deps) -> ToolRegistry {
     let Deps { db, config, system, connectivity, attachments, operator, orchestrator, browser_profile, open_path, open_url, media, google, devices } = d;
     let mut tools = ToolRegistry::default();
+    for t in igris_core::tools::life::all(&db, &google, None) {
+        tools.register(t);
+    }
     for t in igris_core::tools::google::all(&google) {
         tools.register(t);
     }
@@ -173,6 +176,9 @@ pub fn registry(d: Deps) -> ToolRegistry {
     use super::phone::{DeviceStatusTool, ListPhoneAppsTool, OpenPhoneAppTool};
     let Deps { db, config, orchestrator, operator, open_url, phone, screen, comms, location, media, google, devices, .. } = d;
     let mut tools = ToolRegistry::default();
+    for t in igris_core::tools::life::all(&db, &google, Some(super::phone_messages::payment_feed(comms.clone(), db.clone()))) {
+        tools.register(t);
+    }
     for t in super::phone_messages::all(&super::phone_messages::Comms::new(comms, db.clone())) {
         tools.register(t);
     }

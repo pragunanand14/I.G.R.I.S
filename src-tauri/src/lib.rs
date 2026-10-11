@@ -9,8 +9,8 @@
 //! re-exported under their usual paths.
 
 pub use igris_core::{
-    ai, attachments, briefing, config, conversations, core, db, device, error, files, google, home, memory, operator, orchestrator, permissions, places,
-    productivity, projects, routines, settings, voice, weather,
+    ai, attachments, briefing, config, conversations, core, db, device, error, expenses, files, google, home, memory, operator, orchestrator, people,
+    permissions, places, productivity, projects, routines, settings, voice, weather,
 };
 
 pub mod commands;
@@ -127,6 +127,12 @@ pub fn run() {
             let comms = platform::phone_comms(app.handle());
             #[cfg(mobile)]
             let location = platform::phone_location(app.handle());
+            #[cfg(mobile)]
+            let payments = Some(crate::tools::phone_messages::payment_feed(comms.clone(), db.clone()));
+            #[cfg(desktop)]
+            let payments: Option<crate::expenses::PhoneFeed> = None;
+            commands::life::watch(app.handle().clone(), db.clone(), google.clone(), payments.clone());
+            app.manage(commands::life::PaymentFeed(payments));
             #[cfg(mobile)]
             platform::follow_phone_control(app.handle(), operator.clone());
             #[cfg(mobile)]
@@ -314,6 +320,14 @@ pub fn run() {
             commands::briefing::briefing_today,
             commands::briefing::weather_home,
             commands::briefing::weather_set_home,
+            commands::life::people_list,
+            commands::life::person_save,
+            commands::life::person_forget,
+            commands::life::spending_view,
+            commands::life::expense_set_category,
+            commands::life::expense_delete,
+            commands::life::expenses_scan,
+            commands::life::expenses_set_auto,
             commands::routines::routines_list,
             commands::routines::routine_runs,
             commands::routines::routine_set_enabled,

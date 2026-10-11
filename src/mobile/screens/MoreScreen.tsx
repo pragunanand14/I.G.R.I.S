@@ -67,6 +67,7 @@ export function MoreScreen() {
           detail="Things IGRIS does by itself"
           to="/routines"
         />
+        <Row title="Life" detail="People and spending" to="/life" />
         <Row
           title="Appearance"
           value={THEMES.find((t) => t.value === settings.theme)?.label}
