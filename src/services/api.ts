@@ -10,7 +10,7 @@ import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { MediaAction, NowPlaying } from "@/types/media";
 import type { AllowedAction, AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
-import { call, callRaw } from "./backend";
+import { call } from "./backend";
 import type { OperatorAction, OperatorSnapshot, OperatorTask } from "@/types/operator";
 import type { TaskControl, TaskEventRow, TaskInfo } from "@/types/task";
 import type { FoundDevice, HomeDevice, PointerEvent as TvPointerEvent, TvActionName, TvState } from "@/types/home";
@@ -40,8 +40,8 @@ export const api = {
   renameConversation: (id: string, title: string) => call<Conversation>("rename_conversation", { id, title }),
   deleteConversation: (id: string) => call<void>("delete_conversation", { id }),
   cancelChat: (requestId: string) => call<boolean>("chat_cancel", { requestId }),
-  attachFile: async (file: File) =>
-    callRaw<Attachment>("attach_file", new Uint8Array(await file.arrayBuffer()), { "x-file-name": encodeURIComponent(file.name) }),
+  /** The bytes go as base64 in JSON: raw IPC bodies don't arrive on every platform (Android's IPC turns them into JSON). */
+  attachFile: async (file: File) => call<Attachment>("attach_file", { name: file.name, data: await fileToBase64(file) }),
   discardAttachment: (id: string) => call<void>("discard_attachment", { id }),
   readAttachment: (id: string) => call<AttachmentData>("read_attachment", { id }),
   getOperatorState: () => call<OperatorSnapshot>("get_operator_state"),
@@ -128,3 +128,16 @@ export const api = {
   devicesAnswerApproval: (callId: string, approve: boolean) => call<void>("devices_answer_approval", { callId, approve }),
   devicesAudit: (limit?: number) => call<DeviceAuditRow[]>("devices_audit", { limit }),
 };
+
+/** A file's bytes as base64 (without the data-URL prefix). */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const url = String(r.result);
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    r.onerror = () => reject(new Error("Couldn't read that file."));
+    r.readAsDataURL(file);
+  });
+}
