@@ -28,6 +28,8 @@ interface Staged {
   state: "uploading" | "ready" | "error";
   error?: string;
   attachment?: Attachment;
+  /** Bytes of the original file (counts toward the per-message total). */
+  size: number;
 }
 
 const MAX_HEIGHT = 220;
@@ -67,11 +69,22 @@ export function Composer({ onSend, onStop, streaming, disabled, disabledReason, 
   const add = (list: FileList | File[]) => {
     const incoming = Array.from(list);
     const room = ATTACH_LIMITS.perMessage - filesRef.current.length;
+    let total = filesRef.current.filter((f) => f.state !== "error").reduce((n, f) => n + f.size, 0);
     incoming.forEach((file, i) => {
       const key = crypto.randomUUID();
       const isImage = file.type.startsWith("image/");
-      const problem = i >= room ? `At most ${ATTACH_LIMITS.perMessage} files per message.` : precheck(file);
-      const staged: Staged = { key, name: file.name || (isImage ? "Pasted image" : "file"), isImage, preview: isImage && !problem ? URL.createObjectURL(file) : null, state: problem ? "error" : "uploading", error: problem ?? undefined };
+      let problem = i >= room ? `At most ${ATTACH_LIMITS.perMessage} files per message.` : precheck(file);
+      if (!problem && total + file.size > ATTACH_LIMITS.totalBytes) problem = `The files together can be at most ${ATTACH_LIMITS.totalBytes / 1024 / 1024} MB per message.`;
+      if (!problem) total += file.size;
+      const staged: Staged = {
+        key,
+        name: file.name || (isImage ? "Pasted image" : "file"),
+        isImage,
+        preview: isImage && !problem ? URL.createObjectURL(file) : null,
+        state: problem ? "error" : "uploading",
+        error: problem ?? undefined,
+        size: file.size,
+      };
       setFiles((fs) => [...fs, staged]);
       if (problem) return;
       api

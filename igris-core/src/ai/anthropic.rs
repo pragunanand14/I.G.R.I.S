@@ -55,10 +55,15 @@ pub fn sanitize_replay_blocks(blocks: &[Value]) -> Vec<Value> {
     }
 }
 
+/// Base64 length of the largest PDF sent as a document (~24 MB of PDF, leaving room in the 32 MB request).
+const MAX_NATIVE_PDF_B64: usize = 32 * 1024 * 1024;
+
 fn media_block(m: &Media) -> Value {
     match (&m.data, m.kind) {
         (None, _) => json!({ "type": "text", "text": m.missing_note() }),
         (Some(data), MediaKind::Image) => json!({ "type": "image", "source": { "type": "base64", "media_type": m.mime, "data": &**data } }),
+        // Anthropic reads PDFs natively up to 32 MB per request; bigger ones go as their text.
+        (Some(data), MediaKind::Pdf) if data.len() > MAX_NATIVE_PDF_B64 => json!({ "type": "text", "text": m.pdf_as_text() }),
         (Some(data), MediaKind::Pdf) => {
             json!({ "type": "document", "source": { "type": "base64", "media_type": "application/pdf", "data": &**data }, "title": m.name })
         }

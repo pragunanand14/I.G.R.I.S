@@ -18,10 +18,19 @@ use serde::{Deserialize, Serialize};
 use crate::ai::{Media, MediaKind};
 use crate::error::{AppError, AppResult};
 
-pub const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
-pub const MAX_PDF_BYTES: usize = 20 * 1024 * 1024;
-pub const MAX_IMAGE_SIDE: u32 = 8000;
-pub const MAX_PER_MESSAGE: usize = 5;
+/// Largest image upload. Big photos are shrunk on arrival (see [`STORED_IMAGE_EDGE`]).
+pub const MAX_IMAGE_BYTES: usize = 30 * 1024 * 1024;
+pub const MAX_PDF_BYTES: usize = 100 * 1024 * 1024;
+/// Largest image side accepted (a 12000×12000 photo is ~140 megapixels).
+pub const MAX_IMAGE_SIDE: u32 = 12_000;
+pub const MAX_PER_MESSAGE: usize = 10;
+/// All the files of one message together.
+pub const MAX_TOTAL_BYTES: i64 = 100 * 1024 * 1024;
+/// Images bigger than this (either side, or in bytes) are stored shrunk to
+/// this longest side as JPEG/PNG: AI providers take ~5 MB per image at most
+/// and scale to about this size anyway.
+pub const STORED_IMAGE_EDGE: u32 = 2048;
+const STORED_IMAGE_BYTES: usize = 4 * 1024 * 1024;
 /// Extracted PDF text sent to providers without native PDF input.
 pub const MAX_PDF_TEXT_CHARS: usize = 100_000;
 /// Staged uploads nobody sent are removed after this long.
@@ -120,6 +129,27 @@ fn image_dims(bytes: &[u8]) -> AppResult<(u32, u32)> {
         .map_err(|_| AppError::validation("That image couldn't be read — it may be damaged."))
 }
 
+/// A big image made AI-sized: longest side [`STORED_IMAGE_EDGE`], JPEG (PNG
+/// when it has transparency). Returns the bytes, their type and size.
+fn shrink(bytes: &[u8]) -> AppResult<(Vec<u8>, &'static str, (u32, u32))> {
+    let img = image::load_from_memory(bytes).map_err(|_| AppError::validation("That image couldn't be read — it may be damaged."))?;
+    let img = if img.width() > STORED_IMAGE_EDGE || img.height() > STORED_IMAGE_EDGE {
+        img.resize(STORED_IMAGE_EDGE, STORED_IMAGE_EDGE, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+    let dims = (img.width(), img.height());
+    let mut out = Cursor::new(Vec::new());
+    let mime = if img.color().has_alpha() {
+        img.write_to(&mut out, image::ImageFormat::Png).map_err(|e| AppError::internal(e.to_string()))?;
+        "image/png"
+    } else {
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85).encode_image(&img.to_rgb8()).map_err(|e| AppError::internal(e.to_string()))?;
+        "image/jpeg"
+    };
+    Ok((out.into_inner(), mime, dims))
+}
+
 /// Text from a PDF, bounded; `None` when nothing is extractable (e.g. scanned pages).
 pub fn extract_pdf_text(bytes: &[u8]) -> Option<String> {
     // The PDF parser can panic on malformed input; contain it.
@@ -202,6 +232,10 @@ impl AttachmentStore {
                 let (w, h) = image_dims(bytes)?;
                 if w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE {
                     return Err(AppError::validation(format!("Images can be at most {MAX_IMAGE_SIDE}×{MAX_IMAGE_SIDE} pixels.")));
+                }
+                if w > STORED_IMAGE_EDGE || h > STORED_IMAGE_EDGE || bytes.len() > STORED_IMAGE_BYTES {
+                    let (small, mime, dims) = shrink(bytes)?;
+                    return self.insert(conn, &small, (kind, mime), &name, Some(dims), "upload");
                 }
                 self.insert(conn, bytes, (kind, mime), &name, Some((w, h)), "upload")
             }
@@ -310,12 +344,18 @@ pub fn check_staged(conn: &Connection, ids: &[String]) -> AppResult<()> {
         return Err(AppError::validation(format!("Attach at most {MAX_PER_MESSAGE} files per message.")));
     }
     let mut seen = std::collections::HashSet::new();
+    let mut total = 0;
     for id in ids {
         if !seen.insert(id) {
             return Err(AppError::validation("The same attachment was added twice."));
         }
         match get(conn, id)? {
-            Some(a) if a.source == "upload" && a.message_id.is_none() && a.conversation_id.is_none() => {}
+            Some(a) if a.source == "upload" && a.message_id.is_none() && a.conversation_id.is_none() => {
+                total += a.size;
+                if total > MAX_TOTAL_BYTES {
+                    return Err(AppError::validation(format!("The files together can be at most {} MB per message.", MAX_TOTAL_BYTES / 1024 / 1024)));
+                }
+            }
             _ => return Err(AppError::validation("An attachment is missing or was already sent — attach it again.")),
         }
     }
@@ -417,6 +457,23 @@ mod tests {
         store.hydrate(&conn, &mut media);
         assert!(media.data.is_some());
         assert!(media.text.as_deref().unwrap_or_default().contains("Hello IGRIS"), "{:?}", media.text);
+    }
+
+    #[test]
+    fn big_photos_are_shrunk_and_a_message_holds_up_to_100_mb() {
+        let (db, store, _d) = setup();
+        let conn = db.conn().unwrap();
+        let photo = image::RgbImage::from_fn(3000, 2000, |x, y| image::Rgb([(x % 256) as u8, (y % 256) as u8, 90]));
+        let mut bytes = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(photo).write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+        let a = store.save_upload(&conn, "photo.png", bytes.get_ref()).unwrap();
+        assert_eq!((a.width, a.height, a.mime.as_str()), (Some(2048), Some(1365), "image/jpeg"));
+
+        let b = store.save_upload(&conn, "notes.pdf", &testdata::pdf()).unwrap();
+        check_staged(&conn, &[a.id.clone(), b.id.clone()]).unwrap();
+        conn.execute("UPDATE attachments SET size = ?1", [60 * 1024 * 1024]).unwrap();
+        assert!(check_staged(&conn, &[a.id.clone(), b.id.clone()]).unwrap_err().to_string().contains("100 MB"));
+        assert!(check_staged(&conn, std::slice::from_ref(&a.id)).is_ok());
     }
 
     #[test]
