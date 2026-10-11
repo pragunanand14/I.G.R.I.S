@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BriefingCard } from "@/components/briefing/BriefingCard";
 import { HandoffInbox } from "@/components/devices/HandoffInbox";
 import { NowPlayingBar } from "@/components/media/NowPlayingBar";
 import { Link, useNavigate } from "react-router";
@@ -73,6 +74,7 @@ export function HomePage() {
             </span>
           </div>
           {backendError && <p className="max-w-md text-xs text-danger">{backendError}</p>}
+          <BriefingCard />
           <NowPlayingBar />
           <HandoffInbox />
         </div>

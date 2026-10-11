@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { CircleCheck, CircleX, Clock, Loader2, Play, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { BriefingSettings } from "@/components/briefing/BriefingSettings";
 import { api } from "@/services/api";
 import { BackendError, hasBackend } from "@/services/backend";
 import type { Routine, RoutineRun } from "@/types/routines";
@@ -80,6 +81,7 @@ export function RoutinesList({ phone = false }: { phone?: boolean }) {
 
   return (
     <div className="space-y-3">
+      <BriefingSettings phone={phone} onSaved={load} />
       {items.length === 0 ? (
         <div className={phone ? "m-card space-y-2 px-4 py-4" : "space-y-2"}>
           <p className={phone ? "text-[15px] font-medium" : "text-sm font-medium text-fg"}>No routines yet. Just ask IGRIS, for example:</p>

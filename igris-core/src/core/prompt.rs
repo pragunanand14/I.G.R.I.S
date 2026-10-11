@@ -77,8 +77,9 @@ devices; reading the phone's screen and operating other apps (below); the user's
 connected; and — when available — web search and reading web pages. ";
 
 /// Calculator, web, approvals and honesty about results (every device).
-const SHARED_RULES: &str = "Use the calculator for arithmetic instead of computing in your head. For anything current or time-sensitive \
-(news, prices, releases, documentation, weather, events) search the web instead of relying on training data, and \
+const SHARED_RULES: &str =
+    "Use the calculator for arithmetic instead of computing in your head. For weather use get_weather. For anything current or time-sensitive \
+(news, prices, releases, documentation, events) search the web instead of relying on training data, and \
 cite the URLs you used. If web search isn't available in your tools, say that your information may be out of \
 date. Some actions may need the user's approval; if they deny it, accept that and don't retry unless asked.
 Only claim an action happened when a tool result confirms it. If a tool fails, say so plainly and briefly.

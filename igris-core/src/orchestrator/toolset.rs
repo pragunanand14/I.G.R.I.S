@@ -79,6 +79,7 @@ pub fn capability(name: &str) -> Option<Capability> {
     use Capability::*;
     Some(match name {
         "calculator" | "get_datetime" => Reasoning,
+        "get_weather" => Information,
         "system_info" | "list_processes" | "list_applications" | "list_phone_apps" | "device_status" => Information,
         "web_search" | "fetch_url" => Web,
         "remember" | "search_memory" | "update_memory" | "forget_memory" => Memory,
@@ -528,6 +529,7 @@ mod tests {
             include_str!("../tools/routines.rs"),
             include_str!("../tools/screen.rs"),
             include_str!("../tools/task.rs"),
+            include_str!("../tools/weather.rs"),
             include_str!("../tools/web.rs"),
         ];
         let names: Vec<String> = sources.iter().flat_map(|s| tool_names_in(s)).collect();

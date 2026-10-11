@@ -37,3 +37,15 @@ within 5 minutes is denied, and the run says so.
   minutes; the first check only learns what's already in your inbox.
 - Email contents that start a routine are passed to it as data, never as
   instructions.
+
+## The daily briefing
+
+Routines page → **Daily briefing**: pick a time (every day or weekdays), what
+to include — weather, meetings, important emails, to-dos and reminders — news
+topics (needs web search) and your city. IGRIS makes it a routine called
+"Daily briefing". Each morning its text arrives as a notification, and Home
+shows **Today's briefing** with **Listen** (read aloud with your IGRIS voice).
+
+Weather comes from Open-Meteo (free, no account): only your chosen city's
+coordinates are sent, never your location. The same city is used when you ask
+"what's the weather?" and, on the phone, by the weather widget.

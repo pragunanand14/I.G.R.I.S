@@ -9,8 +9,8 @@
 //! re-exported under their usual paths.
 
 pub use igris_core::{
-    ai, attachments, config, conversations, core, db, device, error, files, google, home, memory, operator, orchestrator, permissions, productivity, projects,
-    routines, settings, voice,
+    ai, attachments, briefing, config, conversations, core, db, device, error, files, google, home, memory, operator, orchestrator, permissions, productivity,
+    projects, routines, settings, voice, weather,
 };
 
 pub mod commands;
@@ -301,6 +301,11 @@ pub fn run() {
             commands::devices::devices_handoff,
             commands::devices::handoffs_list,
             commands::devices::handoff_dismiss,
+            commands::briefing::briefing_get,
+            commands::briefing::briefing_set,
+            commands::briefing::briefing_today,
+            commands::briefing::weather_home,
+            commands::briefing::weather_set_home,
             commands::routines::routines_list,
             commands::routines::routine_runs,
             commands::routines::routine_set_enabled,

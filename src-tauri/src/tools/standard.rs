@@ -83,6 +83,7 @@ pub fn registry(d: Deps) -> ToolRegistry {
     for t in igris_core::tools::routines::all(&db) {
         tools.register(t);
     }
+    tools.register(Arc::new(igris_core::tools::weather::WeatherTool::new(db.clone())));
     for t in super::media::all(&media) {
         tools.register(t);
     }
@@ -172,6 +173,7 @@ pub fn registry(d: Deps) -> ToolRegistry {
     for t in igris_core::tools::routines::all(&db) {
         tools.register(t);
     }
+    tools.register(Arc::new(igris_core::tools::weather::WeatherTool::new(db.clone())));
     for t in super::phone_screen::all(&super::phone_screen::ScreenTools::new(screen, operator)) {
         tools.register(t);
     }

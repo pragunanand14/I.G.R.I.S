@@ -299,6 +299,22 @@ fn load_per_field(conn: &Connection) -> AppResult<Settings> {
     Ok(settings)
 }
 
+/// Extra stored values outside [`Settings`] (briefing, home place…), as JSON,
+/// under keys that start with "x." (ignored by [`load`]).
+pub fn get_extra<T: serde::de::DeserializeOwned>(conn: &Connection, key: &str) -> AppResult<Option<T>> {
+    let raw: Option<String> = conn.query_row("SELECT value FROM settings WHERE key = ?1", [format!("x.{key}")], |r| r.get(0)).optional()?;
+    Ok(raw.and_then(|r| serde_json::from_str(&r).ok()))
+}
+
+pub fn set_extra<T: serde::Serialize>(conn: &Connection, key: &str, value: &T) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        rusqlite::params![format!("x.{key}"), serde_json::to_string(value)?],
+    )?;
+    Ok(())
+}
+
 /// Validate, apply and persist a patch atomically. Returns the new settings.
 pub fn update(conn: &mut Connection, patch: SettingsPatch) -> AppResult<Settings> {
     let patch = patch.validate()?;

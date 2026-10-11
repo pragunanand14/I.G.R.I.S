@@ -8,6 +8,7 @@ import type { VoiceStatus } from "@/types/voice";
 import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, ProjectInput } from "@/types/workspace";
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
+import type { Briefing, Place } from "@/types/briefing";
 import type { GoogleStatus } from "@/types/google";
 import type { Routine, RoutineRun } from "@/types/routines";
 import type { MediaAction, NowPlaying } from "@/types/media";
@@ -33,6 +34,12 @@ export const api = {
   widgetLaunchAction: () => call<string | null>("widget_launch_action"),
   widgetWeatherPlace: () => call<string | null>("widget_weather_place"),
   widgetSetWeatherPlace: (query: string) => call<{ name: string; latitude: number; longitude: number }>("widget_set_weather_place", { query }),
+  briefingGet: () => call<Briefing>("briefing_get"),
+  briefingSet: (briefing: Briefing) => call<Briefing>("briefing_set", { briefing }),
+  /** Today's briefing run, once it has run. */
+  briefingToday: () => call<RoutineRun | null>("briefing_today"),
+  weatherHome: () => call<Place | null>("weather_home"),
+  weatherSetHome: (query: string) => call<Place>("weather_set_home", { query }),
   routinesList: () => call<Routine[]>("routines_list"),
   routineRuns: (id?: number) => call<RoutineRun[]>("routine_runs", { id }),
   routineSetEnabled: (id: number, enabled: boolean) => call<unknown>("routine_set_enabled", { id, enabled }),

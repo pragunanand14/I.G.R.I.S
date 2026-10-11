@@ -6,6 +6,7 @@
 pub mod ai;
 pub mod app;
 pub mod attachments;
+pub mod briefing;
 pub mod chat;
 pub mod devices;
 pub mod google;

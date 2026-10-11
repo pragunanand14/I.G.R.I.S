@@ -2,6 +2,7 @@ import { ArrowUp, CalendarCheck, MessagesSquare, Mic, Settings, Tv } from "lucid
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { AiCore } from "@/components/core/AiCore";
+import { BriefingCard } from "@/components/briefing/BriefingCard";
 import { HandoffInbox } from "@/components/devices/HandoffInbox";
 import { NowPlayingBar } from "@/components/media/NowPlayingBar";
 import { useCoreState } from "@/hooks/useCoreState";
@@ -55,7 +56,8 @@ export function HomeScreen() {
         <div {...enter(2, "mt-2 w-full")}>
           <StatusLine />
         </div>
-        <div className="mt-4 w-full">
+        <div className="mt-4 w-full space-y-3">
+          <BriefingCard phone />
           <NowPlayingBar phone />
           <div className="mt-3">
             <HandoffInbox phone />

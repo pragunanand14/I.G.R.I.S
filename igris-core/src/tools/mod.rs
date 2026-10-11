@@ -19,6 +19,7 @@ pub mod routines;
 pub mod schema;
 pub mod screen;
 pub mod task;
+pub mod weather;
 pub mod web;
 
 use std::collections::BTreeMap;

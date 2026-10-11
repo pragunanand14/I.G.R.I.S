@@ -15,6 +15,7 @@
 
 pub mod ai;
 pub mod attachments;
+pub mod briefing;
 pub mod computer;
 pub mod config;
 pub mod conversations;
@@ -36,3 +37,4 @@ pub mod routines;
 pub mod settings;
 pub mod tools;
 pub mod voice;
+pub mod weather;
