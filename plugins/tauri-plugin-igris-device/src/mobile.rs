@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
-use crate::{Error, PhoneApp, PhoneStatus, Result, ScreenRead};
+use crate::{Contact, Error, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(_app: &AppHandle<R>, api: PluginApi<R, C>) -> std::result::Result<Device<R>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "android")]
@@ -188,6 +188,77 @@ impl<R: Runtime> Device<R> {
         }
         self.0.run_mobile_plugin::<R>("screenTakeStop", ()).map(|r| r.stop).map_err(failed)
     }
+
+    /// Whether the user gave IGRIS Notification access.
+    pub fn messages_access(&self) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct R {
+            enabled: bool,
+        }
+        self.0.run_mobile_plugin::<R>("messagesAccess", ()).map(|r| r.enabled).map_err(failed)
+    }
+
+    pub fn open_notification_access_settings(&self) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("openNotificationAccessSettings", ()).map(|_| ()).map_err(failed)
+    }
+
+    /// Message notifications from the last `since_minutes` (messaging apps, or every app).
+    pub fn recent_messages(&self, since_minutes: u32, all_apps: bool) -> Result<Vec<PhoneMessage>> {
+        #[derive(Deserialize)]
+        struct R {
+            items: Vec<PhoneMessage>,
+        }
+        self.0.run_mobile_plugin::<R>("recentMessages", MessageArgs { since_minutes, all_apps, ..Default::default() }).map(|r| r.items).map_err(failed)
+    }
+
+    /// Reply through a notification's Reply button.
+    pub fn reply_message(&self, id: &str, text: &str) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("replyMessage", MessageArgs { id: Some(id.into()), text: Some(text.into()), ..Default::default() })
+            .map(|_| ())
+            .map_err(failed)
+    }
+
+    /// Contacts whose name contains `name` (Android asks for Contacts permission the first time).
+    pub fn find_contact(&self, name: &str) -> Result<Vec<Contact>> {
+        #[derive(Deserialize)]
+        struct R {
+            contacts: Vec<Contact>,
+        }
+        self.0.run_mobile_plugin::<R>("findContact", MessageArgs { name: Some(name.into()), ..Default::default() }).map(|r| r.contacts).map_err(failed)
+    }
+
+    /// Open WhatsApp ("whatsapp") or the SMS app ("sms") with `text` typed to `number`.
+    pub fn start_message(&self, app: &str, number: &str, text: &str) -> Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>(
+                "startMessage",
+                MessageArgs { app: Some(app.into()), number: Some(number.into()), text: Some(text.into()), ..Default::default() },
+            )
+            .map(|_| ())
+            .map_err(failed)
+    }
+
+    /// Call `number`; `true` when only the dialer opened (no Phone permission).
+    pub fn call_number(&self, number: &str) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct R {
+            dialed: bool,
+        }
+        self.0.run_mobile_plugin::<R>("callNumber", MessageArgs { number: Some(number.into()), ..Default::default() }).map(|r| r.dialed).map_err(failed)
+    }
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct MessageArgs {
+    id: Option<String>,
+    text: Option<String>,
+    since_minutes: u32,
+    all_apps: bool,
+    name: Option<String>,
+    number: Option<String>,
+    app: Option<String>,
 }
 
 #[derive(Serialize, Default)]

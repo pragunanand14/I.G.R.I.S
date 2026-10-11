@@ -23,10 +23,11 @@ and the same React UI, adapted for phones. What changes is the device layer.
 | Send a link or note to the PC (handoff) | ✅ | Settings → Phone and computer, or ask IGRIS (`handoff_to_device`); end-to-end encrypted, kept in the receiver's inbox |
 | Home-screen widgets | ✅ | the orb (tap → IGRIS opens listening), a clock with the date, and weather for a place chosen in Settings → Home-screen widgets (Open-Meteo; only that place's coordinates are sent) |
 | Reading the screen, operating other apps | ✅ (needs the user to turn it on) | an accessibility service (`IgrisAccessibilityService`), off until the user enables it in Android's settings (sideloaded APKs: App info → ⋮ → Allow restricted settings first). `read_phone_screen` (SENSITIVE; password fields never read). `phone_control_start` (SENSITIVE, approved per task like operator mode) then `phone_tap` / `phone_type` / `phone_swipe` / `phone_button`; a Stop pill stays on screen; send/pay/delete-like taps and Enter always ask again; passwords are never typed |
+| Messages and calls | ✅ (needs the user to turn on Notification access) | a notification listener (`IgrisNotificationListener`) keeps the last day's message notifications **in memory** (messaging apps by default; all apps if the user allows), with one-time codes hidden on the phone. `read_messages` (SENSITIVE), `reply_message` through the notification's own Reply (always asks), `send_message` opens WhatsApp/SMS with the text typed (not sent), `call` (always asks; Contacts and Phone permissions are asked on first use, without Phone it opens the dialer). Settings → Messages |
 | Files, terminal, screenshots | ❌ | not offered to the model and not claimed in its prompt |
 
 The phone tool list is built in `src-tauri/src/tools/standard.rs` (`#[cfg(mobile)]`
-registry, 55 tools). The system prompt has a phone variant
+registry, 59 tools). The system prompt has a phone variant
 (`igris-core/src/core/prompt.rs`, `DeviceKind::Phone`) that describes exactly
 these capabilities and says what the phone app can't do.
 

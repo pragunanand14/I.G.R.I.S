@@ -8,6 +8,9 @@
     <!-- Reminders ring on time even when IGRIS is closed (exact alarms). -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- "Text Dad…" / "call Dad": find the number (asked once, when first used) and call it. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
 
     <!-- Package visibility (Android 11+): only apps the launcher can open, not every package. -->
     <queries>
@@ -47,6 +50,16 @@
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/igris_accessibility" />
+        </service>
+        <!-- Message notifications (summaries, replies): off until the user grants Notification access. -->
+        <service
+            android:name="dev.igris.device.IgrisNotificationListener"
+            android:exported="false"
+            android:label="@string/igris_notifications_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
         </service>
     </application>
 </manifest>

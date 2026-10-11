@@ -61,6 +61,27 @@ pub struct ScreenRead {
     pub items: Vec<ScreenItem>,
 }
 
+/// A message notification (one-time codes already hidden).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhoneMessage {
+    /// The notification's key (for replying).
+    pub id: String,
+    pub app: String,
+    /// Usually the sender or chat name.
+    pub title: String,
+    pub text: String,
+    /// Milliseconds since the epoch.
+    pub time: i64,
+    pub can_reply: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Contact {
+    pub name: String,
+    pub number: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("This is only available on Android.")]

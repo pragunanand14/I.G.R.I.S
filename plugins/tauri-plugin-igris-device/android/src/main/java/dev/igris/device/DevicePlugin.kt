@@ -1,5 +1,6 @@
 package dev.igris.device
 
+import android.Manifest
 import android.app.Activity
 import android.app.SearchManager
 import android.content.ActivityNotFoundException
@@ -19,8 +20,11 @@ import android.view.KeyEvent
 import android.webkit.WebView
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
+import app.tauri.PermissionState
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.Permission
+import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
@@ -69,6 +73,17 @@ class ScreenArgs {
 }
 
 @InvokeArg
+class MessageArgs {
+    var id: String? = null
+    var text: String? = null
+    var sinceMinutes: Int = 180
+    var allApps: Boolean = false
+    var name: String? = null
+    var number: String? = null
+    var app: String? = null
+}
+
+@InvokeArg
 class SealArgs {
     var data: String? = null
 }
@@ -83,7 +98,12 @@ private const val MAX_PICKED_BYTES = 64 * 1024 + 1
  * IGRIS's Android device capabilities. Called only from IGRIS's Rust tools
  * (no webview commands), so every use goes through IGRIS's permission checks.
  */
-@TauriPlugin
+@TauriPlugin(
+    permissions = [
+        Permission(strings = [Manifest.permission.READ_CONTACTS], alias = "contacts"),
+        Permission(strings = [Manifest.permission.CALL_PHONE], alias = "call"),
+    ]
+)
 class DevicePlugin(private val activity: Activity) : Plugin(activity) {
 
     /** Apps the launcher can open: label and package name. */
@@ -516,5 +536,159 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         ret.put("stop", IgrisAccessibilityService.stopRequested)
         IgrisAccessibilityService.stopRequested = false
         invoke.resolve(ret)
+    }
+
+    // ── Messages, contacts, calls ───────────────────────────────────────
+
+    @Command
+    fun messagesAccess(invoke: Invoke) {
+        val enabled = android.provider.Settings.Secure.getString(activity.contentResolver, "enabled_notification_listeners")
+            ?.contains(activity.packageName) == true
+        val ret = JSObject()
+        ret.put("enabled", enabled)
+        invoke.resolve(ret)
+    }
+
+    /** Android's Notification access page, where the user turns IGRIS's message reading on or off. */
+    @Command
+    fun openNotificationAccessSettings(invoke: Invoke) {
+        try {
+            activity.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject("Couldn't open Android's settings: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Recent message notifications (one-time codes already hidden). */
+    @Command
+    fun recentMessages(invoke: Invoke) {
+        val a = invoke.parseArgs(MessageArgs::class.java)
+        val list = JSArray()
+        for (m in IgrisNotificationListener.recent(a.sinceMinutes.coerceIn(1, 1440) * 60_000L, a.allApps)) {
+            val o = JSObject()
+            o.put("id", m.key)
+            o.put("app", m.app)
+            o.put("title", m.title)
+            o.put("text", m.text)
+            o.put("time", m.time)
+            o.put("canReply", m.reply != null)
+            list.put(o)
+        }
+        val ret = JSObject()
+        ret.put("items", list)
+        invoke.resolve(ret)
+    }
+
+    @Command
+    fun replyMessage(invoke: Invoke) {
+        val a = invoke.parseArgs(MessageArgs::class.java)
+        try {
+            IgrisNotificationListener.reply(activity, a.id ?: "", a.text ?: "")
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    /** Contacts whose name contains `name` (asks for Contacts permission the first time). */
+    @Command
+    fun findContact(invoke: Invoke) {
+        if (getPermissionState("contacts") != PermissionState.GRANTED) {
+            requestPermissionForAlias("contacts", invoke, "contactsCallback")
+            return
+        }
+        lookupContacts(invoke)
+    }
+
+    @PermissionCallback
+    private fun contactsCallback(invoke: Invoke) {
+        if (getPermissionState("contacts") == PermissionState.GRANTED) lookupContacts(invoke)
+        else invoke.reject("IGRIS isn't allowed to see contacts. Allow it in Android Settings → Apps → IGRIS → Permissions, or give the number.")
+    }
+
+    private fun lookupContacts(invoke: Invoke) {
+        val name = invoke.parseArgs(MessageArgs::class.java).name?.trim().orEmpty()
+        if (name.isEmpty()) {
+            invoke.reject("Say whose number to look for.")
+            return
+        }
+        val uri = android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val cols = arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val found = JSArray()
+        val seen = HashSet<String>()
+        try {
+            activity.contentResolver.query(uri, cols, "${cols[0]} LIKE ?", arrayOf("%$name%"), "${cols[0]} ASC")?.use { c ->
+                while (c.moveToNext() && found.length() < 6) {
+                    val n = c.getString(0) ?: continue
+                    val num = c.getString(1)?.replace(Regex("[^+0-9]"), "") ?: continue
+                    if (!seen.add("$n|$num")) continue
+                    val o = JSObject()
+                    o.put("name", n)
+                    o.put("number", num)
+                    found.put(o)
+                }
+            }
+            val ret = JSObject()
+            ret.put("contacts", found)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Couldn't read contacts: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Open WhatsApp or the SMS app with the message typed in (the user — or IGRIS with approval — presses send). */
+    @Command
+    fun startMessage(invoke: Invoke) {
+        val a = invoke.parseArgs(MessageArgs::class.java)
+        val number = a.number?.replace(Regex("[^+0-9]"), "").orEmpty()
+        val text = a.text.orEmpty()
+        if (number.length < 5) {
+            invoke.reject("That phone number isn't valid.")
+            return
+        }
+        val intent = if (a.app == "whatsapp") {
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://wa.me/${number.trimStart('+')}?text=${android.net.Uri.encode(text)}"))
+        } else {
+            Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:$number")).putExtra("sms_body", text)
+        }
+        try {
+            activity.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            invoke.resolve()
+        } catch (e: ActivityNotFoundException) {
+            invoke.reject(if (a.app == "whatsapp") "WhatsApp isn't installed." else "No messaging app can send this.")
+        }
+    }
+
+    /** Call a number (asks for the Phone permission the first time; without it, opens the dialer). */
+    @Command
+    fun callNumber(invoke: Invoke) {
+        if (getPermissionState("call") != PermissionState.GRANTED) {
+            requestPermissionForAlias("call", invoke, "callCallback")
+            return
+        }
+        placeCall(invoke, true)
+    }
+
+    @PermissionCallback
+    private fun callCallback(invoke: Invoke) {
+        placeCall(invoke, getPermissionState("call") == PermissionState.GRANTED)
+    }
+
+    private fun placeCall(invoke: Invoke, direct: Boolean) {
+        val number = invoke.parseArgs(MessageArgs::class.java).number?.replace(Regex("[^+0-9]"), "").orEmpty()
+        if (number.length < 3) {
+            invoke.reject("That phone number isn't valid.")
+            return
+        }
+        val uri = android.net.Uri.parse("tel:$number")
+        try {
+            activity.startActivity(Intent(if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val ret = JSObject()
+            ret.put("dialed", !direct)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Couldn't start the call: ${e.javaClass.simpleName}")
+        }
     }
 }

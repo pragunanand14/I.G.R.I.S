@@ -10,4 +10,5 @@
     <string name="igris_widget_weather_setup">Tap to choose a place</string>
     <string name="igris_accessibility_label">IGRIS screen control</string>
     <string name="igris_accessibility_description">Lets IGRIS read the screen and tap, type and swipe for you — only when you ask it to, after you approve the task. A Stop button stays on screen while it works. Password fields are never read.</string>
+    <string name="igris_notifications_label">IGRIS messages</string>
 </resources>

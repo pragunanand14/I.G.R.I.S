@@ -28,6 +28,10 @@ export const api = {
   getSystemSnapshot: () => call<SystemSnapshot>("get_system_snapshot"),
   getAiStatus: () => call<AiStatus>("get_ai_status"),
   reloadConfig: () => call<ReloadResult>("reload_config"),
+  phoneMessagesAccess: () => call<boolean>("phone_messages_access"),
+  phoneMessagesSettings: () => call<void>("phone_messages_settings"),
+  phoneMessagesAllApps: () => call<boolean>("phone_messages_all_apps"),
+  phoneSetMessagesAllApps: (on: boolean) => call<boolean>("phone_set_messages_all_apps", { on }),
   phoneScreenAccess: () => call<boolean>("phone_screen_access"),
   phoneScreenSettings: () => call<void>("phone_screen_settings"),
   /** What a home-screen widget asked for when it opened IGRIS ("listen", "widgets"), once. */

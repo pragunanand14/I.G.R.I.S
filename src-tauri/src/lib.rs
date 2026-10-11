@@ -124,6 +124,8 @@ pub fn run() {
             #[cfg(mobile)]
             let screen = platform::phone_screen(app.handle());
             #[cfg(mobile)]
+            let comms = platform::phone_comms(app.handle());
+            #[cfg(mobile)]
             platform::follow_phone_control(app.handle(), operator.clone());
             #[cfg(mobile)]
             let media = platform::media(app.handle());
@@ -143,6 +145,8 @@ pub fn run() {
                 google,
                 #[cfg(mobile)]
                 screen,
+                #[cfg(mobile)]
+                comms,
                 devices: device_hub.clone(),
                 #[cfg(mobile)]
                 phone: platform::phone(app.handle()),
@@ -315,6 +319,10 @@ pub fn run() {
             commands::google::google_connect,
             commands::google::google_disconnect,
             commands::phone::phone_screen_access,
+            commands::phone::phone_messages_access,
+            commands::phone::phone_messages_settings,
+            commands::phone::phone_messages_all_apps,
+            commands::phone::phone_set_messages_all_apps,
             commands::phone::phone_screen_settings,
             commands::widgets::widget_launch_action,
             commands::widgets::widget_weather_place,
@@ -577,5 +585,42 @@ mod platform {
                 }
             }
         });
+    }
+
+    /// Messages and calls on the phone, through the device plugin.
+    #[cfg(mobile)]
+    pub fn phone_comms(app: &tauri::AppHandle) -> crate::tools::phone_messages::SharedComms {
+        Arc::new(PluginComms(app.clone()))
+    }
+
+    #[cfg(mobile)]
+    struct PluginComms(tauri::AppHandle);
+
+    #[cfg(mobile)]
+    impl crate::tools::phone_messages::PhoneComms for PluginComms {
+        fn access(&self) -> bool {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().messages_access().unwrap_or(false)
+        }
+        fn recent(&self, since_minutes: u32, all_apps: bool) -> Result<Vec<crate::tools::phone_messages::PhoneMessage>, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().recent_messages(since_minutes, all_apps).map_err(|e| e.to_string())
+        }
+        fn reply(&self, id: &str, text: &str) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().reply_message(id, text).map_err(|e| e.to_string())
+        }
+        fn contacts(&self, name: &str) -> Result<Vec<crate::tools::phone_messages::Contact>, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().find_contact(name).map_err(|e| e.to_string())
+        }
+        fn start_message(&self, app: &str, number: &str, text: &str) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().start_message(app, number, text).map_err(|e| e.to_string())
+        }
+        fn call(&self, number: &str) -> Result<bool, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().call_number(number).map_err(|e| e.to_string())
+        }
     }
 }

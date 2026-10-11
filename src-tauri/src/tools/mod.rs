@@ -12,6 +12,7 @@ pub mod computer;
 pub mod files;
 pub mod media;
 pub mod phone;
+pub mod phone_messages;
 pub mod phone_screen;
 pub mod processes;
 pub mod screen;
@@ -32,6 +33,7 @@ mod tests {
             include_str!("files.rs"),
             include_str!("media.rs"),
             include_str!("phone.rs"),
+            include_str!("phone_messages.rs"),
             include_str!("phone_screen.rs"),
             include_str!("processes.rs"),
             include_str!("system_info.rs"),
