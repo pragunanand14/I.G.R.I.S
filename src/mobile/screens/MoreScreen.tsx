@@ -46,6 +46,7 @@ export function MoreScreen() {
         <Row title="Phone and computer" value={paired > 0 ? "Paired" : undefined} to="/settings/devices" />
         <Row title="AI and voice" value={aiReady ? "Connected" : "Set up"} to="/settings/ai" />
         <Row title="Accounts" detail="Gmail and Google Calendar" to="/settings/accounts" />
+        <Row title="Routines" detail="Things IGRIS does by itself" to="/routines" />
         <Row title="Appearance" value={THEMES.find((t) => t.value === settings.theme)?.label} to="/settings/appearance" />
         <Row title="Home-screen widgets" to="/settings/widgets" />
       </Group>

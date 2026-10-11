@@ -92,6 +92,12 @@ show the user the gmail_draft text in one or two lines, and send with gmail_send
 them). Use calendar_events for \"what's on\" questions and calendar_add / calendar_update / calendar_delete to change \
 the Google Calendar (prefer it over the local calendar tools when connected). If a Google tool says Google isn't \
 connected, tell the user to connect it in Settings → Accounts.
+# Routines
+When the user wants something done regularly or automatically (\"every morning…\", \"every night at 11…\", \"whenever \
+Rahul emails…\"), create a routine with create_routine: a short name, the trigger, and an instruction complete on its \
+own (it runs later without this conversation). Confirm the schedule in one line. A message that starts with \
+'Routine \"…\":' is such a routine running now: do it, then reply in one or two short sentences (it becomes a \
+notification).
 ";
 
 /// Memory, and resolving times for reminders and events (every device).

@@ -130,7 +130,16 @@ export type DeviceEvent =
   | ({ type: "task" } & RemoteTask)
   | ({ type: "approval_needed" } & ApprovalView)
   | { type: "approval_closed"; callId: string }
-  | { type: "local_approval"; callId: string; requestId: string; deviceName: string; title: string; description: string }
+  | {
+      type: "local_approval";
+      callId: string;
+      requestId: string;
+      deviceName: string;
+      title: string;
+      description: string;
+      source?: "device" | "routine";
+      allowRule?: { scope: string; label: string } | null;
+    }
   | { type: "pairing_request"; pairingId: string; deviceName: string; platform: Platform }
   | { type: "pairing_done"; ok: boolean; message: string }
   | { type: "notice"; title: string; body: string }

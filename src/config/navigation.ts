@@ -5,6 +5,7 @@ import {
   FolderGit2,
   Home,
   MessageSquare,
+  Repeat,
   Settings,
   ShieldCheck,
   Tv,
@@ -41,6 +42,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Memory",
     icon: Brain,
     summary: "What IGRIS remembers — inspectable, editable, deletable.",
+  },
+  {
+    path: "/routines",
+    label: "Routines",
+    icon: Repeat,
+    summary: "Things IGRIS does by itself — on a schedule, or when an email arrives.",
   },
   {
     path: "/smart-home",

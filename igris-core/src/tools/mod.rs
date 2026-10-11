@@ -15,6 +15,7 @@ pub mod home;
 pub mod memory;
 pub mod productivity;
 pub mod projects;
+pub mod routines;
 pub mod schema;
 pub mod screen;
 pub mod task;

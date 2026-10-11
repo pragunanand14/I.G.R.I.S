@@ -9,6 +9,7 @@ import type { AllowedFolder, DetectedProject, FolderSuggestion, Project, Project
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { GoogleStatus } from "@/types/google";
+import type { Routine, RoutineRun } from "@/types/routines";
 import type { MediaAction, NowPlaying } from "@/types/media";
 import type { AllowedAction, AppCandidate, AppEntry, AuditEntry, PermissionRule, ToolActivity, ToolInfo } from "@/types/tools";
 import { call } from "./backend";
@@ -32,6 +33,11 @@ export const api = {
   widgetLaunchAction: () => call<string | null>("widget_launch_action"),
   widgetWeatherPlace: () => call<string | null>("widget_weather_place"),
   widgetSetWeatherPlace: (query: string) => call<{ name: string; latitude: number; longitude: number }>("widget_set_weather_place", { query }),
+  routinesList: () => call<Routine[]>("routines_list"),
+  routineRuns: (id?: number) => call<RoutineRun[]>("routine_runs", { id }),
+  routineSetEnabled: (id: number, enabled: boolean) => call<unknown>("routine_set_enabled", { id, enabled }),
+  routineDelete: (id: number) => call<void>("routine_delete", { id }),
+  routineRunNow: (id: number) => call<void>("routine_run_now", { id }),
   googleStatus: () => call<GoogleStatus>("google_status"),
   /** Opens Google's sign-in in the browser; resolves when the user finishes (up to 5 minutes). */
   googleConnect: () => call<GoogleStatus>("google_connect"),

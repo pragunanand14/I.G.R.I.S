@@ -11,13 +11,15 @@ use super::*;
 use crate::db::Database;
 
 #[derive(Default)]
-struct Seen {
-    requests: Vec<(String, String, String, String)>,
-    refresh_fails: bool,
-    events: Vec<Value>,
+pub(crate) struct Seen {
+    pub requests: Vec<(String, String, String, String)>,
+    pub refresh_fails: bool,
+    pub events: Vec<Value>,
+    /// Messages listed besides m1.
+    pub more_mail: Vec<String>,
 }
 
-type Shared = Arc<Mutex<Seen>>;
+pub(crate) type Shared = Arc<Mutex<Seen>>;
 
 fn route(seen: &Shared, method: &str, target: &str, body: &str) -> (u16, Value) {
     let path = target.split('?').next().unwrap_or_default();
@@ -31,12 +33,17 @@ fn route(seen: &Shared, method: &str, target: &str, body: &str) -> (u16, Value) 
         ("POST", "/token") => (200, json!({"access_token": "at2", "expires_in": 3600})),
         ("POST", "/revoke") => (200, json!({})),
         ("GET", "/gmail/profile") => (200, json!({"emailAddress": "ada@example.com"})),
-        ("GET", "/gmail/messages") => (200, json!({"messages": [{"id": "m1"}]})),
-        ("GET", "/gmail/messages/m1") => {
+        ("GET", "/gmail/messages") => {
+            let mut ids: Vec<Value> = s.more_mail.iter().rev().map(|id| json!({"id": id})).collect();
+            ids.push(json!({"id": "m1"}));
+            (200, json!({ "messages": ids }))
+        }
+        ("GET", p) if p.starts_with("/gmail/messages/") && !p.ends_with("/modify") && !p.ends_with("/trash") => {
+            let id = p.trim_start_matches("/gmail/messages/");
             let text = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("Can we meet at 5?\nRahul");
             (
                 200,
-                json!({"id": "m1", "threadId": "t1", "snippet": "Can we meet at 5?", "labelIds": ["UNREAD", "INBOX"], "payload": {
+                json!({"id": id, "threadId": "t1", "snippet": "Can we meet at 5?", "labelIds": ["UNREAD", "INBOX"], "payload": {
                     "headers": [{"name": "From", "value": "Rahul <rahul@example.com>"}, {"name": "Subject", "value": "Meeting"},
                                 {"name": "Date", "value": "Mon, 6 Oct 2026 10:00:00 +0530"}, {"name": "Message-ID", "value": "<abc@mail>"}],
                     "mimeType": "multipart/alternative",
@@ -59,7 +66,7 @@ fn route(seen: &Shared, method: &str, target: &str, body: &str) -> (u16, Value) 
     }
 }
 
-async fn fake_google(seen: Shared) -> String {
+pub(crate) async fn fake_google(seen: Shared) -> String {
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     tokio::spawn(async move {
@@ -101,7 +108,7 @@ async fn fake_google(seen: Shared) -> String {
     base
 }
 
-fn google(base: &str, db: Arc<Database>) -> Google {
+pub(crate) fn google(base: &str, db: Arc<Database>) -> Google {
     let ep = Endpoints {
         auth: format!("{base}/auth"),
         token: format!("{base}/token"),
@@ -113,7 +120,7 @@ fn google(base: &str, db: Arc<Database>) -> Google {
 }
 
 /// A "browser" that follows the sign-in link: hits the redirect with a stray request first, then the code.
-fn browser() -> Opener {
+pub(crate) fn browser() -> Opener {
     Arc::new(|url: &str| {
         let u = reqwest::Url::parse(url).unwrap();
         let get = |k: &str| u.query_pairs().find(|(n, _)| n == k).map(|(_, v)| v.into_owned()).unwrap();

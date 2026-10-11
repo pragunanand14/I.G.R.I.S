@@ -26,7 +26,7 @@ and the same React UI, adapted for phones. What changes is the device layer.
 | Files, terminal, screenshots | ❌ | not offered to the model and not claimed in its prompt |
 
 The phone tool list is built in `src-tauri/src/tools/standard.rs` (`#[cfg(mobile)]`
-registry, 51 tools). The system prompt has a phone variant
+registry, 54 tools). The system prompt has a phone variant
 (`igris-core/src/core/prompt.rs`, `DeviceKind::Phone`) that describes exactly
 these capabilities and says what the phone app can't do.
 

@@ -24,6 +24,10 @@ export interface LocalApproval {
   deviceName: string;
   title: string;
   description: string;
+  /** "routine": asked by one of the user's routines (not another device). */
+  source?: "device" | "routine";
+  /** What "Always allow" would remember, when offered. */
+  allowRule?: { scope: string; label: string } | null;
 }
 
 export interface Notice {
@@ -67,7 +71,7 @@ interface DeviceStore {
   /** Answer another device's request (signed on this device). */
   answer: (callId: string, approve: boolean) => Promise<void>;
   /** Answer, here, an approval for a task another device sent here. */
-  answerLocal: (callId: string, approve: boolean) => Promise<void>;
+  answerLocal: (callId: string, approve: boolean, always?: boolean) => Promise<void>;
   dismissNotice: (id: number) => void;
   /** Send a link or text to another device; true when it went out now, false when queued. */
   handoff: (deviceId: string, content: string) => Promise<boolean | null>;
@@ -240,12 +244,12 @@ export const useDeviceStore = create<DeviceStore>((set, get) => {
     answer: async (callId, approve) =>
       void (await run(() => api.devicesAnswerApproval(callId, approve))),
 
-    answerLocal: async (callId, approve) => {
+    answerLocal: async (callId, approve, always = false) => {
       set({
         localApprovals: get().localApprovals.filter((a) => a.callId !== callId),
       });
       const delivered = await run(() =>
-        api.respondToolApproval(callId, approve),
+        api.respondToolApproval(callId, approve, always),
       );
       if (delivered === false)
         set({

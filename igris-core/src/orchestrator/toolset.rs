@@ -50,6 +50,8 @@ pub enum Capability {
     Home,
     /// The user's email (Gmail, when connected).
     Email,
+    /// Routines: things IGRIS does by itself on a schedule or when email arrives.
+    Routines,
     /// Music and media playing on this device: play/pause/skip, volume,
     /// starting a song in the user's music app.
     Media,
@@ -98,6 +100,7 @@ pub fn capability(name: &str) -> Option<Capability> {
         "list_devices" | "send_to_device" | "handoff_to_device" | "device_task_status" | "device_task_control" => Devices,
         "home_devices" | "tv_control" => Home,
         "media_control" | "now_playing" | "play_music" => Media,
+        "create_routine" | "list_routines" | "change_routine" => Routines,
         "gmail_search" | "gmail_read" | "gmail_draft" | "gmail_send" | "gmail_organise" => Email,
         "calendar_events" | "calendar_add" | "calendar_update" | "calendar_delete" => Productivity,
         _ => return None,
@@ -202,6 +205,29 @@ const FOCUS_WORDS: &[(Capability, &[&str])] = &[
         ],
     ),
     (Capability::Devices, &["laptop", "pc", "computer", "desktop", "phone", "mobile", "device", "android", "windows", "other device"]),
+    (
+        Capability::Routines,
+        &[
+            "routine",
+            "routines",
+            "every day",
+            "every morning",
+            "every night",
+            "every evening",
+            "every week",
+            "every monday",
+            "every sunday",
+            "each day",
+            "each morning",
+            "daily",
+            "weekly",
+            "automatically",
+            "whenever",
+            "every time",
+            "each time",
+            "schedule",
+        ],
+    ),
     (Capability::Email, &["email", "emails", "mail", "inbox", "gmail", "reply", "replied", "unread", "sender", "newsletter", "draft", "forward"]),
     (
         Capability::Media,
@@ -241,6 +267,7 @@ pub const REQUESTABLE: &[(&str, &[Capability])] = &[
     ("home", &[Capability::Home]),
     ("music", &[Capability::Media]),
     ("email", &[Capability::Email]),
+    ("routines", &[Capability::Routines]),
 ];
 
 fn word_hit(text: &str, stem: &str) -> bool {
@@ -439,7 +466,7 @@ mod tests {
         // A question: the core only.
         let t = Toolset::new(all.clone()).with_focus(focus_for("What's 12 * 7?", &[]));
         assert_eq!(names(&t), ["calculator", "web_search", "read_file", "launch_application", "operator_start", "task_plan", "request_tools"]);
-        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen", "devices", "home", "music", "email"]);
+        assert_eq!(t.hidden_groups(), ["productivity", "files", "terminal", "projects", "screen", "devices", "home", "music", "email", "routines"]);
         // Naming another device brings the cross-device tools.
         assert!(names(&Toolset::new(all.clone()).with_focus(focus_for("Open Notepad on my laptop", &[]))).contains(&"send_to_device".to_string()));
         assert_eq!(t.allowed().len(), all.len(), "hidden is not forbidden: the executor still decides");
@@ -498,6 +525,7 @@ mod tests {
             include_str!("../tools/memory.rs"),
             include_str!("../tools/productivity.rs"),
             include_str!("../tools/projects.rs"),
+            include_str!("../tools/routines.rs"),
             include_str!("../tools/screen.rs"),
             include_str!("../tools/task.rs"),
             include_str!("../tools/web.rs"),

@@ -32,6 +32,7 @@ pub mod orchestrator;
 pub mod permissions;
 pub mod productivity;
 pub mod projects;
+pub mod routines;
 pub mod settings;
 pub mod tools;
 pub mod voice;

@@ -20,6 +20,7 @@ const PAGES = {
   tasks: () => import("@/pages/TasksPage"),
   tools: () => import("@/pages/ToolsPage"),
   smartHome: () => import("@/pages/SmartHomePage"),
+  routines: () => import("@/pages/RoutinesPage"),
 };
 const ChatPage = named(PAGES.chat, "ChatPage");
 const MemoryPage = named(PAGES.memory, "MemoryPage");
@@ -30,6 +31,7 @@ const SystemPage = named(PAGES.system, "SystemPage");
 const TasksPage = named(PAGES.tasks, "TasksPage");
 const ToolsPage = named(PAGES.tools, "ToolsPage");
 const SmartHomePage = named(PAGES.smartHome, "SmartHomePage");
+const RoutinesPage = named(PAGES.routines, "RoutinesPage");
 
 // Once the window is up, fetch the other pages in the background so moving between them never waits.
 if (typeof window !== "undefined" && !isMobilePlatform()) {
@@ -50,6 +52,7 @@ const IMPLEMENTED: Record<string, React.ReactNode> = {
   "/security": <SecurityPage />,
   "/settings": <SettingsPage />,
   "/smart-home": <SmartHomePage />,
+  "/routines": <RoutinesPage />,
 };
 
 // Hash routing: the app is served from a custom protocol in production.

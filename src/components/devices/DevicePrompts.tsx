@@ -89,15 +89,22 @@ export function DevicePrompts({ enabled, phone = false }: { enabled: boolean; ph
           <div className="flex items-start gap-3">
             <ShieldAlert className="size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className={title}>Task from {a.deviceName} needs approval</div>
+              <div className={title}>{a.source === "routine" ? `${a.deviceName} needs your OK` : `Task from ${a.deviceName} needs approval`}</div>
               <p className={`mt-1 break-words ${phone ? "" : "text-sm text-fg"}`}>{a.description}</p>
-              <p className={`mt-1 ${muted}`}>{a.title} · runs here. You can also answer on {a.deviceName}.</p>
+              <p className={`mt-1 ${muted}`}>
+                {a.source === "routine" ? `${a.title} · tap Always allow and this routine won't ask again for it.` : `${a.title} · runs here. You can also answer on ${a.deviceName}.`}
+              </p>
             </div>
           </div>
           <div className="mt-3 flex gap-2">
             <button type="button" className={secondary} onClick={() => void answerLocal(a.callId, false)}>
               Deny
             </button>
+            {a.allowRule && (
+              <button type="button" className={secondary} title={`Covers: ${a.allowRule.label}`} onClick={() => void answerLocal(a.callId, true, true)}>
+                Always allow
+              </button>
+            )}
             <button type="button" className={primary} onClick={() => void answerLocal(a.callId, true)}>
               Approve
             </button>

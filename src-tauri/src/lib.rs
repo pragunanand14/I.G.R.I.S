@@ -10,7 +10,7 @@
 
 pub use igris_core::{
     ai, attachments, config, conversations, core, db, device, error, files, google, home, memory, operator, orchestrator, permissions, productivity, projects,
-    settings, voice,
+    routines, settings, voice,
 };
 
 pub mod commands;
@@ -23,6 +23,7 @@ mod media_windows;
 pub mod overlay;
 #[cfg(mobile)]
 mod phone_alarms;
+pub mod routine_runner;
 pub mod state;
 pub mod system;
 pub mod tools;
@@ -116,6 +117,7 @@ pub fn run() {
                 Arc::new(igris_core::google::Google::new(db.clone(), Arc::from(crate::devices::protector(app.handle())), creds))
             };
             app.manage(commands::google::GoogleState(google.clone()));
+            let routines_google = google.clone();
             tauri::async_runtime::spawn(igris_core::google::watcher::run(google.clone()));
             #[cfg(desktop)]
             let media = platform::media(platform::url_opener(app.handle()));
@@ -191,6 +193,7 @@ pub fn run() {
                 devices: device_hub.clone(),
             });
             devices::start(app.handle().clone(), device_hub, tool_names);
+            routine_runner::start(app.handle(), routines_google);
             #[cfg(desktop)]
             register_voice_hotkey(app.handle());
             tracing::info!(event = "APP_STARTED");
@@ -298,6 +301,11 @@ pub fn run() {
             commands::devices::devices_handoff,
             commands::devices::handoffs_list,
             commands::devices::handoff_dismiss,
+            commands::routines::routines_list,
+            commands::routines::routine_runs,
+            commands::routines::routine_set_enabled,
+            commands::routines::routine_delete,
+            commands::routines::routine_run_now,
             commands::google::google_status,
             commands::google::google_connect,
             commands::google::google_disconnect,

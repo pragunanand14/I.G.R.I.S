@@ -15,6 +15,7 @@ pub mod memory;
 pub mod operator;
 pub mod phone;
 pub mod productivity;
+pub mod routines;
 pub mod settings;
 pub mod system;
 pub mod tools;

@@ -80,6 +80,9 @@ pub fn registry(d: Deps) -> ToolRegistry {
     for t in igris_core::tools::google::all(&google) {
         tools.register(t);
     }
+    for t in igris_core::tools::routines::all(&db) {
+        tools.register(t);
+    }
     for t in super::media::all(&media) {
         tools.register(t);
     }
@@ -164,6 +167,9 @@ pub fn registry(d: Deps) -> ToolRegistry {
     let Deps { db, config, orchestrator, operator, open_url, phone, screen, media, google, devices, .. } = d;
     let mut tools = ToolRegistry::default();
     for t in igris_core::tools::google::all(&google) {
+        tools.register(t);
+    }
+    for t in igris_core::tools::routines::all(&db) {
         tools.register(t);
     }
     for t in super::phone_screen::all(&super::phone_screen::ScreenTools::new(screen, operator)) {

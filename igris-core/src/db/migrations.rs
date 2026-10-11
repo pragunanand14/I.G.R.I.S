@@ -473,6 +473,36 @@ pub const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 17,
+        name: "routines",
+        sql: r#"
+            -- Routines: things IGRIS does by itself on a schedule or when an email
+            -- arrives (routines/mod.rs). Each run is a normal conversation.
+            CREATE TABLE routines (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                instruction TEXT NOT NULL,
+                schedule    TEXT NOT NULL,
+                enabled     INTEGER NOT NULL DEFAULT 1,
+                next_run_at TEXT,
+                last_run_at TEXT,
+                -- Email triggers: ids of messages already handled (JSON array).
+                email_seen  TEXT,
+                created_at  TEXT NOT NULL
+            );
+            CREATE TABLE routine_runs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                routine_id      INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+                started_at      TEXT NOT NULL,
+                finished_at     TEXT,
+                status          TEXT NOT NULL,
+                summary         TEXT,
+                conversation_id TEXT
+            );
+            CREATE INDEX routine_runs_by_routine ON routine_runs(routine_id, started_at);
+        "#,
+    },
 ];
 
 pub fn current_version(conn: &Connection) -> AppResult<u32> {
