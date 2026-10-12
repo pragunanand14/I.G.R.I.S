@@ -5,13 +5,20 @@ import { useVoiceStore } from "@/stores/voiceStore";
 import { AssistantSheet } from "./AssistantSheet";
 import { useSheet } from "./sheet";
 
-const api = vi.hoisted(() => ({ phoneSheetMode: vi.fn(), phoneSheetHide: vi.fn(), phoneUnlock: vi.fn() }));
+const api = vi.hoisted(() => ({
+  phoneSheetMode: vi.fn(),
+  phoneSheetHide: vi.fn(),
+  phoneUnlock: vi.fn(),
+  uiEvent: vi.fn(),
+}));
 vi.mock("@/services/api", () => ({ api }));
 
 describe("assistant panel", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    Object.values(api).forEach((f) => f.mockReset().mockResolvedValue(undefined));
+    Object.values(api).forEach((f) =>
+      f.mockReset().mockResolvedValue(undefined),
+    );
     api.phoneUnlock.mockResolvedValue(false);
     useSheet.getState().enter();
     useSheet.setState({ fresh: false });
@@ -19,12 +26,20 @@ describe("assistant panel", () => {
   afterEach(() => {
     vi.useRealTimers();
     useChatStore.setState({ streaming: null });
-    useVoiceStore.setState({ phase: "idle", lastTranscript: null, error: null, replyPending: false });
+    useVoiceStore.setState({
+      phase: "idle",
+      lastTranscript: null,
+      error: null,
+      replyPending: false,
+    });
   });
 
   it("shows what was said, the answer and approvals, over a see-through page", () => {
     const answerApproval = vi.fn().mockResolvedValue(undefined);
-    useVoiceStore.setState({ phase: "idle", lastTranscript: "Text Mom I'm late" });
+    useVoiceStore.setState({
+      phase: "idle",
+      lastTranscript: "Text Mom I'm late",
+    });
     useChatStore.setState({
       answerApproval,
       streaming: {
@@ -35,7 +50,16 @@ describe("assistant panel", () => {
         model: null,
         startedAt: 0,
         activities: [
-          { id: "t1", tool: "reply_message", title: "Reply", permission: "low", description: "Reply to Mom on WhatsApp: \"I'm late\"", status: "awaitingApproval", result: null, durationMs: null },
+          {
+            id: "t1",
+            tool: "reply_message",
+            title: "Reply",
+            permission: "low",
+            description: 'Reply to Mom on WhatsApp: "I\'m late"',
+            status: "awaitingApproval",
+            result: null,
+            durationMs: null,
+          },
         ],
       },
     });

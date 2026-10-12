@@ -344,6 +344,7 @@ pub fn run() {
             commands::google::google_connect,
             commands::google::google_disconnect,
             commands::phone::phone_screen_access,
+            commands::app::ui_event,
             commands::phone::phone_sheet_mode,
             commands::phone::phone_sheet_hide,
             commands::phone::phone_unlock,

@@ -43,3 +43,15 @@ pub fn get_app_info(state: State<'_, AppState>) -> AppResult<AppInfo> {
 pub fn get_config_status(state: State<'_, AppState>) -> AppResult<PublicConfig> {
     Ok(state.config.read().map_err(|_| crate::error::AppError::internal("config lock poisoned"))?.public())
 }
+
+/// A named moment from the UI for IGRIS's log (e.g. "assistant_panel_shown", "ui_error"), so phone tests and
+/// bug reports can see what the screen did. Only short names; `detail` is a clipped code-level message.
+#[tauri::command]
+pub fn ui_event(name: String, detail: Option<String>) -> crate::error::AppResult<()> {
+    if name.is_empty() || name.len() > 40 || !name.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+        return Err(crate::error::AppError::validation("Bad UI event name."));
+    }
+    let detail: String = detail.unwrap_or_default().chars().filter(|c| !c.is_control()).take(300).collect();
+    tracing::info!(event = "UI_EVENT", name = %name, detail = %detail);
+    Ok(())
+}

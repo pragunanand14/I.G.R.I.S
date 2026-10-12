@@ -1,6 +1,7 @@
 import { Mic, Square, X } from "lucide-react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router";
+import { api } from "@/services/api";
 import { useChatStore } from "@/stores/chatStore";
 import { useVoiceStore } from "@/stores/voiceStore";
 import { useSheet } from "./sheet";
@@ -39,6 +40,10 @@ export function AssistantSheet() {
     streaming?.activities.filter((a) => a.status === "awaitingApproval") ?? [];
   const busy =
     phase !== "idle" || !!streaming || replyPending || approvals.length > 0;
+
+  useEffect(() => {
+    void api.uiEvent("assistant_panel_shown").catch(() => undefined);
+  }, []);
 
   // Done (answered and spoken, or nothing was said): go back to what was on screen after a moment.
   useEffect(() => {

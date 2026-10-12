@@ -35,6 +35,22 @@ import { useSheet } from "./sheet";
 
 restoreTheme();
 
+// Errors on the phone's screen go to IGRIS's log (there is no console to look at on a phone).
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "error",
+    (e) =>
+      void api
+        .uiEvent("ui_error", String(e.message ?? e))
+        .catch(() => undefined),
+  );
+  window.addEventListener(
+    "unhandledrejection",
+    (e) =>
+      void api.uiEvent("ui_error", String(e.reason)).catch(() => undefined),
+  );
+}
+
 /** The phone layout: one screen at a time, Home in the middle of everything, the opening animation on top. */
 function MobileShell() {
   const ready = useAppLifecycle();

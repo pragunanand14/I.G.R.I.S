@@ -88,6 +88,9 @@ export const api = {
   phoneSetMessagesAllApps: (on: boolean) =>
     call<boolean>("phone_set_messages_all_apps", { on }),
   /** The assistant panel: see-through over other apps and the lock screen, or a normal app. */
+  /** A named UI moment for IGRIS's log (no user content). */
+  uiEvent: (name: string, detail?: string) =>
+    call<void>("ui_event", { name, detail }),
   phoneSheetMode: (on: boolean) => call<void>("phone_sheet_mode", { on }),
   phoneSheetHide: () => call<void>("phone_sheet_hide"),
   /** Ask the user to unlock the phone; true once unlocked (always true when it isn't locked). */

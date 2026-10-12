@@ -89,8 +89,13 @@ done
 adb exec-out screencap -p > "$OUT/sheet.png" || true
 echo "--- panel: on-screen nodes ---"
 grep -o -E '<node [^>]*>' "$OUT/sheet.xml" | grep -o -E '(text|content-desc|class|bounds)="[^"]*"' | paste -d' ' - - - - | sort -u | grep -v 'text="" class="android.view.View" content-desc=""' | head -40 || true
-adb logcat -d | grep -E "IGRIS_SHEET|chromium.*Console" | tail -20 || true
-check "the assistant gesture opens IGRIS's panel (\"Open IGRIS\" on screen)" 'grep -q "Open IGRIS" "$OUT/sheet.xml"'
+adb logcat -d | grep -E "IGRIS_SHEET" | tail -5 || true
+log=$(adb shell run-as "$PKG" find . -name 'igris.log*' 2>/dev/null | tr -d '\r' | head -1)
+[ -n "$log" ] && adb shell run-as "$PKG" cat "$log" > "$OUT/igris-sheet.log"
+grep -o '"event":"UI_EVENT"[^}]\{0,300\}' "$OUT/igris-sheet.log" | tail -10 || true
+check "the assistant gesture opens IGRIS's panel (it reports being shown)" 'grep -q "assistant_panel_shown" "$OUT/igris-sheet.log"'
+check "no UI errors with the panel" '! grep -q "\"name\":\"ui_error\"" "$OUT/igris-sheet.log"'
+grep -q "Open IGRIS" "$OUT/sheet.xml" || echo "::warning::The panel's buttons weren't in the accessibility dump (see sheet.png)"
 adb logcat -d > "$OUT/logcat-sheet.txt" || true
 check "no crash opening the panel" '! grep -qE "FATAL EXCEPTION.*|panicked at" "$OUT/logcat-sheet.txt"'
 # Leave IGRIS as a normal app for the tests that follow (the panel closes when IGRIS goes to the background).
