@@ -96,6 +96,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Google's sign-in sheet is started from here (GoogleAuthActivity.kt). -->
+        <activity
+            android:name="dev.igris.device.GoogleAuthActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Message notifications (summaries, replies): off until the user grants Notification access. -->
         <service
             android:name="dev.igris.device.IgrisNotificationListener"

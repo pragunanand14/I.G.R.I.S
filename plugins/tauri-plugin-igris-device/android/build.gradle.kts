@@ -32,5 +32,7 @@ dependencies {
     implementation("com.alphacephei:vosk-android:0.3.47")
     implementation("net.java.dev.jna:jna:5.13.0@aar")
     implementation("com.alphacephei:vosk-model-en:0.3.38")
+    // Google sign-in with the account already on the phone (Google Play services' account picker).
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation(project(":tauri-android"))
 }

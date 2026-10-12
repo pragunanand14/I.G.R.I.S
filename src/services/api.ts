@@ -27,7 +27,7 @@ import type {
 import type { Settings, SettingsPatch } from "@/types/settings";
 import type { SystemSnapshot } from "@/types/system";
 import type { Briefing, Place } from "@/types/briefing";
-import type { GoogleStatus } from "@/types/google";
+import type { GoogleSetupInfo, GoogleStatus } from "@/types/google";
 import type { Routine, RoutineRun } from "@/types/routines";
 import type {
   Expense,
@@ -173,6 +173,9 @@ export const api = {
   /** Opens Google's sign-in in the browser; resolves when the user finishes (up to 5 minutes). */
   googleConnect: () => call<GoogleStatus>("google_connect"),
   googleDisconnect: () => call<GoogleStatus>("google_disconnect"),
+  googleSetClient: (id: string, secret: string) => call<GoogleStatus>("google_set_client", { id, secret }),
+  googleClearClient: () => call<GoogleStatus>("google_clear_client"),
+  googleSetupInfo: () => call<GoogleSetupInfo>("google_setup_info"),
   mediaNowPlaying: () => call<NowPlaying>("media_now_playing"),
   mediaControl: (action: MediaAction) =>
     call<NowPlaying>("media_control", { action }),

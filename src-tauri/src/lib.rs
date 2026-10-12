@@ -114,7 +114,17 @@ pub fn run() {
                     let c = cfg.read().ok()?;
                     Some((c.google_client_id.clone()?, c.google_client_secret.clone()?))
                 });
-                Arc::new(igris_core::google::Google::new(db.clone(), Arc::from(crate::devices::protector(app.handle())), creds))
+                let google = igris_core::google::Google::new(db.clone(), Arc::from(crate::devices::protector(app.handle())), creds);
+                // The phone signs in with the Google account already on it (Play services' account picker).
+                #[cfg(mobile)]
+                let google = {
+                    use tauri_plugin_igris_device::IgrisDeviceExt;
+                    let app = app.handle().clone();
+                    google.with_native(Arc::new(move |scopes: &[&str], interactive: bool| {
+                        app.igris_device().google_authorize(scopes, interactive).map_err(|e| e.to_string())
+                    }))
+                };
+                Arc::new(google)
             };
             app.manage(commands::google::GoogleState(google.clone()));
             let routines_google = google.clone();
@@ -343,6 +353,9 @@ pub fn run() {
             commands::google::google_status,
             commands::google::google_connect,
             commands::google::google_disconnect,
+            commands::google::google_set_client,
+            commands::google::google_clear_client,
+            commands::google::google_setup_info,
             commands::phone::phone_screen_access,
             commands::app::ui_event,
             commands::phone::phone_on_screen,

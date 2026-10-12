@@ -118,6 +118,15 @@ pub struct WakeStatus {
     pub assistant: bool,
 }
 
+/// What Google needs to recognise this copy of IGRIS (its "Android" sign-in entry).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GoogleSetupInfo {
+    pub package_name: String,
+    /// The app's signing certificate, SHA-1, as Google shows it ("AB:CD:…").
+    pub sha1: String,
+}
+
 /// Where the phone is.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Location {

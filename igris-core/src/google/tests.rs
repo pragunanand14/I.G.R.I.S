@@ -145,7 +145,7 @@ async fn connect_read_draft_send_and_disconnect() {
     let base = fake_google(seen.clone()).await;
     let db = Arc::new(Database::open_in_memory().unwrap());
     let g = google(&base, db.clone());
-    assert_eq!(g.status().unwrap(), Status { configured: true, connected: false, email: None });
+    assert_eq!(g.status().unwrap(), Status { configured: true, native: false, connected: false, email: None });
     assert!(gmail::search(&g, "", 5).await.unwrap_err().to_string().contains("isn't connected"));
 
     assert_eq!(g.connect(&browser()).await.unwrap(), "ada@example.com");
@@ -232,4 +232,59 @@ async fn a_revoked_sign_in_disconnects_and_says_so() {
     let err = gmail::search(&g, "", 5).await.unwrap_err().to_string();
     assert!(err.contains("connect again"), "{err}");
     assert!(!g.is_connected());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_phone_signs_in_with_its_own_google_account() {
+    let seen: Shared = Default::default();
+    let base = fake_google(seen.clone()).await;
+    let db = Arc::new(Database::open_in_memory().unwrap());
+    let asked: Arc<Mutex<Vec<bool>>> = Default::default();
+    let (log, granted) = (asked.clone(), Arc::new(std::sync::atomic::AtomicBool::new(true)));
+    let still = granted.clone();
+    let g = google(&base, db.clone()).with_native(Arc::new(move |scopes: &[&str], interactive: bool| {
+        assert!(scopes.contains(&"https://www.googleapis.com/auth/gmail.modify"));
+        log.lock().unwrap().push(interactive);
+        Ok(still.load(std::sync::atomic::Ordering::SeqCst).then(|| "phone-token".to_string()))
+    }));
+    let s = g.status().unwrap();
+    assert!(s.configured && s.native && !s.connected);
+
+    // Connecting shows Google's picker (interactive), then reads who signed in — no browser, no refresh token.
+    assert_eq!(g.connect(&browser()).await.unwrap(), "ada@example.com");
+    assert_eq!(*asked.lock().unwrap(), [true]);
+    assert!(seen.lock().unwrap().requests.iter().any(|r| r.1 == "/gmail/profile" && r.3 == "Bearer phone-token"));
+    assert!(!seen.lock().unwrap().requests.iter().any(|r| r.1 == "/token"), "nothing goes to the token endpoint");
+    let sealed: Vec<u8> = db.conn().unwrap().query_row("SELECT refresh_sealed FROM google_account", [], |r| r.get(0)).unwrap();
+    assert!(sealed.is_empty());
+
+    // An expired token is replaced quietly (not interactive).
+    *g.token.lock().await = None;
+    g.get_json(&format!("{}/profile", g.ep.gmail), &[]).await.unwrap();
+    assert_eq!(*asked.lock().unwrap(), [true, false]);
+
+    // If Play services needs the user again, IGRIS says so instead of showing a sheet in the background.
+    granted.store(false, std::sync::atomic::Ordering::SeqCst);
+    *g.token.lock().await = None;
+    let e = g.get_json(&format!("{}/profile", g.ep.gmail), &[]).await.unwrap_err().to_string();
+    assert!(e.contains("sign in again"), "{e}");
+
+    g.disconnect().await.unwrap();
+    assert!(!g.status().unwrap().connected);
+    assert!(!seen.lock().unwrap().requests.iter().any(|r| r.1 == "/revoke"));
+}
+
+#[test]
+fn a_pasted_client_is_checked_and_kept_sealed() {
+    let db = Arc::new(Database::open_in_memory().unwrap());
+    let g = Google::new(db.clone(), Arc::new(crate::device::Unprotected), Arc::new(|| None));
+    assert!(!g.status().unwrap().configured);
+    assert!(g.set_client("not-an-id", "GOCSPX-abcdefgh").is_err());
+    assert!(g.set_client("123-abc.apps.googleusercontent.com", "short").is_err());
+    g.set_client(" 123-abc.apps.googleusercontent.com ", "GOCSPX-abcdefgh").unwrap();
+    let s = g.status().unwrap();
+    assert!(s.configured && !s.native);
+    assert_eq!(g.client(), Some(("123-abc.apps.googleusercontent.com".into(), "GOCSPX-abcdefgh".into())));
+    g.clear_client().unwrap();
+    assert!(!g.status().unwrap().configured);
 }

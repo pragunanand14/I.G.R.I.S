@@ -6,6 +6,8 @@ import android.app.SearchManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.util.Log
+import android.content.pm.PackageManager
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.net.ConnectivityManager
@@ -19,6 +21,11 @@ import android.util.Base64
 import android.view.KeyEvent
 import android.webkit.WebView
 import androidx.activity.result.ActivityResult
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.AuthorizationResult
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import app.tauri.annotation.ActivityCallback
 import app.tauri.PermissionState
 import app.tauri.annotation.Command
@@ -31,10 +38,17 @@ import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.security.KeyStore
+import java.security.MessageDigest
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+
+@InvokeArg
+class GoogleArgs {
+    var scopes: Array<String> = arrayOf()
+    var interactive: Boolean = false
+}
 
 @InvokeArg
 class LaunchArgs {
@@ -324,6 +338,96 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("Couldn't read that file: ${e.javaClass.simpleName}")
         }
+    }
+
+    /**
+     * A Google access token from the account on the phone (Google Play services), for the scopes asked.
+     * `{accessToken}` when granted; `{}` when the user has to be asked and `interactive` is off. With
+     * `interactive`, Google's own account picker and consent sheet are shown when needed. Nothing here is
+     * kept: Play services remembers the grant, and IGRIS asks it again for a fresh token when one expires.
+     */
+    @Command
+    fun googleAuthorize(invoke: Invoke) {
+        val args = invoke.parseArgs(GoogleArgs::class.java)
+        if (args.scopes.isEmpty()) {
+            invoke.reject("No Google permissions were asked for.")
+            return
+        }
+        val request = AuthorizationRequest.builder().setRequestedScopes(args.scopes.map { Scope(it) }).build()
+        Identity.getAuthorizationClient(activity).authorize(request)
+            .addOnSuccessListener { result ->
+                val pending = result.pendingIntent
+                when {
+                    !result.hasResolution() -> googleToken(invoke, result)
+                    !args.interactive || pending == null -> invoke.resolve(JSObject())
+                    else -> try {
+                        val intent = Intent(activity, GoogleAuthActivity::class.java).putExtra(GoogleAuthActivity.EXTRA_PENDING, pending)
+                        startActivityForResult(invoke, intent, "googleAuthorizeResult")
+                    } catch (e: Exception) {
+                        invoke.reject("Couldn't open Google's sign-in: ${e.javaClass.simpleName}")
+                    }
+                }
+            }
+            .addOnFailureListener { e -> invoke.reject(googleProblem(e)) }
+    }
+
+    @ActivityCallback
+    fun googleAuthorizeResult(invoke: Invoke, result: ActivityResult) {
+        if (result.resultCode != Activity.RESULT_OK || result.data == null) {
+            invoke.reject("Google sign-in was cancelled.")
+            return
+        }
+        try {
+            googleToken(invoke, Identity.getAuthorizationClient(activity).getAuthorizationResultFromIntent(result.data))
+        } catch (e: Exception) {
+            invoke.reject(googleProblem(e))
+        }
+    }
+
+    private fun googleToken(invoke: Invoke, result: AuthorizationResult) {
+        val token = result.accessToken
+        if (token.isNullOrEmpty()) {
+            invoke.reject("Google didn't give IGRIS access. Try Connect Google again and allow every permission.")
+            return
+        }
+        val ret = JSObject()
+        ret.put("accessToken", token)
+        invoke.resolve(ret)
+    }
+
+    private fun googleProblem(e: Exception): String {
+        val code = (e as? ApiException)?.statusCode
+        Log.w("IGRIS", "IGRIS_GOOGLE_AUTH failed: ${e.javaClass.simpleName} $code")
+        return when (code) {
+            // DEVELOPER_ERROR: Google has no "Android" sign-in entry for this app and its fingerprint.
+            10 -> "Google doesn't recognise this copy of IGRIS yet. Add the Android entry from the setup guide (Settings → Accounts shows the package name and fingerprint to use)."
+            7 -> "Couldn't reach Google — check the internet connection."
+            16, 12501 -> "Google sign-in was cancelled."
+            else -> "Google sign-in didn't work${if (code != null) " (code $code)" else ""}. Check that Google Play services is up to date."
+        }
+    }
+
+    /** The package name and signing fingerprint Google needs for IGRIS's Android sign-in entry. */
+    @Command
+    fun googleSetupInfo(invoke: Invoke) {
+        val ret = JSObject()
+        val pkg = activity.packageName
+        ret.put("packageName", pkg)
+        try {
+            val pm = activity.packageManager
+            val cert = if (Build.VERSION.SDK_INT >= 28) {
+                pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo?.apkContentsSigners?.firstOrNull()
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES).signatures?.firstOrNull()
+            }
+            if (cert != null) {
+                ret.put("sha1", MessageDigest.getInstance("SHA-1").digest(cert.toByteArray()).joinToString(":") { "%02X".format(it) })
+            }
+        } catch (e: Exception) {
+            Log.w("IGRIS", "IGRIS_GOOGLE_SETUP no fingerprint: ${e.javaClass.simpleName}")
+        }
+        invoke.resolve(ret)
     }
 
     private fun audio(): AudioManager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager

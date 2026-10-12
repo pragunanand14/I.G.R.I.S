@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, RecordRules, Result, ScreenRead, WakeStatus};
+use crate::{Contact, Error, GoogleSetupInfo, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, RecordRules, Result, ScreenRead, WakeStatus};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(_app: &AppHandle<R>, api: PluginApi<R, C>) -> std::result::Result<Device<R>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "android")]
@@ -411,4 +411,27 @@ struct ScreenArgs {
     direction: Option<String>,
     action: Option<String>,
     show: bool,
+}
+
+impl<R: Runtime> Device<R> {
+    /// A Google access token for `scopes` from the account on the phone (Google Play services). With
+    /// `interactive`, Google's own account picker / consent sheet is shown if needed (blocks until the user
+    /// answers); without, `None` means the user has to be asked.
+    pub fn google_authorize(&self, scopes: &[&str], interactive: bool) -> Result<Option<String>> {
+        #[derive(Serialize)]
+        struct A<'a> {
+            scopes: &'a [&'a str],
+            interactive: bool,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct T {
+            access_token: Option<String>,
+        }
+        self.0.run_mobile_plugin::<T>("googleAuthorize", A { scopes, interactive }).map(|t| t.access_token).map_err(failed)
+    }
+
+    pub fn google_setup_info(&self) -> Result<GoogleSetupInfo> {
+        self.0.run_mobile_plugin::<GoogleSetupInfo>("googleSetupInfo", ()).map_err(failed)
+    }
 }
