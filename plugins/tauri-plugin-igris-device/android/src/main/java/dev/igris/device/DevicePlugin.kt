@@ -984,6 +984,7 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
      * is a normal, opaque app again.
      */
     private fun sheet(on: Boolean) {
+        android.util.Log.i("IGRIS", "IGRIS_SHEET ${if (on) "on" else "off"}")
         val a = activity
         if (Build.VERSION.SDK_INT >= 27) {
             a.setShowWhenLocked(on)

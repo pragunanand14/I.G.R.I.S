@@ -87,7 +87,9 @@ for i in 1 2 3 4; do
   grep -q "Open IGRIS" "$OUT/sheet.xml" && break
 done
 adb exec-out screencap -p > "$OUT/sheet.png" || true
-grep -o -E '(text|content-desc)="[^"]+"' "$OUT/sheet.xml" | sort -u | head -20 || true
+echo "--- panel: on-screen nodes ---"
+grep -o -E '<node [^>]*>' "$OUT/sheet.xml" | grep -o -E '(text|content-desc|class|bounds)="[^"]*"' | paste -d' ' - - - - | sort -u | grep -v 'text="" class="android.view.View" content-desc=""' | head -40 || true
+adb logcat -d | grep -E "IGRIS_SHEET|chromium.*Console" | tail -20 || true
 check "the assistant gesture opens IGRIS's panel (\"Open IGRIS\" on screen)" 'grep -q "Open IGRIS" "$OUT/sheet.xml"'
 adb logcat -d > "$OUT/logcat-sheet.txt" || true
 check "no crash opening the panel" '! grep -qE "FATAL EXCEPTION.*|panicked at" "$OUT/logcat-sheet.txt"'
