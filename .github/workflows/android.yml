@@ -85,3 +85,86 @@ jobs:
           name: android-smoke
           path: android-artifacts/
           if-no-files-found: ignore
+
+  # After the phone checks pass on main: build the app for real phones (arm64, optimised), sign it with
+  # IGRIS's own key, and publish it as the "IGRIS phone (latest)" release, so the phone app is one tap to
+  # download and each update installs over the previous one.
+  phone-release:
+    name: Publish the phone app (after the checks pass)
+    needs: android
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write
+    concurrency:
+      group: phone-release
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: android-release
+      - name: Android NDK
+        run: echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      - run: npm ci
+      # The signing key: the ANDROID_KEYSTORE_B64 secret if the owner set one, otherwise a key IGRIS's builds
+      # made once and keep in the Actions cache (so every update is signed the same way).
+      # Weaker than a secret (other workflows of this public repo could read the cache), so a secret wins when set.
+      - name: Signing key (kept between builds)
+        uses: actions/cache@v4
+        with:
+          path: ~/.igris-signing
+          key: igris-signing-v1
+      - name: Prepare the signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p ~/.igris-signing
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > ~/.igris-signing/igris.jks
+            echo "$KEYSTORE_PASSWORD" > ~/.igris-signing/password
+          elif [ ! -f ~/.igris-signing/igris.jks ]; then
+            head -c 24 /dev/urandom | base64 | tr -d '/+=' > ~/.igris-signing/password
+            keytool -genkeypair -keystore ~/.igris-signing/igris.jks -alias igris -keyalg RSA -keysize 4096 -validity 10000 \
+              -storepass "$(cat ~/.igris-signing/password)" -keypass "$(cat ~/.igris-signing/password)" -dname "CN=IGRIS"
+            echo "::notice::Made a new signing key for the phone app (kept in the Actions cache)."
+          fi
+          keytool -list -keystore ~/.igris-signing/igris.jks -storepass "$(cat ~/.igris-signing/password)" | grep -i fingerprint || true
+      - name: Build the phone app (arm64)
+        run: npx tauri android build --apk --target aarch64 --ci
+      - name: Sign
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
+          [ -n "$apk" ] || { echo "::error::No release APK was built"; exit 1; }
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$bt/zipalign" -f -p 4 "$apk" igris-aligned.apk
+          "$bt/apksigner" sign --ks ~/.igris-signing/igris.jks --ks-key-alias igris \
+            --ks-pass "file:$HOME/.igris-signing/password" --key-pass "file:$HOME/.igris-signing/password" \
+            --out IGRIS-phone.apk igris-aligned.apk
+          "$bt/apksigner" verify --print-certs IGRIS-phone.apk | head -3
+          ls -la IGRIS-phone.apk
+      - name: Publish "IGRIS phone (latest)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=$(git rev-parse --short HEAD)
+          notes="The IGRIS phone app, built from $short after every phone check passed on an emulator (start, tools, messages, Hey IGRIS, the assistant panel, pairing with a PC).
+
+          Install: open this page on your phone, tap IGRIS-phone.apk, then Install. Updates from here install over the previous version.
+          The first time only: if your phone says the app conflicts with an existing one, uninstall the old IGRIS first (builds before this page were signed differently)."
+          gh release delete phone-latest --cleanup-tag --yes 2>/dev/null || true
+          gh release create phone-latest IGRIS-phone.apk --prerelease --title "IGRIS phone (latest)" --notes "$notes" --target "$GITHUB_SHA"

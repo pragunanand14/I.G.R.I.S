@@ -39,8 +39,9 @@ android {
             }
         }
         getByName("release") {
+            // No code shrinking: the published phone app runs the same Kotlin/Java the emulator test ran.
             optimization {
-               enable = true
+               enable = false
             }
             proguardFiles(
                 *fileTree(".") {
