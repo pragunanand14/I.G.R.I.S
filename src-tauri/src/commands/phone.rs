@@ -148,3 +148,39 @@ pub fn follow_wake_word(app: tauri::AppHandle) {
         }
     });
 }
+
+/// The assistant panel ("Hey IGRIS" over other apps): `on` makes IGRIS see-through and shown over the lock screen.
+#[tauri::command]
+pub async fn phone_sheet_mode(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] on: bool) -> AppResult<()> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().sheet_mode(on)).await;
+    }
+    #[cfg(not(mobile))]
+    Ok(())
+}
+
+/// Close the panel: back to the app that was on screen.
+#[tauri::command]
+pub async fn phone_sheet_hide(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<()> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().sheet_hide()).await;
+    }
+    #[cfg(not(mobile))]
+    Ok(())
+}
+
+/// Before acting on something asked on the lock screen: the user unlocks the phone. `true` when unlocked.
+#[tauri::command]
+pub async fn phone_unlock(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<bool> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().unlock()).await;
+    }
+    #[cfg(not(mobile))]
+    Ok(true)
+}

@@ -398,7 +398,12 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     @Volatile
     private var launchAction: String? = null
 
+    private var webView: WebView? = null
+
     override fun load(webView: WebView) {
+        this.webView = webView
+        // The page paints its own background; transparent here lets the assistant panel float over other apps.
+        webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         remember(activity.intent)
         WakeWordService.onWake = { wakeHeard = true }
         // "Hey IGRIS" was on: start it again now that IGRIS is on screen (Android only allows that from the foreground).
@@ -414,11 +419,11 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     // While IGRIS is on screen the wake phrase starts listening right here; otherwise it opens IGRIS.
-    override fun onResume() {
+    override fun onResume(activity: androidx.appcompat.app.AppCompatActivity) {
         WakeWordService.onWake = { wakeHeard = true }
     }
 
-    override fun onPause() {
+    override fun onPause(activity: androidx.appcompat.app.AppCompatActivity) {
         WakeWordService.onWake = null
     }
 
@@ -429,7 +434,9 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     private fun remember(intent: Intent?) {
         val action = intent?.getStringExtra(EXTRA_ACTION) ?: return
         intent.removeExtra(EXTRA_ACTION)
-        if (action == ACTION_LISTEN || action == ACTION_WIDGETS) launchAction = action
+        if (action == ACTION_LISTEN || action == ACTION_WIDGETS || action == ACTION_ASSISTANT) launchAction = action
+        // Wake the screen and show over the lock screen right away, before the page has loaded.
+        if (action == ACTION_ASSISTANT) sheet(true)
     }
 
     /** The pending widget action, once. */
@@ -968,4 +975,76 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             Intent(android.provider.Settings.ACTION_SETTINGS),
         )
     }
+
+    // ── The assistant panel ("Hey IGRIS" over other apps) ────────────────
+
+    /**
+     * Panel mode: the window turns see-through (the app underneath stays
+     * visible), wakes the screen and shows over the lock screen. Off: IGRIS
+     * is a normal, opaque app again.
+     */
+    private fun sheet(on: Boolean) {
+        val a = activity
+        if (Build.VERSION.SDK_INT >= 27) {
+            a.setShowWhenLocked(on)
+            a.setTurnScreenOn(on)
+        } else {
+            @Suppress("DEPRECATION")
+            val flags = android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            if (on) a.window.addFlags(flags) else a.window.clearFlags(flags)
+        }
+        a.window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(if (on) android.graphics.Color.TRANSPARENT else OPAQUE))
+    }
+
+    @Command
+    fun sheetMode(invoke: Invoke) {
+        val on = invoke.parseArgs(WakeArgs::class.java).on
+        activity.runOnUiThread {
+            sheet(on)
+            invoke.resolve()
+        }
+    }
+
+    /** Close the panel: back to whatever was on screen before. */
+    @Command
+    fun sheetHide(invoke: Invoke) {
+        activity.runOnUiThread {
+            sheet(false)
+            activity.moveTaskToBack(true)
+            invoke.resolve()
+        }
+    }
+
+    /** Before acting on a request made on the lock screen: the user unlocks (fingerprint, face, PIN). */
+    @Command
+    fun unlock(invoke: Invoke) {
+        val km = activity.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+        val ret = JSObject()
+        if (!km.isKeyguardLocked || Build.VERSION.SDK_INT < 26) {
+            ret.put("unlocked", !km.isKeyguardLocked)
+            invoke.resolve(ret)
+            return
+        }
+        activity.runOnUiThread {
+            km.requestDismissKeyguard(activity, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() {
+                    ret.put("unlocked", true)
+                    invoke.resolve(ret)
+                }
+
+                override fun onDismissCancelled() {
+                    ret.put("unlocked", false)
+                    invoke.resolve(ret)
+                }
+
+                override fun onDismissError() {
+                    ret.put("unlocked", false)
+                    invoke.resolve(ret)
+                }
+            })
+        }
+    }
 }
+
+/** IGRIS's dark background, for the window behind the page when it isn't a panel. */
+private const val OPAQUE = 0xFF0C0C0E.toInt()

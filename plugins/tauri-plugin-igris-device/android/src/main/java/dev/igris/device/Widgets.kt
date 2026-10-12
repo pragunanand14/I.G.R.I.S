@@ -19,6 +19,8 @@ import kotlin.math.roundToInt
 internal const val EXTRA_ACTION = "dev.igris.action"
 internal const val ACTION_LISTEN = "listen"
 internal const val ACTION_WIDGETS = "widgets"
+/** "Hey IGRIS" or the assistant gesture: the screen wakes and IGRIS opens as a panel over whatever was on screen. */
+internal const val ACTION_ASSISTANT = "assistant"
 
 /** Open IGRIS (its launcher activity), optionally asking it to do something. */
 internal fun openIgris(ctx: Context, action: String?, requestCode: Int): PendingIntent? {

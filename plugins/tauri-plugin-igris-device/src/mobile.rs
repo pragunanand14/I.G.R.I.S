@@ -283,6 +283,25 @@ impl<R: Runtime> Device<R> {
         self.0.run_mobile_plugin::<Empty>(cmd, ()).map(|_| ()).map_err(failed)
     }
 
+    /// The assistant panel: see-through over other apps and the lock screen (`on`), or a normal app.
+    pub fn sheet_mode(&self, on: bool) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("sheetMode", WakeArgs { on, charging_only: false }).map(|_| ()).map_err(failed)
+    }
+
+    /// Close the panel: back to whatever was on screen.
+    pub fn sheet_hide(&self) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("sheetHide", ()).map(|_| ()).map_err(failed)
+    }
+
+    /// Ask the user to unlock the phone (fingerprint, face, PIN); `true` once it is unlocked.
+    pub fn unlock(&self) -> Result<bool> {
+        #[derive(Deserialize)]
+        struct R {
+            unlocked: bool,
+        }
+        self.0.run_mobile_plugin::<R>("unlock", ()).map(|r| r.unlocked).map_err(failed)
+    }
+
     /// Where the phone is now (Android asks for location the first time).
     pub fn current_location(&self) -> Result<Location> {
         self.0.run_mobile_plugin::<Location>("currentLocation", ()).map_err(failed)

@@ -16,6 +16,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useOperatorStore } from "@/stores/operatorStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useVoiceStore } from "@/stores/voiceStore";
+import { useSheet } from "@/mobile/sheet";
 import type { ToolActivity } from "@/types/tools";
 
 /** Operator mode, or several tool calls: the turn is step-by-step work. */
@@ -50,6 +51,21 @@ export function useVoice(enabled: boolean) {
     useVoiceStore.getState().connect(
       async (text) => {
         const chat = useChatStore.getState();
+        if (phone && useSheet.getState().open) {
+          // Asked from the panel: answered there. On the lock screen, unlock first.
+          const unlocked = await api.phoneUnlock().catch(() => true);
+          if (!unlocked) {
+            useVoiceStore.setState({
+              error: "Unlock your phone to use IGRIS.",
+            });
+            return false;
+          }
+          if (useSheet.getState().fresh) {
+            useSheet.setState({ fresh: false });
+            await chat.openConversation(null);
+          }
+          return useChatStore.getState().send(text);
+        }
         if (!location.hash.startsWith("#/chat")) {
           void chat.openConversation(null);
           void navigate("/chat");
@@ -60,7 +76,7 @@ export function useVoice(enabled: boolean) {
         await useChatStore.getState().cancel();
       },
     );
-  }, [navigate]);
+  }, [navigate, phone]);
 
   useEffect(() => {
     if (enabled) void useVoiceStore.getState().loadStatus();

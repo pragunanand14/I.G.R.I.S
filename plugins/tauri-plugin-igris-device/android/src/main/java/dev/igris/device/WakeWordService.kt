@@ -214,8 +214,19 @@ class WakeWordService : Service(), RecognitionListener {
         }
         val open = packageManager.getLaunchIntentForPackage(packageName)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            putExtra(EXTRA_ACTION, ACTION_LISTEN)
+            putExtra(EXTRA_ACTION, ACTION_ASSISTANT)
         } ?: return
+        // Light the screen up (the panel then shows over the lock screen; IGRIS asks to unlock before acting).
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            @Suppress("DEPRECATION")
+            pm.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "igris:wake",
+            ).acquire(10_000)
+        } catch (e: Exception) {
+            Log.w(TAG, "IGRIS_WAKE couldn't wake the screen: ${e.javaClass.simpleName}")
+        }
         try {
             startActivity(open)
         } catch (e: Exception) {

@@ -30,6 +30,8 @@ import { ScreenControlScreen } from "./screens/ScreenControlScreen";
 import { SmartHomeScreen } from "./screens/SmartHomeScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 import { WidgetsScreen } from "./screens/WidgetsScreen";
+import { AssistantSheet } from "./AssistantSheet";
+import { useSheet } from "./sheet";
 
 restoreTheme();
 
@@ -43,6 +45,7 @@ function MobileShell() {
     return () => clearTimeout(t);
   }, [settings.theme]);
   useWidgetActions(ready);
+  const sheet = useSheet((s) => s.open);
   return (
     <div className="m-app flex h-full flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
       <main className="relative min-h-0 flex-1 overflow-y-auto">
@@ -50,7 +53,8 @@ function MobileShell() {
       </main>
       <ReminderAlerts enabled={ready} />
       <DevicePrompts enabled={ready} phone />
-      <Opening />
+      {!sheet && <Opening />}
+      {sheet && <AssistantSheet />}
     </div>
   );
 }
@@ -65,7 +69,12 @@ function useWidgetActions(ready: boolean) {
       api
         .widgetLaunchAction()
         .then((action) => {
-          if (action === "listen") {
+          if (action === "assistant") {
+            // "Hey IGRIS" / the assistant gesture: a panel over whatever is on screen, listening.
+            useSheet.getState().enter();
+            const voice = useVoiceStore.getState();
+            if (voice.phase === "idle") void voice.listen();
+          } else if (action === "listen") {
             navigate("/");
             const voice = useVoiceStore.getState();
             if (voice.phase !== "listening") void voice.toggle();

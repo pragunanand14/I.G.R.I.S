@@ -1,6 +1,10 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.igris" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- See-through when IGRIS opens as the assistant panel over another app ("Hey IGRIS");
+             otherwise MainActivity paints a solid background (MainActivity.kt). -->
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
         <!-- Customize your theme here. -->
     </style>
 </resources>

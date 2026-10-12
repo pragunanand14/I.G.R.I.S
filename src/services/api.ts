@@ -87,6 +87,11 @@ export const api = {
   phoneMessagesAllApps: () => call<boolean>("phone_messages_all_apps"),
   phoneSetMessagesAllApps: (on: boolean) =>
     call<boolean>("phone_set_messages_all_apps", { on }),
+  /** The assistant panel: see-through over other apps and the lock screen, or a normal app. */
+  phoneSheetMode: (on: boolean) => call<void>("phone_sheet_mode", { on }),
+  phoneSheetHide: () => call<void>("phone_sheet_hide"),
+  /** Ask the user to unlock the phone; true once unlocked (always true when it isn't locked). */
+  phoneUnlock: () => call<boolean>("phone_unlock"),
   phoneWakeStatus: () => call<WakeStatus>("phone_wake_status"),
   phoneWakeSet: (on: boolean, chargingOnly: boolean) =>
     call<void>("phone_wake_set", { on, chargingOnly }),

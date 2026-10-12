@@ -144,6 +144,18 @@ impl<R: Runtime> Device<R> {
         Err(Error::Unsupported)
     }
 
+    pub fn sheet_mode(&self, _on: bool) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn sheet_hide(&self) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn unlock(&self) -> Result<bool> {
+        Err(Error::Unsupported)
+    }
+
     pub fn current_location(&self) -> Result<Location> {
         Err(Error::Unsupported)
     }

@@ -74,4 +74,20 @@ check "message listener connected and read the notification already showing" 'gr
 check "\"Hey IGRIS\" loaded its on-phone model and is listening" 'grep -q "IGRIS_WAKE listening" "$OUT/logcat.txt"'
 adb shell cmd package query-activities --brief -a android.intent.action.ASSIST > "$OUT/assist.txt" 2>&1 || true
 check "IGRIS can be chosen as the phone's assistant (ASSIST)" 'grep -q "$PKG/dev.igris.device.AssistActivity" "$OUT/assist.txt"'
+# The assistant gesture / "Hey IGRIS": IGRIS opens as a panel over what's on screen.
+adb shell input keyevent KEYCODE_HOME || true
+sleep 2
+adb shell am start -a android.intent.action.ASSIST -n "$PKG/dev.igris.device.AssistActivity" || true
+sleep 6
+adb shell uiautomator dump /sdcard/igris-sheet.xml >/dev/null 2>&1 || true
+sleep 2
+adb shell uiautomator dump /sdcard/igris-sheet.xml >/dev/null 2>&1 || true
+adb pull /sdcard/igris-sheet.xml "$OUT/sheet.xml" >/dev/null 2>&1 || : > "$OUT/sheet.xml"
+adb exec-out screencap -p > "$OUT/sheet.png" || true
+check "the assistant gesture opens IGRIS's panel (\"Open IGRIS\" on screen)" 'grep -q "Open IGRIS" "$OUT/sheet.xml"'
+adb logcat -d > "$OUT/logcat-sheet.txt" || true
+check "no crash opening the panel" '! grep -qE "FATAL EXCEPTION.*|panicked at" "$OUT/logcat-sheet.txt"'
+# Leave IGRIS as a normal app for the tests that follow.
+adb shell input keyevent KEYCODE_HOME || true
+sleep 2
 exit $fail
