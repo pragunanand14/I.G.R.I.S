@@ -78,16 +78,20 @@ check "IGRIS can be chosen as the phone's assistant (ASSIST)" 'grep -q "$PKG/dev
 adb shell input keyevent KEYCODE_HOME || true
 sleep 2
 adb shell am start -a android.intent.action.ASSIST -n "$PKG/dev.igris.device.AssistActivity" || true
-sleep 6
-adb shell uiautomator dump /sdcard/igris-sheet.xml >/dev/null 2>&1 || true
-sleep 2
-adb shell uiautomator dump /sdcard/igris-sheet.xml >/dev/null 2>&1 || true
-adb pull /sdcard/igris-sheet.xml "$OUT/sheet.xml" >/dev/null 2>&1 || : > "$OUT/sheet.xml"
+# Look while it's up (without an AI key it shows the problem and closes after a few seconds).
+: > "$OUT/sheet.xml"
+for i in 1 2 3 4; do
+  sleep 1
+  adb shell uiautomator dump /sdcard/igris-sheet.xml >/dev/null 2>&1 || true
+  adb pull /sdcard/igris-sheet.xml "$OUT/sheet-$i.xml" >/dev/null 2>&1 && cat "$OUT/sheet-$i.xml" >> "$OUT/sheet.xml"
+  grep -q "Open IGRIS" "$OUT/sheet.xml" && break
+done
 adb exec-out screencap -p > "$OUT/sheet.png" || true
+grep -o -E '(text|content-desc)="[^"]+"' "$OUT/sheet.xml" | sort -u | head -20 || true
 check "the assistant gesture opens IGRIS's panel (\"Open IGRIS\" on screen)" 'grep -q "Open IGRIS" "$OUT/sheet.xml"'
 adb logcat -d > "$OUT/logcat-sheet.txt" || true
 check "no crash opening the panel" '! grep -qE "FATAL EXCEPTION.*|panicked at" "$OUT/logcat-sheet.txt"'
-# Leave IGRIS as a normal app for the tests that follow.
+# Leave IGRIS as a normal app for the tests that follow (the panel closes when IGRIS goes to the background).
 adb shell input keyevent KEYCODE_HOME || true
-sleep 2
+sleep 3
 exit $fail

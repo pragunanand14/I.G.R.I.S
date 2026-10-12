@@ -53,7 +53,8 @@ function MobileShell() {
       </main>
       <ReminderAlerts enabled={ready} />
       <DevicePrompts enabled={ready} phone />
-      {!sheet && <Opening />}
+      {/* Stays mounted (remounting would replay it); hidden under the panel by CSS. */}
+      <Opening />
       {sheet && <AssistantSheet />}
     </div>
   );
