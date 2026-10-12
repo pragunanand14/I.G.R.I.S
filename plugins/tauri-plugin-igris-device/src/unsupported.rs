@@ -144,19 +144,19 @@ impl<R: Runtime> Device<R> {
         Err(Error::Unsupported)
     }
 
-    pub fn record_start(&self, _rules: RecordRules) -> Result<()> {
+    pub fn record_start(&self, _rules: RecordRules) -> Result<i32> {
         Err(Error::Unsupported)
     }
 
-    pub fn record_poll(&self) -> Result<RecordPoll> {
+    pub fn record_poll(&self, _session: i32) -> Result<RecordPoll> {
         Err(Error::Unsupported)
     }
 
-    pub fn record_stop(&self, _cancel: bool) -> Result<()> {
+    pub fn record_stop(&self, _session: i32, _cancel: bool) -> Result<()> {
         Err(Error::Unsupported)
     }
 
-    pub fn record_take(&self) -> Result<Option<String>> {
+    pub fn record_take(&self, _session: i32) -> Result<Option<String>> {
         Err(Error::Unsupported)
     }
 

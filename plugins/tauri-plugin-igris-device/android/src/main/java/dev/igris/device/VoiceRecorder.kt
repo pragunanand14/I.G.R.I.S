@@ -45,39 +45,51 @@ object VoiceRecorder {
     @Volatile
     private var current: Session? = null
 
-    /** idle, recording, done, failed — of the current session. */
-    val state: String get() = current?.state ?: "idle"
-    val level: Float get() = current?.level ?: 0f
-    val heardSpeech: Boolean get() = current?.heardSpeech ?: false
-    val error: String? get() = current?.error
+    /** The session holding the wake-word listener off the microphone (released when it finishes). */
+    private var holdOwner: Session? = null
 
-    /** Start a new recording (an earlier one still finishing is dropped). */
-    fun start(rules: Rules) {
-        val s = synchronized(lock) {
-            current?.let { old ->
-                old.cancelled = true
-                old.stopping = true
+    /** The current session if it is `id` (an older recorder asking about a newer session gets nothing). */
+    private fun session(id: Int): Session? = current?.takeIf { it.id == id }
+
+    fun state(id: Int): String = session(id)?.state ?: "idle"
+    fun level(id: Int): Float = session(id)?.level ?: 0f
+    fun heardSpeech(id: Int): Boolean = session(id)?.heardSpeech ?: false
+    fun error(id: Int): String? = session(id)?.error
+
+    /** Start a new recording (an earlier one still finishing is dropped); returns its session id. */
+    fun start(rules: Rules): Int {
+        val (s, prev) = synchronized(lock) {
+            val old = current
+            old?.let {
+                it.cancelled = true
+                it.stopping = true
             }
-            Session(nextId++, rules).also { current = it }
+            val s = Session(nextId++, rules)
+            current = s
+            holdOwner = s
+            s to old?.thread
         }
         // The wake-word listener lets go of the microphone meanwhile.
         WakeWordService.hold("record", true)
-        s.thread = Thread({ run(s) }, "igris-record").apply { start() }
+        s.thread = Thread({ run(s, prev) }, "igris-record").apply { start() }
+        return s.id
     }
 
-    /** Finish now (keep what was said), or `cancel` to drop it. */
-    fun stop(cancel: Boolean) {
-        val s = current ?: return
+    /** Finish session `id` now (keep what was said), or `cancel` to drop it. */
+    fun stop(id: Int, cancel: Boolean) {
+        val s = session(id) ?: return
         if (cancel) s.cancelled = true
         s.stopping = true
     }
 
     @SuppressLint("MissingPermission")
-    private fun run(s: Session) {
+    private fun run(s: Session, prev: Thread?) {
         val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         var rec: AudioRecord? = null
         try {
-            // Give the wake-word listener a moment to release the microphone.
+            // The previous recording (if one was still finishing) lets go of the microphone first,
+            prev?.join(600)
+            // and the wake-word listener gets a moment to release it.
             val waitUntil = System.currentTimeMillis() + 400
             while (WakeWordService.listening && System.currentTimeMillis() < waitUntil && !s.stopping) Thread.sleep(20)
             rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, 4096) * 2)
@@ -127,17 +139,21 @@ object VoiceRecorder {
             }
             rec?.release()
             s.level = 0f
-            // Only the current session hands the microphone back to the wake-word listener.
+            // Only the latest session hands the microphone back to the wake-word listener (even if its
+            // recording was already taken).
             synchronized(lock) {
-                if (current === s) WakeWordService.hold("record", false)
+                if (holdOwner === s) {
+                    holdOwner = null
+                    WakeWordService.hold("record", false)
+                }
             }
         }
     }
 
-    /** The finished recording as a 16 kHz mono WAV, once (then the session ends). */
-    fun take(): ByteArray? {
+    /** Session `id`'s finished recording as a 16 kHz mono WAV, once (then the session ends). */
+    fun take(id: Int): ByteArray? {
         val s = synchronized(lock) {
-            val s = current ?: return null
+            val s = session(id) ?: return null
             if (s.state != "done") return null
             current = null
             s

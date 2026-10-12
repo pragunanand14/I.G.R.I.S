@@ -13,6 +13,8 @@ interface SheetStore {
   fresh: boolean;
   /** When this panel session started (its replies are the ones shown). */
   openedAt: number;
+  /** A request is waiting on the unlock prompt (the panel stays up meanwhile). */
+  waiting: boolean;
   enter: () => void;
   /** Back to the app that was on screen. */
   close: () => void;
@@ -29,6 +31,7 @@ export const useSheet = create<SheetStore>((set, get) => ({
   open: false,
   fresh: true,
   openedAt: 0,
+  waiting: false,
   enter: () => {
     mark(true);
     set({ open: true, fresh: true, openedAt: Date.now() });
@@ -41,7 +44,7 @@ export const useSheet = create<SheetStore>((set, get) => ({
     void api.phoneSheetHide().catch(() => undefined);
   },
   expand: async () => {
-    const unlocked = await api.phoneUnlock().catch(() => true);
+    const unlocked = await api.phoneUnlock().catch(() => false);
     if (!unlocked) return false;
     mark(false);
     set({ open: false });

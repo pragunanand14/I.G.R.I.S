@@ -97,9 +97,12 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: write
+    # Queued, never cut off half-way through publishing.
     concurrency:
       group: phone-release
-      cancel-in-progress: true
+      cancel-in-progress: false
+    env:
+      HAS_KEY_SECRET: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -122,8 +125,10 @@ jobs:
       - run: npm ci
       # The signing key: the ANDROID_KEYSTORE_B64 secret if the owner set one, otherwise a key IGRIS's builds
       # made once and keep in the Actions cache (so every update is signed the same way).
-      # Weaker than a secret (other workflows of this public repo could read the cache), so a secret wins when set.
+      # Only without the secret: a key made once and kept in the Actions cache. Weaker (other workflows of this
+      # public repo could read the cache, and an unused cache entry expires after 7 days), so the secret wins.
       - name: Signing key (kept between builds)
+        if: env.HAS_KEY_SECRET != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.igris-signing
@@ -135,15 +140,21 @@ jobs:
         run: |
           mkdir -p ~/.igris-signing
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > ~/.igris-signing/igris.jks
-            echo "$KEYSTORE_PASSWORD" > ~/.igris-signing/password
-          elif [ ! -f ~/.igris-signing/igris.jks ]; then
+            # The owner's key: kept outside the cached folder, so it never ends up in the cache.
+            mkdir -p ~/.igris-secret-signing
+            echo "$KEYSTORE_B64" | base64 -d > ~/.igris-secret-signing/igris.jks
+            printf '%s' "$KEYSTORE_PASSWORD" > ~/.igris-secret-signing/password
+            echo "KEYDIR=$HOME/.igris-secret-signing" >> "$GITHUB_ENV"
+          else
+            echo "KEYDIR=$HOME/.igris-signing" >> "$GITHUB_ENV"
+          fi
+          if [ -z "$KEYSTORE_B64" ] && [ ! -f ~/.igris-signing/igris.jks ]; then
             head -c 24 /dev/urandom | base64 | tr -d '/+=' > ~/.igris-signing/password
             keytool -genkeypair -keystore ~/.igris-signing/igris.jks -alias igris -keyalg RSA -keysize 4096 -validity 10000 \
               -storepass "$(cat ~/.igris-signing/password)" -keypass "$(cat ~/.igris-signing/password)" -dname "CN=IGRIS"
             echo "::notice::Made a new signing key for the phone app (kept in the Actions cache)."
           fi
-          keytool -list -keystore ~/.igris-signing/igris.jks -storepass "$(cat ~/.igris-signing/password)" | grep -i fingerprint || true
+          echo "Signing with the key in $( [ -n "$KEYSTORE_B64" ] && echo 'the ANDROID_KEYSTORE_B64 secret' || echo 'the Actions cache' )."
       - name: Build the phone app (arm64)
         run: npx tauri android build --apk --target aarch64 --ci
       - name: Sign
@@ -152,8 +163,8 @@ jobs:
           [ -n "$apk" ] || { echo "::error::No release APK was built"; exit 1; }
           bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$bt/zipalign" -f -p 4 "$apk" igris-aligned.apk
-          "$bt/apksigner" sign --ks ~/.igris-signing/igris.jks --ks-key-alias igris \
-            --ks-pass "file:$HOME/.igris-signing/password" --key-pass "file:$HOME/.igris-signing/password" \
+          "$bt/apksigner" sign --ks "$KEYDIR/igris.jks" --ks-key-alias igris \
+            --ks-pass "file:$KEYDIR/password" --key-pass "file:$KEYDIR/password" \
             --out IGRIS-phone.apk igris-aligned.apk
           "$bt/apksigner" verify --print-certs IGRIS-phone.apk | head -3
           ls -la IGRIS-phone.apk
@@ -166,5 +177,12 @@ jobs:
 
           Install: open this page on your phone, tap IGRIS-phone.apk, then Install. Updates from here install over the previous version.
           The first time only: if your phone says the app conflicts with an existing one, uninstall the old IGRIS first (builds before this page were signed differently)."
-          gh release delete phone-latest --cleanup-tag --yes 2>/dev/null || true
-          gh release create phone-latest IGRIS-phone.apk --prerelease --title "IGRIS phone (latest)" --notes "$notes" --target "$GITHUB_SHA"
+          # Update in place (the download link never disappears): move the tag, then replace the file.
+          git tag -f phone-latest "$GITHUB_SHA"
+          git push -f origin refs/tags/phone-latest
+          if gh release view phone-latest >/dev/null 2>&1; then
+            gh release upload phone-latest IGRIS-phone.apk --clobber
+            gh release edit phone-latest --notes "$notes" --prerelease --title "IGRIS phone (latest)"
+          else
+            gh release create phone-latest IGRIS-phone.apk --prerelease --title "IGRIS phone (latest)" --notes "$notes" --verify-tag
+          fi

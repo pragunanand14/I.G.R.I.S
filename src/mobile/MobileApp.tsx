@@ -35,6 +35,16 @@ import { useSheet } from "./sheet";
 
 restoreTheme();
 
+// IGRIS on screen or not: while it is, "Hey IGRIS" starts listening in the app.
+if (typeof document !== "undefined") {
+  const report = () =>
+    void api
+      .phoneOnScreen(document.visibilityState === "visible")
+      .catch(() => undefined);
+  document.addEventListener("visibilitychange", report);
+  report();
+}
+
 // Errors on the phone's screen go to IGRIS's log (there is no console to look at on a phone).
 if (typeof window !== "undefined") {
   window.addEventListener(

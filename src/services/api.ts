@@ -87,7 +87,6 @@ export const api = {
   phoneMessagesAllApps: () => call<boolean>("phone_messages_all_apps"),
   phoneSetMessagesAllApps: (on: boolean) =>
     call<boolean>("phone_set_messages_all_apps", { on }),
-  /** The assistant panel: see-through over other apps and the lock screen, or a normal app. */
   /** A named UI moment for IGRIS's log (no user content). */
   uiEvent: (name: string, detail?: string) =>
     call<void>("ui_event", { name, detail }),
@@ -97,17 +96,24 @@ export const api = {
     silenceMs: number;
     noSpeechMs: number;
     maxMs: number;
-  }) => call<void>("phone_record_start", { rules }),
-  phoneRecordPoll: () =>
+  }) => call<number>("phone_record_start", { rules }),
+  phoneRecordPoll: (session: number) =>
     call<{
       state: "idle" | "recording" | "done" | "failed";
       level: number;
       heardSpeech: boolean;
       error: string | null;
-    }>("phone_record_poll"),
-  phoneRecordStop: (cancel: boolean) =>
-    call<void>("phone_record_stop", { cancel }),
-  phoneRecordTake: () => call<string | null>("phone_record_take"),
+    }>("phone_record_poll", {
+      session,
+    }),
+  phoneRecordStop: (session: number, cancel: boolean) =>
+    call<void>("phone_record_stop", { session, cancel }),
+  phoneRecordTake: (session: number) =>
+    call<string | null>("phone_record_take", { session }),
+  /** Phone: whether IGRIS is on screen (then "Hey IGRIS" starts listening in the app). */
+  phoneOnScreen: (visible: boolean) =>
+    call<void>("phone_on_screen", { visible }),
+  /** The assistant panel: see-through over other apps and the lock screen, or a normal app. */
   phoneSheetMode: (on: boolean) => call<void>("phone_sheet_mode", { on }),
   phoneSheetHide: () => call<void>("phone_sheet_hide"),
   /** Ask the user to unlock the phone; true once unlocked (always true when it isn't locked). */

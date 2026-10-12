@@ -101,6 +101,7 @@ class RecordArgs {
     var noSpeechMs: Long = 8000
     var maxMs: Long = 30000
     var cancel: Boolean = false
+    var session: Int = 0
 }
 
 @InvokeArg
@@ -989,8 +990,10 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun startRecording(invoke: Invoke) {
         val a = invoke.parseArgs(RecordArgs::class.java)
-        VoiceRecorder.start(VoiceRecorder.Rules(a.threshold.coerceIn(0.001, 0.5), a.silenceMs.coerceIn(300, 5000), a.noSpeechMs.coerceIn(1000, 30000), a.maxMs.coerceIn(2000, 120000)))
-        invoke.resolve()
+        val id = VoiceRecorder.start(VoiceRecorder.Rules(a.threshold.coerceIn(0.001, 0.5), a.silenceMs.coerceIn(300, 5000), a.noSpeechMs.coerceIn(1000, 30000), a.maxMs.coerceIn(2000, 120000)))
+        val ret = JSObject()
+        ret.put("session", id)
+        invoke.resolve(ret)
     }
 
     @Command
@@ -1013,26 +1016,27 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun recordPoll(invoke: Invoke) {
+        val id = invoke.parseArgs(RecordArgs::class.java).session
         val ret = JSObject()
-        ret.put("state", VoiceRecorder.state)
-        ret.put("level", VoiceRecorder.level.toDouble())
-        ret.put("heardSpeech", VoiceRecorder.heardSpeech)
-        VoiceRecorder.error?.let { ret.put("error", it) }
+        ret.put("state", VoiceRecorder.state(id))
+        ret.put("level", VoiceRecorder.level(id).toDouble())
+        ret.put("heardSpeech", VoiceRecorder.heardSpeech(id))
+        VoiceRecorder.error(id)?.let { ret.put("error", it) }
         invoke.resolve(ret)
     }
 
     @Command
     fun recordStop(invoke: Invoke) {
-        VoiceRecorder.stop(invoke.parseArgs(RecordArgs::class.java).cancel)
+        val a = invoke.parseArgs(RecordArgs::class.java)
+        VoiceRecorder.stop(a.session, a.cancel)
         invoke.resolve()
     }
 
-    /** The finished recording (WAV, base64), once. */
+    /** A session's finished recording (WAV, base64), once. */
     @Command
     fun recordTake(invoke: Invoke) {
         val ret = JSObject()
-        VoiceRecorder.take()?.let { ret.put("wav", Base64.encodeToString(it, Base64.NO_WRAP)) }
-        ret.put("heardSpeech", VoiceRecorder.heardSpeech)
+        VoiceRecorder.take(invoke.parseArgs(RecordArgs::class.java).session)?.let { ret.put("wav", Base64.encodeToString(it, Base64.NO_WRAP)) }
         invoke.resolve(ret)
     }
 
@@ -1055,6 +1059,8 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             if (on) a.window.addFlags(flags) else a.window.clearFlags(flags)
         }
         a.window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(if (on) android.graphics.Color.TRANSPARENT else OPAQUE))
+        // See-through only while it's the panel: as a normal app IGRIS is opaque, so the app behind it stops.
+        if (Build.VERSION.SDK_INT >= 30) a.setTranslucent(on)
     }
 
     @Command
@@ -1081,8 +1087,15 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     fun unlock(invoke: Invoke) {
         val km = activity.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
         val ret = JSObject()
-        if (!km.isKeyguardLocked || Build.VERSION.SDK_INT < 26) {
-            ret.put("unlocked", !km.isKeyguardLocked)
+        if (!km.isKeyguardLocked) {
+            ret.put("unlocked", true)
+            invoke.resolve(ret)
+            return
+        }
+        if (Build.VERSION.SDK_INT < 26) {
+            // No unlock prompt before Android 8: step out of the way so the lock screen shows.
+            activity.runOnUiThread { sheet(false) }
+            ret.put("unlocked", false)
             invoke.resolve(ret)
             return
         }

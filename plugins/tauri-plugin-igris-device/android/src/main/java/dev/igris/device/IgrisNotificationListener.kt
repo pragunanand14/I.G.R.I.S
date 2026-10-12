@@ -75,7 +75,6 @@ class IgrisNotificationListener : NotificationListenerService() {
         fun hideCodes(s: String): String = if (CODE_WORDS.containsMatchIn(s)) DIGITS.replace(s, "••••") else s
 
         fun recent(sinceMs: Long, allApps: Boolean): List<Item> = synchronized(items) {
-            refresh()
             val cutoff = System.currentTimeMillis() - sinceMs
             items.filter { it.time >= cutoff && (allApps || it.pkg in MESSAGING) }.sortedByDescending { it.time }
         }
@@ -131,7 +130,8 @@ class IgrisNotificationListener : NotificationListenerService() {
         val e = n.extras ?: return
         val title = e.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
         val title0 = e.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()?.trim()
-        val text = (messages(e) ?: (e.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: e.getCharSequence(Notification.EXTRA_TEXT))?.toString())?.trim().orEmpty()
+        val chatText = messages(e)
+        val text = (chatText ?: (e.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: e.getCharSequence(Notification.EXTRA_TEXT))?.toString())?.trim().orEmpty()
         if (title.isEmpty() && text.isEmpty()) return
         val app = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
@@ -142,8 +142,9 @@ class IgrisNotificationListener : NotificationListenerService() {
         val chat = if (!title0.isNullOrEmpty()) title0 else title
         val item = Item(sbn.key, sbn.packageName, app, hideCodes(chat).take(120), hideCodes(text).take(1200), sbn.postTime, reply)
         synchronized(items) {
-            // A chat's notification is updated as messages arrive: keep only its newest state.
-            items.removeAll { it.key == item.key }
+            // A chat's notification (its recent messages) is updated as messages arrive: keep its newest state.
+            // Apps that reuse one notification for separate alerts (bank SMS, OTPs): keep each distinct text.
+            if (chatText != null) items.removeAll { it.key == item.key } else items.removeAll { it.key == item.key && it.text == item.text }
             items.add(item)
             val cutoff = System.currentTimeMillis() - KEEP_MS
             items.removeAll { it.time < cutoff }

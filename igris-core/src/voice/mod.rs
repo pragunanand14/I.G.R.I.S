@@ -206,7 +206,12 @@ pub fn allowed_language(l: Option<&str>) -> Option<&'static str> {
 
 /// Text in a script other than Latin or Devanagari (Urdu/Arabic, Bengali, CJK, …): a wrong guess.
 pub fn foreign_script(text: &str) -> bool {
-    text.chars().any(|c| c.is_alphabetic() && !c.is_ascii() && !matches!(c, '\u{00C0}'..='\u{024F}' | '\u{0900}'..='\u{097F}' | '\u{A8E0}'..='\u{A8FF}'))
+    // Latin with accents (incl. romanised Hindi like ṭ, ḍ, ṇ) and Devanagari are fine.
+    text.chars().any(|c| {
+        c.is_alphabetic()
+            && !c.is_ascii()
+            && !matches!(c, '\u{00C0}'..='\u{024F}' | '\u{1E00}'..='\u{1EFF}' | '\u{0300}'..='\u{036F}' | '\u{0900}'..='\u{097F}' | '\u{A8E0}'..='\u{A8FF}')
+    })
 }
 
 /// Context makes short commands far more accurate, and the explicit "nothing"
@@ -253,9 +258,14 @@ pub async fn transcribe(h: &HttpVoice, audio: Vec<u8>, mime: &str, language: Opt
     }
     tracing::info!(event = "STT_FOREIGN_SCRIPT_RETRY");
     for retry in ["hi", "en"].into_iter().filter(|l| Some(*l) != language) {
-        let text = transcribe_as(h, audio.clone(), mime, Some(retry)).await?;
-        if !foreign_script(&text) {
-            return Ok(text);
+        match transcribe_as(h, audio.clone(), mime, Some(retry)).await {
+            Ok(text) if !foreign_script(&text) => return Ok(text),
+            Ok(_) => {}
+            // A retry failing (rate limit, network) isn't the user's problem: the first answer was simply unusable.
+            Err(e) => {
+                tracing::warn!(event = "STT_RETRY_FAILED", error = %e.message);
+                break;
+            }
         }
     }
     // Never pass on another language: nothing understood is better than a wrong command.
@@ -578,6 +588,7 @@ mod tests {
         assert_eq!((allowed_language(Some("hi-IN")), allowed_language(Some("ar")), allowed_language(None)), (Some("hi"), None, None));
         assert!(foreign_script("کل صبح الارم") && foreign_script("مرحبا") && foreign_script("আজ"));
         assert!(!foreign_script("Kal subah alarm laga do, café") && !foreign_script("कल सुबह अलार्म लगा दो"));
+        assert!(!foreign_script("kal subah ṭhīk 7 baje"), "romanised Hindi with diacritics is fine");
 
         // Guessed Urdu → asked again for Hindi; a language other than en/hi in the settings is ignored.
         let server = MockServer::start(vec![

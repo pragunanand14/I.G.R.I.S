@@ -284,31 +284,32 @@ impl<R: Runtime> Device<R> {
     }
 
     /// Start recording a spoken request natively (voice-recognition microphone; Android asks the first time).
-    pub fn record_start(&self, rules: RecordRules) -> Result<()> {
-        self.0.run_mobile_plugin::<Empty>("recordStart", rules).map(|_| ()).map_err(failed)
-    }
-
-    /// Where the recording is: state (idle, recording, done, failed), level 0–1, whether speech was heard.
-    pub fn record_poll(&self) -> Result<RecordPoll> {
-        self.0.run_mobile_plugin::<RecordPoll>("recordPoll", ()).map_err(failed)
-    }
-
-    /// Finish now, or `cancel` to drop it.
-    pub fn record_stop(&self, cancel: bool) -> Result<()> {
-        #[derive(Serialize)]
-        struct Args {
-            cancel: bool,
+    /// Returns the recording's session id (the other calls name it, so an old recorder can't touch a new one).
+    pub fn record_start(&self, rules: RecordRules) -> Result<i32> {
+        #[derive(Deserialize)]
+        struct R {
+            session: i32,
         }
-        self.0.run_mobile_plugin::<Empty>("recordStop", Args { cancel }).map(|_| ()).map_err(failed)
+        self.0.run_mobile_plugin::<R>("recordStart", rules).map(|r| r.session).map_err(failed)
     }
 
-    /// The finished recording as base64 WAV (None until it's done).
-    pub fn record_take(&self) -> Result<Option<String>> {
+    /// Where session `session` is: state (idle, recording, done, failed), level 0–1, whether speech was heard.
+    pub fn record_poll(&self, session: i32) -> Result<RecordPoll> {
+        self.0.run_mobile_plugin::<RecordPoll>("recordPoll", RecordArgs { session, cancel: false }).map_err(failed)
+    }
+
+    /// Finish the session now, or `cancel` to drop it.
+    pub fn record_stop(&self, session: i32, cancel: bool) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("recordStop", RecordArgs { session, cancel }).map(|_| ()).map_err(failed)
+    }
+
+    /// The session's finished recording as base64 WAV (None until it's done).
+    pub fn record_take(&self, session: i32) -> Result<Option<String>> {
         #[derive(Deserialize)]
         struct R {
             wav: Option<String>,
         }
-        self.0.run_mobile_plugin::<R>("recordTake", ()).map(|r| r.wav).map_err(failed)
+        self.0.run_mobile_plugin::<R>("recordTake", RecordArgs { session, cancel: false }).map(|r| r.wav).map_err(failed)
     }
 
     /// The assistant panel: see-through over other apps and the lock screen (`on`), or a normal app.
@@ -359,6 +360,12 @@ impl<R: Runtime> Device<R> {
         }
         self.0.run_mobile_plugin::<R>("placeAlertFired", PlaceArgs { id, ..Default::default() }).map(|r| r.fired).map_err(failed)
     }
+}
+
+#[derive(Serialize)]
+struct RecordArgs {
+    session: i32,
+    cancel: bool,
 }
 
 #[derive(Serialize, Default)]

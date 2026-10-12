@@ -128,6 +128,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
     set({ phase: "listening", level: 0, error: null });
     setActivity("listening");
     let text: string;
+    let mine: UtteranceRecorder | NativeRecorder | null = null;
     try {
       const st = get().status;
       if (!st || st.stt.mode === "browser") {
@@ -136,11 +137,16 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
         text = await r.result;
         recognitionCancel = null;
       } else {
-        const mine = isMobilePlatform()
+        mine = isMobilePlatform()
           ? new NativeRecorder((level) => set({ level }))
           : new UtteranceRecorder((level) => set({ level }));
         recorder = mine;
-        const rec = await mine.record();
+        const rec: {
+          blob: Blob;
+          mimeType: string;
+          heardSpeech: boolean;
+          base64?: string;
+        } | null = await mine.record();
         // Cancelled and a new listen started meanwhile: that one owns the state now.
         if (recorder !== mine) return null;
         recorder = null;
@@ -150,12 +156,14 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
         set({ phase: "transcribing", level: 0 });
         setActivity("thinking");
         // The phone's recording is already WAV in base64: send it as it is.
-        const b64 = (rec as { base64?: string }).base64;
+        const b64 = rec.base64;
         text = b64
           ? await api.transcribeAudio(b64, rec.mimeType)
           : await get().transcribe(rec.blob, rec.mimeType);
       }
     } catch (err) {
+      // A newer listen took over meanwhile: this one's failure is not shown.
+      if (mine && recorder !== mine) return null;
       recorder = null;
       recognitionCancel = null;
       return (

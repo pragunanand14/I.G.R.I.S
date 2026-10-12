@@ -9,13 +9,14 @@ const api = vi.hoisted(() => ({
 vi.mock("@/services/api", () => ({ api }));
 
 describe("phone recorder", () => {
-  beforeEach(() =>
+  beforeEach(() => {
     Object.values(api).forEach((f) =>
       f.mockReset().mockResolvedValue(undefined),
-    ),
-  );
+    );
+    api.phoneRecordStart.mockResolvedValue(7);
+  });
 
-  it("records natively until the phone says it's done, and returns WAV", async () => {
+  it("records natively until the phone says it's done, and returns the WAV as base64", async () => {
     api.phoneRecordPoll
       .mockResolvedValueOnce({
         state: "recording",
@@ -38,27 +39,36 @@ describe("phone recorder", () => {
       noSpeechMs: 8000,
       maxMs: 30000,
     });
-    expect(rec?.base64).toBe(btoa("RIFFxxxxWAVE"));
-    expect(rec?.mimeType).toBe("audio/wav");
-    expect(rec?.heardSpeech).toBe(true);
-    expect(await rec?.blob.text()).toBe("RIFFxxxxWAVE");
+    expect(api.phoneRecordPoll).toHaveBeenCalledWith(7);
+    expect(api.phoneRecordTake).toHaveBeenCalledWith(7);
+    expect(rec).toMatchObject({
+      base64: btoa("RIFFxxxxWAVE"),
+      mimeType: "audio/wav",
+      heardSpeech: true,
+    });
     expect(levels).toContain(0.3);
   });
 
-  it("cancelling drops the recording; a failure is reported", async () => {
+  it("cancelling drops the recording; silence isn't fetched; a failure is reported", async () => {
     api.phoneRecordPoll.mockResolvedValue({
-      state: "idle",
+      state: "recording",
       level: 0,
       heardSpeech: false,
       error: null,
     });
     const r = new NativeRecorder();
     const p = r.record();
+    await new Promise((res) => setTimeout(res, 0));
     r.cancel();
+    api.phoneRecordPoll.mockResolvedValue({
+      state: "idle",
+      level: 0,
+      heardSpeech: false,
+      error: null,
+    });
     expect(await p).toBeNull();
-    expect(api.phoneRecordStop).toHaveBeenCalledWith(true);
+    expect(api.phoneRecordStop).toHaveBeenCalledWith(7, true);
 
-    // Nothing said: the silence isn't fetched.
     api.phoneRecordPoll.mockResolvedValue({
       state: "done",
       level: 0,
@@ -70,15 +80,16 @@ describe("phone recorder", () => {
     expect(api.phoneRecordTake).not.toHaveBeenCalled();
 
     // Cancelled while the phone was still starting (permission prompt): dropped right away.
-    let release = () => undefined as void;
+    let release = (_: number) => undefined as void;
     api.phoneRecordStart.mockReturnValueOnce(
-      new Promise<void>((r) => (release = r)),
+      new Promise<number>((res) => (release = res)),
     );
     const early = new NativeRecorder();
     const pending = early.record();
     early.cancel();
-    release();
+    release(9);
     expect(await pending).toBeNull();
+    expect(api.phoneRecordStop).toHaveBeenCalledWith(9, true);
 
     api.phoneRecordPoll.mockResolvedValue({
       state: "failed",

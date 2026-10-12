@@ -132,7 +132,17 @@ pub async fn phone_open_settings(#[allow(unused_variables)] app: tauri::AppHandl
     Err(AppError::validation("This is for the phone app."))
 }
 
-/// While IGRIS is open on the phone, "Hey IGRIS" starts listening right there: check for it a few times a second.
+/// Whether IGRIS is on screen (set by the UI): only then is "Hey IGRIS" checked for here.
+static ON_SCREEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The UI tells IGRIS when it's on screen or not.
+#[tauri::command]
+pub fn phone_on_screen(visible: bool) {
+    ON_SCREEN.store(visible, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// While IGRIS is on screen, "Hey IGRIS" starts listening right there: check for it a few times a second
+/// (only then — in the background the phone opens IGRIS itself).
 #[cfg(mobile)]
 pub fn follow_wake_word(app: tauri::AppHandle) {
     use tauri::Emitter;
@@ -140,6 +150,9 @@ pub fn follow_wake_word(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            if !ON_SCREEN.load(std::sync::atomic::Ordering::Relaxed) {
+                continue;
+            }
             let a = app.clone();
             let heard = tauri::async_runtime::spawn_blocking(move || a.igris_device().wake_take_heard().unwrap_or(false)).await.unwrap_or(false);
             if heard {
@@ -190,7 +203,7 @@ pub async fn phone_unlock(#[allow(unused_variables)] app: tauri::AppHandle) -> A
 pub async fn phone_record_start(
     #[allow(unused_variables)] app: tauri::AppHandle,
     #[allow(unused_variables)] rules: tauri_plugin_igris_device::RecordRules,
-) -> AppResult<()> {
+) -> AppResult<i32> {
     #[cfg(mobile)]
     {
         use tauri_plugin_igris_device::IgrisDeviceExt;
@@ -201,22 +214,29 @@ pub async fn phone_record_start(
 }
 
 #[tauri::command]
-pub async fn phone_record_poll(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<tauri_plugin_igris_device::RecordPoll> {
+pub async fn phone_record_poll(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    #[allow(unused_variables)] session: i32,
+) -> AppResult<tauri_plugin_igris_device::RecordPoll> {
     #[cfg(mobile)]
     {
         use tauri_plugin_igris_device::IgrisDeviceExt;
-        return on_phone(move || app.igris_device().record_poll()).await;
+        return on_phone(move || app.igris_device().record_poll(session)).await;
     }
     #[cfg(not(mobile))]
     Err(AppError::validation("This is for the phone app."))
 }
 
 #[tauri::command]
-pub async fn phone_record_stop(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] cancel: bool) -> AppResult<()> {
+pub async fn phone_record_stop(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    #[allow(unused_variables)] session: i32,
+    #[allow(unused_variables)] cancel: bool,
+) -> AppResult<()> {
     #[cfg(mobile)]
     {
         use tauri_plugin_igris_device::IgrisDeviceExt;
-        return on_phone(move || app.igris_device().record_stop(cancel)).await;
+        return on_phone(move || app.igris_device().record_stop(session, cancel)).await;
     }
     #[cfg(not(mobile))]
     Ok(())
@@ -224,11 +244,11 @@ pub async fn phone_record_stop(#[allow(unused_variables)] app: tauri::AppHandle,
 
 /// The finished recording as base64 WAV (null until it's done).
 #[tauri::command]
-pub async fn phone_record_take(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<Option<String>> {
+pub async fn phone_record_take(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] session: i32) -> AppResult<Option<String>> {
     #[cfg(mobile)]
     {
         use tauri_plugin_igris_device::IgrisDeviceExt;
-        return on_phone(move || app.igris_device().record_take()).await;
+        return on_phone(move || app.igris_device().record_take(session)).await;
     }
     #[cfg(not(mobile))]
     Ok(None)

@@ -20,6 +20,7 @@ describe("assistant panel", () => {
       f.mockReset().mockResolvedValue(undefined),
     );
     api.phoneUnlock.mockResolvedValue(false);
+    useSheet.setState({ waiting: false });
     useSheet.getState().enter();
     useSheet.setState({ fresh: false });
   });
@@ -74,6 +75,18 @@ describe("assistant panel", () => {
     expect(screen.getByText("Sending it now.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
     expect(answerApproval).toHaveBeenCalledWith("t1", true);
+  });
+
+  it("stays up while a request waits on the unlock prompt", () => {
+    useSheet.setState({ waiting: true });
+    render(
+      <MemoryRouter>
+        <AssistantSheet />
+      </MemoryRouter>,
+    );
+    act(() => vi.advanceTimersByTime(10000));
+    expect(useSheet.getState().open).toBe(true);
+    useSheet.setState({ waiting: false });
   });
 
   it("goes back to the app underneath when done, and Open IGRIS needs an unlock", async () => {

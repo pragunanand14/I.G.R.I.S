@@ -181,10 +181,13 @@ class WakeWordService : Service(), RecognitionListener {
                 s.startListening(this)
                 speech = s
                 listening = true
+                problem = null
                 Log.i(TAG, "IGRIS_WAKE listening")
             } catch (e: Exception) {
                 problem = "Couldn't use the microphone: ${e.message}"
                 Log.w(TAG, "IGRIS_WAKE mic failed: ${e.message}")
+                // Probably busy (a call, another app): try again shortly.
+                main.postDelayed({ apply() }, 5_000)
             }
         } else if (!want && speech != null) {
             speech?.stop()
@@ -308,6 +311,9 @@ class WakeWordService : Service(), RecognitionListener {
         power = null
         listening = false
         running = false
+        problem = null
+        // The "just heard it" pause would have been lifted by a timer that's cancelled below.
+        synchronized(holds) { holds.remove("wake") }
         self = null
         main.removeCallbacksAndMessages(null)
         Log.i(TAG, "IGRIS_WAKE stopped")

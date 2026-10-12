@@ -38,8 +38,13 @@ export function AssistantSheet() {
   const reply = streaming?.text || (!fresh ? lastAssistant?.content : "") || "";
   const approvals =
     streaming?.activities.filter((a) => a.status === "awaitingApproval") ?? [];
+  const waiting = useSheet((s) => s.waiting);
   const busy =
-    phase !== "idle" || !!streaming || replyPending || approvals.length > 0;
+    phase !== "idle" ||
+    !!streaming ||
+    replyPending ||
+    approvals.length > 0 ||
+    waiting;
 
   useEffect(() => {
     void api.uiEvent("assistant_panel_shown").catch(() => undefined);
@@ -68,7 +73,7 @@ export function AssistantSheet() {
 
   return (
     <div
-      className="m-sheet fixed inset-0 z-[100] flex flex-col justify-end"
+      className="m-assist fixed inset-0 z-[100] flex flex-col justify-end"
       role="dialog"
       aria-label="IGRIS"
     >
@@ -79,12 +84,12 @@ export function AssistantSheet() {
         onClick={close}
       />
       <div
-        className="m-sheet-panel relative mx-2 mb-[max(env(safe-area-inset-bottom),8px)] max-h-[70vh] space-y-3 overflow-y-auto rounded-[28px] px-5 pt-4 pb-5 shadow-2xl"
+        className="m-assist-panel relative mx-2 mb-[max(env(safe-area-inset-bottom),8px)] max-h-[70vh] space-y-3 overflow-y-auto rounded-[28px] px-5 pt-4 pb-5 shadow-2xl"
         style={{ background: "var(--m-surface)" }}
       >
         <div className="flex items-center gap-3">
           <span
-            className="m-sheet-orb"
+            className="m-assist-orb"
             style={{
               transform: `scale(${1 + (phase === "listening" ? level * 0.6 : 0)})`,
             }}

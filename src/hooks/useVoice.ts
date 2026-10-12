@@ -51,15 +51,21 @@ export function useVoice(enabled: boolean) {
     useVoiceStore.getState().connect(
       async (text) => {
         const chat = useChatStore.getState();
-        if (phone && useSheet.getState().open) {
-          // Asked from the panel: answered there. On the lock screen, unlock first.
-          const unlocked = await api.phoneUnlock().catch(() => true);
+        if (phone) {
+          // Nothing asked on a locked phone is acted on until it's unlocked (fingerprint, face, PIN) —
+          // whether the panel is still up or not. If the check itself fails, refuse rather than assume.
+          useSheet.setState({ waiting: true });
+          const unlocked = await api.phoneUnlock().catch(() => false);
+          useSheet.setState({ waiting: false });
           if (!unlocked) {
             useVoiceStore.setState({
               error: "Unlock your phone to use IGRIS.",
             });
             return false;
           }
+        }
+        if (phone && useSheet.getState().open) {
+          // Asked from the panel: answered there.
           if (useSheet.getState().fresh) {
             useSheet.setState({ fresh: false });
             await chat.openConversation(null);
