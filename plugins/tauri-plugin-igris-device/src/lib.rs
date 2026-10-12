@@ -76,6 +76,18 @@ pub struct PhoneMessage {
     pub can_reply: bool,
 }
 
+/// The phone's native recorder, while it records a spoken request.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RecordPoll {
+    /// idle, recording, done, failed
+    pub state: String,
+    /// 0–1
+    pub level: f32,
+    pub heard_speech: bool,
+    pub error: Option<String>,
+}
+
 /// "Hey IGRIS" on the phone, and whether IGRIS is the phone's assistant.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

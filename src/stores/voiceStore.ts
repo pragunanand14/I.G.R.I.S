@@ -1,9 +1,20 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
-import { browserRecognitionAvailable, recognizeOnce } from "@/services/voice/browserSpeech";
-import { blobToBase64, micSupported, MicUnavailableError, UtteranceRecorder, watchForBargeIn } from "@/services/voice/recorder";
+import {
+  browserRecognitionAvailable,
+  recognizeOnce,
+} from "@/services/voice/browserSpeech";
+import {
+  blobToBase64,
+  micSupported,
+  MicUnavailableError,
+  UtteranceRecorder,
+  watchForBargeIn,
+} from "@/services/voice/recorder";
 import { toWav } from "@/services/voice/wav";
+import { NativeRecorder } from "@/services/voice/nativeRecorder";
+import { isMobilePlatform } from "@/services/platform";
 import { Speaker } from "@/services/voice/speaker";
 import { SentenceChunker } from "@/services/voice/speechText";
 import type { VoicePhase, VoiceStatus } from "@/types/voice";
@@ -51,15 +62,18 @@ interface VoiceStore {
 
 let submit: Submit = async () => false;
 let interruptReply: Interrupt = async () => undefined;
-let recorder: UtteranceRecorder | null = null;
+let recorder: UtteranceRecorder | NativeRecorder | null = null;
 let recognitionCancel: (() => void) | null = null;
 let speaker: Speaker | null = null;
 let chunker: SentenceChunker | null = null;
 let stopBargeIn: (() => void) | null = null;
 
 export const useVoiceStore = create<VoiceStore>((set, get) => {
-  const setActivity = (a: Parameters<ReturnType<typeof useAssistantStore.getState>["setActivity"]>[0]) =>
-    useAssistantStore.getState().setActivity(a);
+  const setActivity = (
+    a: Parameters<
+      ReturnType<typeof useAssistantStore.getState>["setActivity"]
+    >[0],
+  ) => useAssistantStore.getState().setActivity(a);
 
   const fail = (msg: string) => {
     set({ phase: "idle", level: 0, error: msg });
@@ -77,7 +91,10 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
   const ensureSpeaker = () => {
     if (speaker) return speaker;
     const st = get().status;
-    const mode = st && st.tts.mode !== "browser" && !st.tts.problem ? "backend" : "browser";
+    const mode =
+      st && st.tts.mode !== "browser" && !st.tts.problem
+        ? "backend"
+        : "browser";
     speaker = new Speaker(
       mode,
       useSettingsStore.getState().settings.ttsVoice,
@@ -85,8 +102,9 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
         if (speaking) {
           set({ phase: "speaking" });
           setActivity("speaking");
-          // Let the user interrupt by talking over IGRIS.
-          if (!stopBargeIn && micSupported()) {
+          // Let the user interrupt by talking over IGRIS. Not on the phone: listening while it plays would
+          // switch the phone to call mode (music and IGRIS's voice turned down); tap the orb to interrupt.
+          if (!stopBargeIn && micSupported() && !isMobilePlatform()) {
             stopBargeIn = () => undefined; // placeholder until the watcher is ready
             watchForBargeIn(() => void get().listen())
               .then((stop) => {
@@ -105,7 +123,8 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
   /** Listen once and transcribe; null if cancelled or nothing usable was heard (error shown). */
   const capture = async (): Promise<string | null> => {
     const can = get().canListen();
-    if (!can.ok) return fail(can.reason ?? "Voice input isn't available."), null;
+    if (!can.ok)
+      return (fail(can.reason ?? "Voice input isn't available."), null);
     set({ phase: "listening", level: 0, error: null });
     setActivity("listening");
     let text: string;
@@ -117,11 +136,14 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
         text = await r.result;
         recognitionCancel = null;
       } else {
-        recorder = new UtteranceRecorder((level) => set({ level }));
+        recorder = isMobilePlatform()
+          ? new NativeRecorder((level) => set({ level }))
+          : new UtteranceRecorder((level) => set({ level }));
         const rec = await recorder.record();
         recorder = null;
-        if (!rec) return set({ phase: "idle", level: 0 }), setActivity("idle"), null;
-        if (!rec.heardSpeech) return fail("I didn't hear anything."), null;
+        if (!rec)
+          return (set({ phase: "idle", level: 0 }), setActivity("idle"), null);
+        if (!rec.heardSpeech) return (fail("I didn't hear anything."), null);
         set({ phase: "transcribing", level: 0 });
         setActivity("thinking");
         text = await get().transcribe(rec.blob, rec.mimeType);
@@ -129,10 +151,17 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
     } catch (err) {
       recorder = null;
       recognitionCancel = null;
-      return fail(err instanceof MicUnavailableError || err instanceof Error ? err.message : BackendError.from(err).message), null;
+      return (
+        fail(
+          err instanceof MicUnavailableError || err instanceof Error
+            ? err.message
+            : BackendError.from(err).message,
+        ),
+        null
+      );
     }
     if (get().phase === "idle") return null; // cancelled meanwhile
-    if (!text.trim()) return fail("I didn't catch that."), null;
+    if (!text.trim()) return (fail("I didn't catch that."), null);
     set({ phase: "idle", level: 0 });
     return text.trim();
   };
@@ -165,9 +194,18 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
       if (!st || st.stt.mode === "browser") {
         return browserRecognitionAvailable()
           ? { ok: true }
-          : { ok: false, reason: "Speech recognition isn't built into this system's webview. Set STT_PROVIDER=openai (or local) in .env." };
+          : {
+              ok: false,
+              reason:
+                "Speech recognition isn't built into this system's webview. Set STT_PROVIDER=openai (or local) in .env.",
+            };
       }
-      return micSupported() ? { ok: true } : { ok: false, reason: "This system doesn't provide microphone access." };
+      return isMobilePlatform() || micSupported()
+        ? { ok: true }
+        : {
+            ok: false,
+            reason: "This system doesn't provide microphone access.",
+          };
     },
 
     toggle: async () => {
@@ -189,7 +227,10 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
       set({ replyPending: false });
       const text = await capture();
       if (text === null) return;
-      set({ lastTranscript: text, replyPending: useSettingsStore.getState().settings.voiceAutoSpeak });
+      set({
+        lastTranscript: text,
+        replyPending: useSettingsStore.getState().settings.voiceAutoSpeak,
+      });
       setActivity("thinking");
       const accepted = await submit(text);
       if (!accepted) set({ replyPending: false });
@@ -206,12 +247,21 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
 
     transcribe: async (blob, mimeType) => {
       const st = get().status;
-      const audio = st?.stt.mode === "gemini" && mimeType !== "audio/wav" ? { blob: await toWav(blob), mimeType: "audio/wav" } : { blob, mimeType };
-      return api.transcribeAudio(await blobToBase64(audio.blob), audio.mimeType);
+      const audio =
+        st?.stt.mode === "gemini" && mimeType !== "audio/wav"
+          ? { blob: await toWav(blob), mimeType: "audio/wav" }
+          : { blob, mimeType };
+      return api.transcribeAudio(
+        await blobToBase64(audio.blob),
+        audio.mimeType,
+      );
     },
 
     submitText: async (text) => {
-      set({ lastTranscript: text, replyPending: useSettingsStore.getState().settings.voiceAutoSpeak });
+      set({
+        lastTranscript: text,
+        replyPending: useSettingsStore.getState().settings.voiceAutoSpeak,
+      });
       setActivity("thinking");
       const accepted = await submit(text);
       if (!accepted) set({ replyPending: false });

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead, WakeStatus};
+use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, Result, ScreenRead, WakeStatus};
 
 /// Not a phone: every call says so.
 pub struct Device<R: Runtime>(PhantomData<fn() -> R>);
@@ -141,6 +141,22 @@ impl<R: Runtime> Device<R> {
     }
 
     pub fn open_settings_page(&self, _page: &str) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn record_start(&self) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn record_poll(&self) -> Result<RecordPoll> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn record_stop(&self, _cancel: bool) -> Result<()> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn record_take(&self) -> Result<Option<String>> {
         Err(Error::Unsupported)
     }
 

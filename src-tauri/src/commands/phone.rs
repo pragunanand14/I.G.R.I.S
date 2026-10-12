@@ -184,3 +184,49 @@ pub async fn phone_unlock(#[allow(unused_variables)] app: tauri::AppHandle) -> A
     #[cfg(not(mobile))]
     Ok(true)
 }
+
+/// Record a spoken request with the phone's own voice-recognition microphone (no call mode, music keeps playing).
+#[tauri::command]
+pub async fn phone_record_start(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<()> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().record_start()).await;
+    }
+    #[cfg(not(mobile))]
+    Err(AppError::validation("This is for the phone app."))
+}
+
+#[tauri::command]
+pub async fn phone_record_poll(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<tauri_plugin_igris_device::RecordPoll> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().record_poll()).await;
+    }
+    #[cfg(not(mobile))]
+    Err(AppError::validation("This is for the phone app."))
+}
+
+#[tauri::command]
+pub async fn phone_record_stop(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] cancel: bool) -> AppResult<()> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().record_stop(cancel)).await;
+    }
+    #[cfg(not(mobile))]
+    Ok(())
+}
+
+/// The finished recording as base64 WAV (null until it's done).
+#[tauri::command]
+pub async fn phone_record_take(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<Option<String>> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().record_take()).await;
+    }
+    #[cfg(not(mobile))]
+    Ok(None)
+}

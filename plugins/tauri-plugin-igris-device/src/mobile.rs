@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, Result, ScreenRead, WakeStatus};
+use crate::{Contact, Error, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, Result, ScreenRead, WakeStatus};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(_app: &AppHandle<R>, api: PluginApi<R, C>) -> std::result::Result<Device<R>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "android")]
@@ -281,6 +281,30 @@ impl<R: Runtime> Device<R> {
             _ => return Err(Error::Unsupported),
         };
         self.0.run_mobile_plugin::<Empty>(cmd, ()).map(|_| ()).map_err(failed)
+    }
+
+    /// Start recording a spoken request natively (voice-recognition microphone; Android asks the first time).
+    pub fn record_start(&self) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("recordStart", ()).map(|_| ()).map_err(failed)
+    }
+
+    /// Where the recording is: state (idle, recording, done, failed), level 0–1, whether speech was heard.
+    pub fn record_poll(&self) -> Result<RecordPoll> {
+        self.0.run_mobile_plugin::<RecordPoll>("recordPoll", ()).map_err(failed)
+    }
+
+    /// Finish now, or `cancel` to drop it.
+    pub fn record_stop(&self, cancel: bool) -> Result<()> {
+        self.0.run_mobile_plugin::<Empty>("recordStop", WakeArgs { on: cancel, charging_only: false }).map(|_| ()).map_err(failed)
+    }
+
+    /// The finished recording as base64 WAV (None until it's done).
+    pub fn record_take(&self) -> Result<Option<String>> {
+        #[derive(Deserialize)]
+        struct R {
+            wav: Option<String>,
+        }
+        self.0.run_mobile_plugin::<R>("recordTake", ()).map(|r| r.wav).map_err(failed)
     }
 
     /// The assistant panel: see-through over other apps and the lock screen (`on`), or a normal app.

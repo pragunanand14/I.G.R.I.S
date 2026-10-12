@@ -91,6 +91,18 @@ export const api = {
   /** A named UI moment for IGRIS's log (no user content). */
   uiEvent: (name: string, detail?: string) =>
     call<void>("ui_event", { name, detail }),
+  /** Phone: record a spoken request natively (voice-recognition mic, so no call mode). */
+  phoneRecordStart: () => call<void>("phone_record_start"),
+  phoneRecordPoll: () =>
+    call<{
+      state: "idle" | "recording" | "done" | "failed";
+      level: number;
+      heardSpeech: boolean;
+      error: string | null;
+    }>("phone_record_poll"),
+  phoneRecordStop: (cancel: boolean) =>
+    call<void>("phone_record_stop", { cancel }),
+  phoneRecordTake: () => call<string | null>("phone_record_take"),
   phoneSheetMode: (on: boolean) => call<void>("phone_sheet_mode", { on }),
   phoneSheetHide: () => call<void>("phone_sheet_hide"),
   /** Ask the user to unlock the phone; true once unlocked (always true when it isn't locked). */

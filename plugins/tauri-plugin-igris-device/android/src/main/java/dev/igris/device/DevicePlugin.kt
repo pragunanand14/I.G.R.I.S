@@ -976,6 +976,53 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         )
     }
 
+    // ── Recording a spoken request (native, so the phone doesn't go into call mode) ──
+
+    @Command
+    fun recordStart(invoke: Invoke) {
+        if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            requestPermissionForAlias("microphone", invoke, "recordMicCallback")
+            return
+        }
+        VoiceRecorder.start()
+        invoke.resolve()
+    }
+
+    @PermissionCallback
+    private fun recordMicCallback(invoke: Invoke) {
+        if (getPermissionState("microphone") == PermissionState.GRANTED) {
+            VoiceRecorder.start()
+            invoke.resolve()
+        } else {
+            invoke.reject("Microphone permission was denied. Allow it in Android Settings → Apps → IGRIS → Permissions.")
+        }
+    }
+
+    @Command
+    fun recordPoll(invoke: Invoke) {
+        val ret = JSObject()
+        ret.put("state", VoiceRecorder.state)
+        ret.put("level", VoiceRecorder.level.toDouble())
+        ret.put("heardSpeech", VoiceRecorder.heardSpeech)
+        VoiceRecorder.error?.let { ret.put("error", it) }
+        invoke.resolve(ret)
+    }
+
+    @Command
+    fun recordStop(invoke: Invoke) {
+        VoiceRecorder.stop(invoke.parseArgs(WakeArgs::class.java).on)
+        invoke.resolve()
+    }
+
+    /** The finished recording (WAV, base64), once. */
+    @Command
+    fun recordTake(invoke: Invoke) {
+        val ret = JSObject()
+        VoiceRecorder.take()?.let { ret.put("wav", Base64.encodeToString(it, Base64.NO_WRAP)) }
+        ret.put("heardSpeech", VoiceRecorder.heardSpeech)
+        invoke.resolve(ret)
+    }
+
     // ── The assistant panel ("Hey IGRIS" over other apps) ────────────────
 
     /**
