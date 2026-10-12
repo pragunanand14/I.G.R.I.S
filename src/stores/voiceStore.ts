@@ -136,17 +136,24 @@ export const useVoiceStore = create<VoiceStore>((set, get) => {
         text = await r.result;
         recognitionCancel = null;
       } else {
-        recorder = isMobilePlatform()
+        const mine = isMobilePlatform()
           ? new NativeRecorder((level) => set({ level }))
           : new UtteranceRecorder((level) => set({ level }));
-        const rec = await recorder.record();
+        recorder = mine;
+        const rec = await mine.record();
+        // Cancelled and a new listen started meanwhile: that one owns the state now.
+        if (recorder !== mine) return null;
         recorder = null;
         if (!rec)
           return (set({ phase: "idle", level: 0 }), setActivity("idle"), null);
         if (!rec.heardSpeech) return (fail("I didn't hear anything."), null);
         set({ phase: "transcribing", level: 0 });
         setActivity("thinking");
-        text = await get().transcribe(rec.blob, rec.mimeType);
+        // The phone's recording is already WAV in base64: send it as it is.
+        const b64 = (rec as { base64?: string }).base64;
+        text = b64
+          ? await api.transcribeAudio(b64, rec.mimeType)
+          : await get().transcribe(rec.blob, rec.mimeType);
       }
     } catch (err) {
       recorder = null;

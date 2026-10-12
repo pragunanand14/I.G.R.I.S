@@ -92,7 +92,12 @@ export const api = {
   uiEvent: (name: string, detail?: string) =>
     call<void>("ui_event", { name, detail }),
   /** Phone: record a spoken request natively (voice-recognition mic, so no call mode). */
-  phoneRecordStart: () => call<void>("phone_record_start"),
+  phoneRecordStart: (rules: {
+    threshold: number;
+    silenceMs: number;
+    noSpeechMs: number;
+    maxMs: number;
+  }) => call<void>("phone_record_start", { rules }),
   phoneRecordPoll: () =>
     call<{
       state: "idle" | "recording" | "done" | "failed";

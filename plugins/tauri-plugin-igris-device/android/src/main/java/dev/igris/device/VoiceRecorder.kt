@@ -17,68 +17,69 @@ import kotlin.math.sqrt
  * recognition (like "Hey Google"), which leaves other audio alone.
  *
  * Stops by itself after a pause following speech, if nothing is said for a
- * while, or at the length cap — the same rules as the computer's recorder.
+ * while, or at the length cap — rules passed in by the UI (the same ones the
+ * computer's recorder uses).
+ *
+ * Each recording is a session: a newer one replaces an older one that is
+ * still finishing, and only the current session's results are reported.
  */
 object VoiceRecorder {
     private const val RATE = 16000
-    private const val THRESHOLD = 0.02
-    private const val SILENCE_MS = 1200
-    private const val NO_SPEECH_MS = 8000
-    private const val MAX_MS = 30000
 
-    /** idle, recording, done, failed */
-    @Volatile
-    var state = "idle"
-        private set
+    class Rules(val threshold: Double, val silenceMs: Long, val noSpeechMs: Long, val maxMs: Long)
 
-    @Volatile
-    var level = 0f
-        private set
+    private class Session(val id: Int, val rules: Rules) {
+        @Volatile var stopping = false
+        @Volatile var cancelled = false
+        @Volatile var state = "recording"
+        @Volatile var level = 0f
+        @Volatile var heardSpeech = false
+        @Volatile var error: String? = null
+        val pcm = ByteArrayOutputStream()
+        var thread: Thread? = null
+    }
 
-    @Volatile
-    var heardSpeech = false
-        private set
-
-    @Volatile
-    var error: String? = null
-        private set
+    private var nextId = 1
+    private val lock = Any()
 
     @Volatile
-    private var stopping = false
+    private var current: Session? = null
 
-    @Volatile
-    private var cancelled = false
+    /** idle, recording, done, failed — of the current session. */
+    val state: String get() = current?.state ?: "idle"
+    val level: Float get() = current?.level ?: 0f
+    val heardSpeech: Boolean get() = current?.heardSpeech ?: false
+    val error: String? get() = current?.error
 
-    private var pcm = ByteArrayOutputStream()
-    private var thread: Thread? = null
-
-    @SuppressLint("MissingPermission")
-    @Synchronized
-    fun start() {
-        if (state == "recording") return
-        stopping = false
-        cancelled = false
-        heardSpeech = false
-        level = 0f
-        error = null
-        pcm = ByteArrayOutputStream()
-        state = "recording"
+    /** Start a new recording (an earlier one still finishing is dropped). */
+    fun start(rules: Rules) {
+        val s = synchronized(lock) {
+            current?.let { old ->
+                old.cancelled = true
+                old.stopping = true
+            }
+            Session(nextId++, rules).also { current = it }
+        }
         // The wake-word listener lets go of the microphone meanwhile.
         WakeWordService.hold("record", true)
-        thread = Thread({ run() }, "igris-record").apply { start() }
+        s.thread = Thread({ run(s) }, "igris-record").apply { start() }
     }
 
     /** Finish now (keep what was said), or `cancel` to drop it. */
     fun stop(cancel: Boolean) {
-        cancelled = cancel
-        stopping = true
+        val s = current ?: return
+        if (cancel) s.cancelled = true
+        s.stopping = true
     }
 
     @SuppressLint("MissingPermission")
-    private fun run() {
+    private fun run(s: Session) {
         val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         var rec: AudioRecord? = null
         try {
+            // Give the wake-word listener a moment to release the microphone.
+            val waitUntil = System.currentTimeMillis() + 400
+            while (WakeWordService.listening && System.currentTimeMillis() < waitUntil && !s.stopping) Thread.sleep(20)
             rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, 4096) * 2)
             if (rec.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("The microphone isn't available.")
             rec.startRecording()
@@ -86,33 +87,37 @@ object VoiceRecorder {
             val bytes = ByteBuffer.allocate(frame.size * 2).order(ByteOrder.LITTLE_ENDIAN)
             val started = System.currentTimeMillis()
             var lastLoud = 0L
-            while (!stopping) {
+            val r = s.rules
+            while (!s.stopping) {
                 val n = rec.read(frame, 0, frame.size)
-                if (n <= 0) continue
-                var sum = 0.0
-                bytes.clear()
-                for (i in 0 until n) {
-                    val v = frame[i] / 32768.0
-                    sum += v * v
-                    bytes.putShort(frame[i])
-                }
-                pcm.write(bytes.array(), 0, n * 2)
-                val rms = sqrt(sum / n)
-                level = rms.toFloat()
+                // A read error (another app or a call took the microphone): stop instead of spinning.
+                if (n < 0) throw IllegalStateException("The microphone stopped working (it may be in use by a call or another app).")
                 val now = System.currentTimeMillis()
-                if (rms >= THRESHOLD) {
-                    heardSpeech = true
-                    lastLoud = now
+                if (n > 0) {
+                    var sum = 0.0
+                    bytes.clear()
+                    for (i in 0 until n) {
+                        val v = frame[i] / 32768.0
+                        sum += v * v
+                        bytes.putShort(frame[i])
+                    }
+                    s.pcm.write(bytes.array(), 0, n * 2)
+                    val rms = sqrt(sum / n)
+                    s.level = rms.toFloat()
+                    if (rms >= r.threshold) {
+                        s.heardSpeech = true
+                        lastLoud = now
+                    }
                 }
                 val elapsed = now - started
-                if (elapsed >= MAX_MS) break
-                if (!heardSpeech && elapsed >= NO_SPEECH_MS) break
-                if (heardSpeech && now - lastLoud >= SILENCE_MS) break
+                if (elapsed >= r.maxMs) break
+                if (!s.heardSpeech && elapsed >= r.noSpeechMs) break
+                if (s.heardSpeech && now - lastLoud >= r.silenceMs) break
             }
-            state = if (cancelled) "idle" else "done"
+            s.state = if (s.cancelled) "idle" else "done"
         } catch (e: Exception) {
-            error = e.message ?: e.javaClass.simpleName
-            state = "failed"
+            s.error = e.message ?: e.javaClass.simpleName
+            s.state = if (s.cancelled) "idle" else "failed"
             Log.w("IGRIS", "IGRIS_RECORD failed: ${e.javaClass.simpleName}")
         } finally {
             try {
@@ -121,19 +126,23 @@ object VoiceRecorder {
                 // Already stopped.
             }
             rec?.release()
-            level = 0f
-            WakeWordService.hold("record", false)
+            s.level = 0f
+            // Only the current session hands the microphone back to the wake-word listener.
+            synchronized(lock) {
+                if (current === s) WakeWordService.hold("record", false)
+            }
         }
     }
 
-    /** The finished recording as a 16 kHz mono WAV, once (then idle again). */
-    @Synchronized
+    /** The finished recording as a 16 kHz mono WAV, once (then the session ends). */
     fun take(): ByteArray? {
-        if (state != "done") return null
-        state = "idle"
-        val data = pcm.toByteArray()
-        pcm = ByteArrayOutputStream()
-        return wav(data)
+        val s = synchronized(lock) {
+            val s = current ?: return null
+            if (s.state != "done") return null
+            current = null
+            s
+        }
+        return wav(s.pcm.toByteArray())
     }
 
     private fun wav(data: ByteArray): ByteArray {

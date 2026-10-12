@@ -95,6 +95,15 @@ class PlaceAlertArgs {
 }
 
 @InvokeArg
+class RecordArgs {
+    var threshold: Double = 0.02
+    var silenceMs: Long = 1200
+    var noSpeechMs: Long = 8000
+    var maxMs: Long = 30000
+    var cancel: Boolean = false
+}
+
+@InvokeArg
 class WakeArgs {
     var on: Boolean = false
     var chargingOnly: Boolean = false
@@ -978,21 +987,25 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
 
     // ── Recording a spoken request (native, so the phone doesn't go into call mode) ──
 
+    private fun startRecording(invoke: Invoke) {
+        val a = invoke.parseArgs(RecordArgs::class.java)
+        VoiceRecorder.start(VoiceRecorder.Rules(a.threshold.coerceIn(0.001, 0.5), a.silenceMs.coerceIn(300, 5000), a.noSpeechMs.coerceIn(1000, 30000), a.maxMs.coerceIn(2000, 120000)))
+        invoke.resolve()
+    }
+
     @Command
     fun recordStart(invoke: Invoke) {
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             requestPermissionForAlias("microphone", invoke, "recordMicCallback")
             return
         }
-        VoiceRecorder.start()
-        invoke.resolve()
+        startRecording(invoke)
     }
 
     @PermissionCallback
     private fun recordMicCallback(invoke: Invoke) {
         if (getPermissionState("microphone") == PermissionState.GRANTED) {
-            VoiceRecorder.start()
-            invoke.resolve()
+            startRecording(invoke)
         } else {
             invoke.reject("Microphone permission was denied. Allow it in Android Settings → Apps → IGRIS → Permissions.")
         }
@@ -1010,7 +1023,7 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun recordStop(invoke: Invoke) {
-        VoiceRecorder.stop(invoke.parseArgs(WakeArgs::class.java).on)
+        VoiceRecorder.stop(invoke.parseArgs(RecordArgs::class.java).cancel)
         invoke.resolve()
     }
 

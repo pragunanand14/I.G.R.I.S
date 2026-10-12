@@ -76,6 +76,17 @@ pub struct PhoneMessage {
     pub can_reply: bool,
 }
 
+/// When the phone's recorder stops by itself (the UI's silence rules, so phone and computer match).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordRules {
+    /// RMS level (0–1) that counts as speech.
+    pub threshold: f64,
+    pub silence_ms: u64,
+    pub no_speech_ms: u64,
+    pub max_ms: u64,
+}
+
 /// The phone's native recorder, while it records a spoken request.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

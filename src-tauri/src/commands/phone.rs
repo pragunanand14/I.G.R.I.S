@@ -187,11 +187,14 @@ pub async fn phone_unlock(#[allow(unused_variables)] app: tauri::AppHandle) -> A
 
 /// Record a spoken request with the phone's own voice-recognition microphone (no call mode, music keeps playing).
 #[tauri::command]
-pub async fn phone_record_start(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<()> {
+pub async fn phone_record_start(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    #[allow(unused_variables)] rules: tauri_plugin_igris_device::RecordRules,
+) -> AppResult<()> {
     #[cfg(mobile)]
     {
         use tauri_plugin_igris_device::IgrisDeviceExt;
-        return on_phone(move || app.igris_device().record_start()).await;
+        return on_phone(move || app.igris_device().record_start(rules)).await;
     }
     #[cfg(not(mobile))]
     Err(AppError::validation("This is for the phone app."))
