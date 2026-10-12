@@ -163,11 +163,12 @@ jobs:
           [ -n "$apk" ] || { echo "::error::No release APK was built"; exit 1; }
           bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$bt/zipalign" -f -p 4 "$apk" igris-aligned.apk
-          # apksigner reads the password as a line, so it must end with a newline.
+          # apksigner reads the password as a line. The key's password is the keystore's, which apksigner uses
+          # when --key-pass isn't given (passing the same file twice makes it read a second, missing line).
           pw="$RUNNER_TEMP/igris-password"
           printf '%s\n' "$(cat "$KEYDIR/password")" > "$pw"
           "$bt/apksigner" sign --ks "$KEYDIR/igris.jks" --ks-key-alias igris \
-            --ks-pass "file:$pw" --key-pass "file:$pw" \
+            --ks-pass "file:$pw" \
             --out IGRIS-phone.apk igris-aligned.apk
           "$bt/apksigner" verify --print-certs IGRIS-phone.apk | head -3
           rm -f "$pw"
