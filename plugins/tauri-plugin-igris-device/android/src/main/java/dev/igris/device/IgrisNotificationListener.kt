@@ -71,8 +71,19 @@ class IgrisNotificationListener : NotificationListenerService() {
         private val CODE_WORDS = Regex("(?i)(otp|one[- ]?time|verification|passcode|pin\\b|security code|login code|sign[- ]?in code|\\bcode\\b)")
         private val DIGITS = Regex("\\b\\d{4,8}\\b")
 
-        /** "Your OTP is 482913" → "Your OTP is ••••" (codes never reach the AI). */
-        fun hideCodes(s: String): String = if (CODE_WORDS.containsMatchIn(s)) DIGITS.replace(s, "••••") else s
+        private val MONEY_BEFORE = Regex("(?i)(rs\\.?|inr|₹|\\$|€|£|usd|eur)\\s*$")
+
+        /**
+         * "Your OTP is 482913" → "Your OTP is ••••" (codes never reach the AI). Amounts stay ("Rs.1500 debited …
+         * never share your PIN" keeps 1500), so payments can still be read.
+         */
+        fun hideCodes(s: String): String {
+            if (!CODE_WORDS.containsMatchIn(s)) return s
+            return DIGITS.replace(s) { m ->
+                val before = s.substring(maxOf(0, m.range.first - 6), m.range.first)
+                if (MONEY_BEFORE.containsMatchIn(before)) m.value else "••••"
+            }
+        }
 
         fun recent(sinceMs: Long, allApps: Boolean): List<Item> = synchronized(items) {
             val cutoff = System.currentTimeMillis() - sinceMs

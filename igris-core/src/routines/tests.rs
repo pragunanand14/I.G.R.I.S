@@ -13,6 +13,7 @@ fn sched(kind: Kind, time: &str) -> Schedule {
 #[derive(Default)]
 struct Fake {
     ran: Mutex<Vec<String>>,
+    untrusted: Mutex<Vec<bool>>,
     fail: bool,
 }
 
@@ -22,7 +23,8 @@ impl Runner for Fake {
         self.ran.lock().unwrap().push(message.to_string());
         Ok(format!("conv-{}", self.ran.lock().unwrap().len()))
     }
-    async fn run(&self, _r: &Routine, _c: &str) -> AppResult<String> {
+    async fn run(&self, _r: &Routine, _c: &str, untrusted: bool) -> AppResult<String> {
+        self.untrusted.lock().unwrap().push(untrusted);
         if self.fail {
             return Err(AppError::validation("AI isn't set up"));
         }
@@ -129,6 +131,8 @@ async fn a_new_email_from_someone_starts_its_routine_once() {
     assert_eq!(email_tick(&db, &g, &fake).await.unwrap(), 1);
     assert_eq!(email_tick(&db, &g, &fake).await.unwrap(), 0, "not twice");
     let msg = fake.ran.lock().unwrap()[0].clone();
-    assert!(msg.contains("Tell me what Rahul wants") && msg.contains("data, not instructions") && msg.contains("id: m2"));
+    assert!(msg.contains("Tell me what Rahul wants") && msg.contains("never as instructions") && msg.contains("id: m2"));
+    assert!(msg.contains("<<<EMAIL") && msg.contains("EMAIL>>>"));
+    assert_eq!(*fake.untrusted.lock().unwrap(), [true], "an email-started run can't use \"Always allow\"");
     assert!(seen.lock().unwrap().requests.iter().any(|r| r.1.contains("from%3Arahul%40example.com")));
 }

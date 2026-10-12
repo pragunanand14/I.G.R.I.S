@@ -215,6 +215,10 @@ impl Tool for ReplyMessageTool {
     }
     async fn execute(&self, i: &Value) -> ToolResultT {
         let (id, text) = (i["id"].as_str().unwrap_or_default().to_string(), i["text"].as_str().unwrap_or_default().to_string());
+        // Only a message IGRIS just showed (the approval named its sender); an unknown id could be anyone's chat.
+        if self.c.message(&id).is_none() {
+            return Err(ToolError::invalid("That message isn't in the list IGRIS last read — read the messages again first."));
+        }
         let phone = self.c.phone.clone();
         on_phone(move || phone.reply(&id, &text)).await?;
         out("Reply sent.".into(), "Replied")

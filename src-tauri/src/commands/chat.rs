@@ -31,7 +31,7 @@ pub(crate) fn generation_params(state: &AppState) -> AppResult<GenerationParams>
             registry: state.tools.clone(),
             web_search_mode,
             orchestrator: Some(state.orchestrator.clone()),
-            policy: Policy { confirm_low: settings.confirm_low_risk },
+            policy: Policy { confirm_low: settings.confirm_low_risk, ..Default::default() },
             approver: std::sync::Arc::new(UiApprover { pending: state.approvals.clone(), timeout: APPROVAL_TIMEOUT }),
             trust: Some(state.trust.clone()),
             operator: Some(state.operator.clone()),

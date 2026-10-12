@@ -61,9 +61,10 @@ pub struct FileAttachment {
     pub bytes: Vec<u8>,
 }
 
-/// Attachments are sent inside the draft request, which Gmail limits; bigger
-/// files are better shared as a Drive link.
-pub const MAX_ATTACH_BYTES: usize = 5 * 1024 * 1024;
+/// Attachments are sent inside the draft request (base64 twice over, so ~1.8×
+/// bigger), which Gmail limits to a few MB; bigger files are better shared as a
+/// Drive link.
+pub const MAX_ATTACH_BYTES: usize = 3 * 1024 * 1024;
 
 /// The MIME type for a file name (common types; anything else is binary).
 pub fn mime_for(name: &str) -> &'static str {
@@ -247,7 +248,7 @@ pub async fn draft(g: &Google, d: NewDraft<'_>) -> AppResult<Draft> {
     }
     let cc_line = if cc.is_empty() { String::new() } else { format!("Cc: {cc}\r\n") };
     if d.attachments.iter().map(|a| a.bytes.len()).sum::<usize>() > MAX_ATTACH_BYTES {
-        return Err(AppError::validation("The attachments are over 5 MB together. Share big files as a Google Drive link instead."));
+        return Err(AppError::validation("The attachments are over 3 MB together. Share big files as a Google Drive link instead."));
     }
     let body64 = wrapped_b64(d.body.replace("\r\n", "\n").replace('\n', "\r\n").as_bytes());
     let text_part = format!("Content-Type: text/plain; charset=\"UTF-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{body64}");

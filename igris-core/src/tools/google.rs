@@ -151,7 +151,7 @@ fn read_attachments(g: &Google, paths: &[String]) -> Result<Vec<gmail::FileAttac
         }
         total += meta.len();
         if total > gmail::MAX_ATTACH_BYTES as u64 {
-            return Err(ToolError::invalid("The attachments are over 5 MB together. Suggest sharing big files as a Google Drive link."));
+            return Err(ToolError::invalid("The attachments are over 3 MB together. Suggest sharing big files as a Google Drive link."));
         }
         let name = file_name(&guarded.path.to_string_lossy());
         let bytes = std::fs::read(&guarded.path).map_err(|e| ToolError::failed(format!("Couldn't read {name}: {e}")))?;
@@ -169,7 +169,7 @@ impl GmailDraftTool {
                 "Draft an email",
                 "Write an email as a draft in the user's Gmail (nothing is sent). To reply, give reply_to (the email's id): the \
 recipient and \"Re:\" subject are filled in when left empty. Write in the user's voice, plainly. attach: full paths of files \
-in the shared folders (find them with search_files; up to 5 MB together), [] for none. Then show the user the draft and send \
+in the shared folders (find them with search_files; up to 3 MB together), [] for none. Then show the user the draft and send \
 it with gmail_send only when they want it sent.",
                 json!({
                     "to": { "type": "string", "maxLength": 500, "description": "Addresses, comma-separated; \"\" when replying." },

@@ -50,6 +50,39 @@ object PlaceAlerts {
         }
     }
 
+    /**
+     * Android forgets proximity alerts when the phone restarts. Re-add every active location reminder
+     * from IGRIS's database (at boot, and when IGRIS starts). Without location permission nothing is added.
+     */
+    fun restoreAll(ctx: Context) {
+        val db = java.io.File(ctx.dataDir, "igris.db")
+        if (!db.exists()) return
+        val fired = ctx.getSharedPreferences("igris_place_alerts", Context.MODE_PRIVATE)
+        var n = 0
+        try {
+            android.database.sqlite.SQLiteDatabase.openDatabase(db.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { d ->
+                d.rawQuery(
+                    "SELECT r.id, r.on_arrive, r.text, p.latitude, p.longitude FROM place_reminders r JOIN places p ON p.name = r.place WHERE r.status = 'active'",
+                    null,
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getInt(0)
+                        if (fired.getBoolean("fired_$id", false)) continue
+                        try {
+                            add(ctx, id, c.getDouble(3), c.getDouble(4), 150f, c.getInt(1) != 0, "IGRIS · Reminder", c.getString(2) ?: "")
+                            n++
+                        } catch (e: SecurityException) {
+                            return
+                        }
+                    }
+                }
+            }
+            android.util.Log.i("IGRIS", "IGRIS_PLACES restored $n")
+        } catch (e: Exception) {
+            android.util.Log.w("IGRIS", "IGRIS_PLACES restore failed: ${e.javaClass.simpleName}")
+        }
+    }
+
     fun notify(ctx: Context, id: Int, title: String, text: String) {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
@@ -81,5 +114,14 @@ class PlaceAlertReceiver : BroadcastReceiver() {
         // One-shot: the reminder is done.
         PlaceAlerts.remove(ctx, id)
         ctx.getSharedPreferences("igris_place_alerts", Context.MODE_PRIVATE).edit().putBoolean("fired_$id", true).apply()
+    }
+}
+
+/** After the phone restarts: put the location reminders back. */
+class PlacesBootReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == "android.intent.action.QUICKBOOT_POWERON") {
+            PlaceAlerts.restoreAll(ctx)
+        }
     }
 }

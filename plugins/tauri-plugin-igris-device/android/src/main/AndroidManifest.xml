@@ -22,6 +22,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Location reminders survive a restart (Android forgets proximity alerts then). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Package visibility (Android 11+): only apps the launcher can open, not every package. -->
     <queries>
@@ -63,6 +65,12 @@
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/igris_accessibility" />
         </service>
         <receiver android:name="dev.igris.device.PlaceAlertReceiver" android:exported="false" />
+        <receiver android:name="dev.igris.device.PlacesBootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
         <!-- "Hey IGRIS" / "Wake up IGRIS", recognised on the phone (WakeWordService.kt). -->
         <service
             android:name="dev.igris.device.WakeWordService"

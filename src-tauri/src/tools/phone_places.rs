@@ -49,12 +49,15 @@ impl Places {
     }
 
     /// Reminders that went off on the phone are done.
-    fn sync(&self) -> Result<(), ToolError> {
+    /// Reminders that went off on the phone are done. (The phone is asked without holding the database.)
+    async fn sync(&self) -> Result<(), ToolError> {
+        let active = places::reminders(&*self.db.conn().map_err(db_err)?, true).map_err(db_err)?;
+        let phone = self.phone.clone();
+        let ids: Vec<i64> = active.iter().map(|r| r.id).collect();
+        let fired = on_phone(move || Ok(ids.into_iter().filter(|id| phone.fired(*id as i32)).collect::<Vec<_>>())).await?;
         let conn = self.db.conn().map_err(db_err)?;
-        for r in places::reminders(&conn, true).map_err(db_err)? {
-            if self.phone.fired(r.id as i32) {
-                places::set_status(&conn, r.id, "done").map_err(db_err)?;
-            }
+        for id in fired {
+            places::set_status(&conn, id, "done").map_err(db_err)?;
         }
         Ok(())
     }
@@ -114,7 +117,24 @@ impl Tool for SavePlaceTool {
                 here.accuracy
             )));
         }
-        let place = places::save(&*self.p.db.conn().map_err(db_err)?, i["name"].as_str().unwrap_or_default(), here.latitude, here.longitude).map_err(db_err)?;
+        let (place, moved) = {
+            let conn = self.p.db.conn().map_err(db_err)?;
+            let place = places::save(&conn, i["name"].as_str().unwrap_or_default(), here.latitude, here.longitude).map_err(db_err)?;
+            let moved: Vec<places::PlaceReminder> = places::reminders(&conn, true).map_err(db_err)?.into_iter().filter(|r| r.place == place.name).collect();
+            (place, moved)
+        };
+        // Reminders for this place now watch its new spot.
+        if !moved.is_empty() {
+            let (phone, p) = (self.p.phone.clone(), place.clone());
+            on_phone(move || {
+                for r in &moved {
+                    phone.unwatch(r.id as i32)?;
+                    phone.watch(r.id as i32, &p, r.on_arrive, &r.text)?;
+                }
+                Ok(())
+            })
+            .await?;
+        }
         out(format!("Saved this spot as \"{}\" (accurate to about {:.0} m).", place.name, here.accuracy), format!("Saved \"{}\"", place.name))
     }
 }
@@ -145,7 +165,7 @@ impl Tool for ListPlacesTool {
         "List your saved places".into()
     }
     async fn execute(&self, _i: &Value) -> ToolResultT {
-        self.p.sync()?;
+        self.p.sync().await?;
         let conn = self.p.db.conn().map_err(db_err)?;
         let saved = places::list(&conn).map_err(db_err)?;
         let reminders = places::reminders(&conn, false).map_err(db_err)?;

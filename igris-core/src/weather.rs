@@ -52,7 +52,10 @@ pub async fn find_place(base: &str, query: &str) -> AppResult<Place> {
             name = format!("{name}, {part}");
         }
     }
-    Ok(Place { name, latitude: p["latitude"].as_f64().unwrap_or_default(), longitude: p["longitude"].as_f64().unwrap_or_default() })
+    let (Some(latitude), Some(longitude)) = (p["latitude"].as_f64(), p["longitude"].as_f64()) else {
+        return Err(AppError::validation(format!("Couldn't find where \"{}\" is. Try a nearby city.", query.trim())));
+    };
+    Ok(Place { name, latitude, longitude })
 }
 
 /// The weather codes Open-Meteo reports (WMO), in plain words.

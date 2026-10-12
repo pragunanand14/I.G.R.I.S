@@ -217,7 +217,7 @@ impl LogExpenseTool {
 code, \"\" for the usual one. what: merchant or item. category: one of Food, Groceries, Transport, Shopping, Bills, Entertainment, \
 Health, Transfers, Other (\"\" to guess). date: YYYY-MM-DD, \"\" for today.",
                 json!({
-                    "amount": { "type": "number", "exclusiveMinimum": 0, "maximum": 100000000 },
+                    "amount": { "type": "number", "exclusiveMinimum": 0, "maximum": 9999999 },
                     "currency": { "type": "string", "maxLength": 3 },
                     "what": { "type": "string", "minLength": 1, "maxLength": 60 },
                     "category": { "type": "string", "maxLength": 20 },

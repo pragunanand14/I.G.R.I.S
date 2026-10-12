@@ -118,6 +118,9 @@ pub fn create(conn: &Connection, name: &str, instruction: &str, schedule: Schedu
 pub fn set_enabled(conn: &Connection, id: i64, enabled: bool) -> AppResult<Routine> {
     let r = must_get(conn, id)?;
     let next = if enabled { r.schedule.next_after(chrono::Utc::now()).map(time::to_db) } else { None };
+    if enabled && next.is_none() && !r.schedule.is_event() {
+        return Err(AppError::validation("That one-off time has already passed — give it a new time to turn it back on."));
+    }
     conn.execute("UPDATE routines SET enabled = ?1, next_run_at = ?2 WHERE id = ?3", params![enabled as i64, next, id])?;
     must_get(conn, id)
 }
@@ -134,6 +137,9 @@ pub fn update(conn: &Connection, id: i64, name: Option<&str>, instruction: Optio
         None => r.schedule,
     };
     let next = if r.enabled { schedule.next_after(chrono::Utc::now()).map(time::to_db) } else { None };
+    if r.enabled && next.is_none() && !schedule.is_event() {
+        return Err(AppError::validation("That time has already passed."));
+    }
     conn.execute(
         "UPDATE routines SET name = ?1, instruction = ?2, schedule = ?3, next_run_at = ?4, email_seen = NULL WHERE id = ?5",
         params![name, instruction, serde_json::to_string(&schedule)?, next, id],
@@ -180,7 +186,8 @@ fn start_run(conn: &Connection, routine: i64) -> AppResult<i64> {
 }
 
 fn finish_run(conn: &Connection, run: i64, status: &str, summary: &str, conversation: Option<&str>) -> AppResult<()> {
-    let summary: String = summary.chars().take(500).collect();
+    // Long enough for a whole spoken briefing (the Home card and Listen read it).
+    let summary: String = summary.chars().take(4000).collect();
     conn.execute(
         "UPDATE routine_runs SET finished_at = ?1, status = ?2, summary = ?3, conversation_id = COALESCE(?4, conversation_id) WHERE id = ?5",
         params![time::now_db(), status, summary, conversation, run],

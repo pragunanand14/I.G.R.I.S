@@ -869,7 +869,7 @@ mod tests {
             (200, "text/event-stream", sse_reply("Okay, I won't.")),
         ])
         .await;
-        let p = params(server.url(), reg.clone(), Policy { confirm_low: true }, Approval::Denied);
+        let p = params(server.url(), reg.clone(), Policy { confirm_low: true, ..Default::default() }, Approval::Denied);
         let (conv, _) = save_user_message(&db, None, "Open it", "", &reg.defs(), true).unwrap();
         let mut statuses = Vec::new();
         let m = generate(&db, &conv.id, &p, &CancellationToken::new(), &mut |e| {

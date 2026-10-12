@@ -34,9 +34,14 @@ pub async fn widget_weather_place(#[allow(unused_variables)] app: tauri::AppHand
 
 /// Choose the weather widget's place by name; returns the place found.
 #[tauri::command]
-pub async fn widget_set_weather_place(#[allow(unused_variables)] app: tauri::AppHandle, query: String) -> AppResult<Place> {
+pub async fn widget_set_weather_place(#[allow(unused_variables)] app: tauri::AppHandle, #[allow(unused_variables)] query: String) -> AppResult<Place> {
+    // Widgets exist only on the phone: say so before changing anything.
+    #[cfg(not(mobile))]
+    return Err(AppError::validation("Widgets are on the phone app only. Set your city in the daily briefing settings instead."));
+    #[cfg(mobile)]
     let place = crate::weather::find_place(crate::weather::GEOCODING, &query).await?;
     // The same place is IGRIS's home place (weather questions, the briefing).
+    #[cfg(mobile)]
     {
         use tauri::Manager;
         crate::weather::set_home(&*app.state::<crate::state::AppState>().db.conn()?, &place)?;
@@ -50,8 +55,6 @@ pub async fn widget_set_weather_place(#[allow(unused_variables)] app: tauri::App
             .map_err(|e| AppError::internal(e.to_string()))?
             .map_err(|e| AppError::validation(e.to_string()))?;
     }
-    #[cfg(not(mobile))]
-    return Err(AppError::validation(format!("Found {}, but widgets are on the phone app only.", place.name)));
     #[cfg(mobile)]
     Ok(place)
 }

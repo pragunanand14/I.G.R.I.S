@@ -412,6 +412,8 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         this.webView = webView
+        // Location reminders Android may have forgotten (restart, update): put them back, off the main thread.
+        Thread { PlaceAlerts.restoreAll(activity.applicationContext) }.start()
         // The page paints its own background; transparent here lets the assistant panel float over other apps.
         webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         remember(activity.intent)
@@ -677,8 +679,17 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         val found = JSArray()
         val seen = HashSet<String>()
         try {
-            activity.contentResolver.query(uri, cols, "${cols[0]} LIKE ?", arrayOf("%$name%"), "${cols[0]} ASC")?.use { c ->
-                while (c.moveToNext() && found.length() < 6) {
+            // Exact name first, then names starting with it, then the rest — so "Ram" isn't lost among "Abhiram"s.
+            val order = "CASE WHEN ${cols[0]} = ? COLLATE NOCASE THEN 0 WHEN ${cols[0]} LIKE ? THEN 1 ELSE 2 END, ${cols[0]} ASC"
+            val sel = "${cols[0]} LIKE ?"
+            val args = arrayOf("%$name%")
+            val sorted = try {
+                activity.contentResolver.query(uri, cols, sel, args, order.replaceFirst("?", android.database.DatabaseUtils.sqlEscapeString(name)).replaceFirst("?", android.database.DatabaseUtils.sqlEscapeString("$name%")))
+            } catch (e: Exception) {
+                activity.contentResolver.query(uri, cols, sel, args, "${cols[0]} ASC")
+            }
+            sorted?.use { c ->
+                while (c.moveToNext() && found.length() < 12) {
                     val n = c.getString(0) ?: continue
                     val num = c.getString(1)?.replace(Regex("[^+0-9]"), "") ?: continue
                     if (!seen.add("$n|$num")) continue
@@ -700,7 +711,7 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun startMessage(invoke: Invoke) {
         val a = invoke.parseArgs(MessageArgs::class.java)
-        val number = a.number?.replace(Regex("[^+0-9]"), "").orEmpty()
+        val number = internationalNumber(a.number?.replace(Regex("[^+0-9]"), "").orEmpty())
         val text = a.text.orEmpty()
         if (number.length < 5) {
             invoke.reject("That phone number isn't valid.")
@@ -717,6 +728,23 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: ActivityNotFoundException) {
             invoke.reject(if (a.app == "whatsapp") "WhatsApp isn't installed." else "No messaging app can send this.")
         }
+    }
+
+    /**
+     * WhatsApp links need the full international number. A number saved without the country code
+     * ("09876543210", "9876543210") gets the SIM's country code (India: 91).
+     */
+    private fun internationalNumber(n: String): String {
+        if (n.startsWith("+") || n.length < 7) return n
+        if (n.startsWith("00")) return "+" + n.drop(2)
+        val tm = activity.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+        val iso = (tm?.simCountryIso?.takeIf { it.isNotBlank() } ?: tm?.networkCountryIso ?: "").lowercase()
+        val cc = mapOf("in" to "91", "us" to "1", "ca" to "1", "gb" to "44", "ae" to "971", "sa" to "966", "sg" to "65", "au" to "61", "np" to "977", "bd" to "880", "pk" to "92", "lk" to "94")[iso]
+            ?: return n
+        val local = n.trimStart('0')
+        // Already includes the country code (e.g. "919876543210").
+        if (local.startsWith(cc) && local.length > 10) return "+$local"
+        return "+$cc$local"
     }
 
     /** Call a number (asks for the Phone permission the first time; without it, opens the dialer). */

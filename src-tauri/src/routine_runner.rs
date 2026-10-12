@@ -66,9 +66,10 @@ impl Runner for AppRoutines {
         Ok(conversation.id)
     }
 
-    async fn run(&self, routine: &Routine, conversation_id: &str) -> AppResult<String> {
+    async fn run(&self, routine: &Routine, conversation_id: &str, untrusted: bool) -> AppResult<String> {
         let state = self.0.state::<AppState>();
         let mut params = crate::commands::chat::generation_params(&state)?;
+        params.tooling.policy.untrusted_input = untrusted;
         params.tooling.approver = Arc::new(RoutineApprover {
             app: self.0.clone(),
             name: routine.name.clone(),

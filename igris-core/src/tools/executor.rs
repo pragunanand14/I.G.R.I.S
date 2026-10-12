@@ -93,6 +93,9 @@ pub trait Approver: Send + Sync {
 pub struct Policy {
     /// Ask before LOW-risk actions too (SENSITIVE and CRITICAL always ask).
     pub confirm_low: bool,
+    /// The turn was started by outside content (an incoming email): "Always allow" choices and
+    /// trusted chats don't apply, so everything that normally asks, asks.
+    pub untrusted_input: bool,
 }
 
 impl Policy {
@@ -253,14 +256,15 @@ pub async fn execute(call: &ToolCall, ctx: &ExecContext<'_>, on_update: &mut (dy
     let needs_approval = must_ask || ctx.policy.requires_approval(spec.permission);
     // "Always allow" never covers critical actions or calls that must always be confirmed.
     let rule = if must_ask || spec.permission == PermissionLevel::Critical { None } else { tool.allow_rule(&call.input) };
-    let remembered =
-        needs_approval && rule.as_ref().is_some_and(|r| ctx.db.conn().map(|c| crate::permissions::allows(&c, spec.name, &r.scope)).unwrap_or(false));
+    let remembered = needs_approval
+        && !ctx.policy.untrusted_input
+        && rule.as_ref().is_some_and(|r| ctx.db.conn().map(|c| crate::permissions::allows(&c, spec.name, &r.scope)).unwrap_or(false));
     if remembered {
         approval = "always";
         tracing::info!(event = "TOOL_APPROVAL_REMEMBERED", tool = spec.name);
     } else if needs_approval && !must_ask && tool.operator_scoped() && ctx.operator.is_some_and(|o| o.covers(ctx.conversation_id)) {
         approval = "operator";
-    } else if needs_approval && !must_ask && ctx.trust.is_some_and(|t| t.covers(ctx.conversation_id, spec.name)) {
+    } else if needs_approval && !must_ask && !ctx.policy.untrusted_input && ctx.trust.is_some_and(|t| t.covers(ctx.conversation_id, spec.name)) {
         approval = "trusted";
         tracing::info!(event = "TOOL_APPROVAL_TRUSTED", tool = spec.name);
     } else if needs_approval {
@@ -501,6 +505,10 @@ mod tests {
             assert_eq!(approver.0.lock().unwrap().len(), if rememberable { 1 } else { 2 }, "{level:?}");
             assert_eq!(audit::list(&db.conn().unwrap(), 1).unwrap()[0].approval, if rememberable { "always" } else { "approved" });
             assert_eq!(*tool.1.lock().unwrap(), 2);
+            // A turn started by an incoming email ignores "Always allow": it asks again.
+            let asked = approver.0.lock().unwrap().len();
+            run(&r, &db, &call("danger", json!({})), &approver, Policy { untrusted_input: true, ..Default::default() }, None).await;
+            assert_eq!(approver.0.lock().unwrap().len(), asked + 1, "{level:?}");
             crate::permissions::clear(&db.conn().unwrap()).unwrap();
         }
     }
@@ -612,7 +620,7 @@ mod tests {
             db: &db,
             conversation_id: Some(c1.as_str()),
             actor: Actor::Assistant,
-            policy: Policy { confirm_low: true },
+            policy: Policy { confirm_low: true, ..Default::default() },
             allowed: None,
             approver: &deny,
             cancel: &cancel,
@@ -649,7 +657,7 @@ mod tests {
             let db = Arc::new(Database::open_in_memory().unwrap());
 
             let deny = FixedApprover(Approval::Denied, Mutex::new(0));
-            let (res, act) = run(&r, &db, &call("danger", json!({})), &deny, Policy { confirm_low: false }, None).await;
+            let (res, act) = run(&r, &db, &call("danger", json!({})), &deny, Policy { confirm_low: false, ..Default::default() }, None).await;
             assert!(res.is_error);
             assert_eq!(act.status, ActivityStatus::Denied);
             assert_eq!(*tool.1.lock().unwrap(), 0, "denied action must not execute");
@@ -674,21 +682,21 @@ mod tests {
         r.register(tool.clone());
         let db = Arc::new(Database::open_in_memory().unwrap());
         let deny = FixedApprover(Approval::Denied, Mutex::new(0));
-        run(&r, &db, &call("danger", json!({})), &deny, Policy { confirm_low: false }, None).await;
+        run(&r, &db, &call("danger", json!({})), &deny, Policy { confirm_low: false, ..Default::default() }, None).await;
         assert_eq!(*tool.1.lock().unwrap(), 1, "low runs automatically by default");
-        run(&r, &db, &call("danger", json!({})), &deny, Policy { confirm_low: true }, None).await;
+        run(&r, &db, &call("danger", json!({})), &deny, Policy { confirm_low: true, ..Default::default() }, None).await;
         assert_eq!(*tool.1.lock().unwrap(), 1, "low asks when configured");
         assert_eq!(*deny.1.lock().unwrap(), 1);
     }
 
     #[test]
     fn policy_matrix() {
-        let p = Policy { confirm_low: false };
+        let p = Policy { confirm_low: false, ..Default::default() };
         assert!(!p.requires_approval(PermissionLevel::Safe));
         assert!(!p.requires_approval(PermissionLevel::Low));
         assert!(p.requires_approval(PermissionLevel::Sensitive));
         assert!(p.requires_approval(PermissionLevel::Critical));
-        assert!(Policy { confirm_low: true }.requires_approval(PermissionLevel::Low));
-        assert!(!Policy { confirm_low: true }.requires_approval(PermissionLevel::Safe));
+        assert!(Policy { confirm_low: true, ..Default::default() }.requires_approval(PermissionLevel::Low));
+        assert!(!Policy { confirm_low: true, ..Default::default() }.requires_approval(PermissionLevel::Safe));
     }
 }

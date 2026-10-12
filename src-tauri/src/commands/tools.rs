@@ -23,7 +23,7 @@ pub struct ToolInfo {
 #[tauri::command]
 pub fn list_tools(state: State<'_, AppState>) -> AppResult<Vec<ToolInfo>> {
     let s = settings::load(&*state.db.conn()?)?;
-    let policy = Policy { confirm_low: s.confirm_low_risk };
+    let policy = Policy { confirm_low: s.confirm_low_risk, ..Default::default() };
     Ok(state.tools.specs().into_iter().map(|spec| ToolInfo { requires_approval: policy.requires_approval(spec.permission), spec }).collect())
 }
 
@@ -74,7 +74,7 @@ pub async fn launch_application(state: State<'_, AppState>, id: String) -> AppRe
         conversation_id: None,
         actor: Actor::User,
         // The user clicked the button; that is the approval.
-        policy: Policy { confirm_low: false },
+        policy: Policy { confirm_low: false, ..Default::default() },
         allowed: None,
         approver: &UserInitiated,
         cancel: &cancel,
@@ -101,7 +101,7 @@ pub struct PermissionRule {
 #[tauri::command]
 pub fn get_permission_policy(state: State<'_, AppState>) -> AppResult<Vec<PermissionRule>> {
     let s = settings::load(&*state.db.conn()?)?;
-    let policy = Policy { confirm_low: s.confirm_low_risk };
+    let policy = Policy { confirm_low: s.confirm_low_risk, ..Default::default() };
     Ok([PermissionLevel::Safe, PermissionLevel::Low, PermissionLevel::Sensitive, PermissionLevel::Critical]
         .into_iter()
         .map(|level| PermissionRule { level, requires_approval: policy.requires_approval(level), configurable: level == PermissionLevel::Low })

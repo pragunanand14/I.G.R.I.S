@@ -85,55 +85,55 @@ fn currency_of(sym: &str) -> &'static str {
 /// The payment in a message, or `None` when it isn't clearly money going out.
 pub fn parse(text: &str) -> Option<Parsed> {
     let t = text.to_lowercase();
-    const NOT_SPENDING: &[&str] = &[
-        "otp",
-        "one time password",
-        "verification code",
-        "due on",
-        "is due",
-        "due date",
-        "will be debited",
-        "has requested",
-        "requested money",
-        "collect request",
-        "minimum amount",
-        "bill generated",
-        "declined",
-        "failed",
-        "reversed",
-        "refund",
-        "cashback",
-    ];
-    if NOT_SPENDING.iter().any(|w| t.contains(w)) || (t.contains("credited") && !t.contains("debited")) {
+    // Whole words only: "FOOTPRINT CAFE" has no OTP in it, "HOTPOT" isn't a failure.
+    static NOT_SPENDING: OnceLock<Regex> = OnceLock::new();
+    static OTP: OnceLock<Regex> = OnceLock::new();
+    static SPENT: OnceLock<Regex> = OnceLock::new();
+    static STRONG: OnceLock<Regex> = OnceLock::new();
+    let not_spending = re(
+        &NOT_SPENDING,
+        r"\b(due on|is due|due date|will be debited|has requested|requested money|collect request|minimum amount|bill generated|declined|failed|unsuccessful|reversed|refund(ed)?|cashback)\b",
+    );
+    if not_spending.is_match(&t) || (t.contains("credited") && !t.contains("debited")) {
         return None;
     }
-    const SPENDING: &[&str] = &[
-        "debited",
-        "spent",
-        "you paid",
-        "paid to",
-        "paid rs",
-        "paid inr",
-        "paid ₹",
-        "sent rs",
-        "sent inr",
-        "sent ₹",
-        "purchase",
-        "withdrawn",
-        "charged",
-        "txn of",
-        "payment of",
-        "payment successful",
-        "payment received by",
-    ];
-    if !SPENDING.iter().any(|w| t.contains(w)) {
+    let spent = re(
+        &SPENT,
+        r"\b(debited|spent|you paid|paid to|paid (rs|inr)|paid ₹|sent (rs|inr)|sent ₹|purchase[ds]?|withdrawn|charged|txn of|payment of|payment successful|payment received by|trf to|transferred)\b|paid ₹|sent ₹",
+    );
+    if !spent.is_match(&t) {
         return None;
     }
+    // A one-time code message ("OTP for txn of Rs 500") isn't a payment; a real debit that only warns
+    // "never share your OTP" is.
+    let otp = re(&OTP, r"\b(otp|one time password|verification code)\b");
+    let strong = re(&STRONG, r"\b(debited|spent|charged|withdrawn|you paid|paid to|trf to|transferred)\b");
+    if otp.is_match(&t) && !strong.is_match(&t) {
+        return None;
+    }
+    let (amount_minor, currency) = amount(text)?;
+    Some(Parsed { amount_minor, currency: currency.into(), merchant: merchant(text) })
+}
+
+/// The amount spent: the first currency amount that isn't a balance or limit; else (SBI-style
+/// "debited by 150.0", no currency written) the number right after the debit word, in rupees.
+fn amount(text: &str) -> Option<(i64, &'static str)> {
     static AMOUNT: OnceLock<Regex> = OnceLock::new();
-    let amount = re(&AMOUNT, r"(?i)(rs\.?|inr|₹|usd|\$|eur|€|gbp|£)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)");
-    let c = amount.captures(text)?;
-    let amount_minor = minor(&c[2]).filter(|m| *m > 0 && *m < MAX_MINOR)?;
-    Some(Parsed { amount_minor, currency: currency_of(&c[1]).into(), merchant: merchant(text) })
+    static BARE: OnceLock<Regex> = OnceLock::new();
+    let with_currency = re(&AMOUNT, r"(?i)(\b(?:rs|inr|usd|eur|gbp)\.?|₹|\$|€|£)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)");
+    for c in with_currency.captures_iter(text) {
+        let start = c.get(0).map_or(0, |m| m.start());
+        let before: String = text[..start].chars().rev().take(10).collect::<String>().chars().rev().collect::<String>().to_lowercase();
+        if ["bal", "balance", "avl", "available", "limit", "lmt"].iter().any(|w| before.contains(w)) {
+            continue;
+        }
+        if let Some(m) = minor(&c[2]).filter(|m| *m > 0 && *m < MAX_MINOR) {
+            return Some((m, currency_of(&c[1])));
+        }
+    }
+    let bare = re(&BARE, r"(?i)\b(?:debited|spent|paid|charged|withdrawn)\s+(?:by|for|with|of)?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b");
+    let c = bare.captures(text)?;
+    minor(&c[1]).filter(|m| *m > 0 && *m < MAX_MINOR).map(|m| (m, "INR"))
 }
 
 fn merchant(text: &str) -> String {
@@ -142,8 +142,10 @@ fn merchant(text: &str) -> String {
     if let Some(c) = re(&VPA, r"(?i)\bvpa\s+([a-z0-9._-]+)@").captures(text) {
         return tidy(&c[1]);
     }
-    let named =
-        re(&NAMED, r"(?i)\b(?:at|to|towards)\s+([a-z0-9][a-z0-9 &'._*-]{1,40}?)(?:\s+(?:on|via|ref|using|from|with|avl|upi|thru|through|for)\b|[.,(:;]|$)");
+    let named = re(
+        &NAMED,
+        r"(?i)\b(?:at|to|towards)\s+([a-z0-9][a-z0-9 &'._*-]{1,40}?)(?:\s+(?:on|via|ref|refno|ref\.?no|using|from|with|avl|upi|thru|through|for)\b|[.,(:;]|$)",
+    );
     for c in named.captures_iter(text) {
         let m = c[1].trim();
         let low = m.to_lowercase();
@@ -155,6 +157,13 @@ fn merchant(text: &str) -> String {
         return tidy(m);
     }
     String::new()
+}
+
+/// Whether two merchant names plausibly name the same shop ("swiggy" / "Swiggy Ltd"); unknown matches anything.
+fn same_shop(a: &str, b: &str) -> bool {
+    let first = |s: &str| s.split_whitespace().next().unwrap_or_default().to_lowercase();
+    let (a, b) = (first(a), first(b));
+    a.is_empty() || b.is_empty() || a.starts_with(&b) || b.starts_with(&a)
 }
 
 fn tidy(s: &str) -> String {
@@ -169,7 +178,19 @@ pub fn category(merchant: &str, text: &str) -> &'static str {
     // Whole words from the start ("tea" isn't "steam"); phrases anywhere.
     let merchant_low = merchant.to_lowercase();
     let tokens: Vec<&str> = merchant_low.split(|c: char| !c.is_alphanumeric()).filter(|t| !t.is_empty()).collect();
-    let mhas = |words: &[&str]| words.iter().any(|w| if w.contains(' ') { merchant_low.contains(w) } else { tokens.iter().any(|t| t.starts_with(w)) });
+    // Phrases anywhere; short words only as whole words ("tea" isn't "team", "ola" isn't "olay");
+    // longer ones also as a word's start ("pharm" → "pharmacy").
+    let mhas = |words: &[&str]| {
+        words.iter().any(|w| {
+            if w.contains(' ') {
+                merchant_low.contains(w)
+            } else if w.chars().count() <= 4 {
+                tokens.iter().any(|t| t == w || (t.starts_with(w) && t[w.len()..].chars().all(|c| c == 's')))
+            } else {
+                tokens.iter().any(|t| t.starts_with(w))
+            }
+        })
+    };
     if mhas(&[
         "swiggy",
         "zomato",
@@ -305,12 +326,12 @@ pub fn record(conn: &Connection, source: &str, items: &[Found]) -> AppResult<Sca
         let key = f.id.clone().unwrap_or_else(|| f.text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase());
         let fp = fingerprint(source, &key);
         let day = f.date.to_string();
-        let seen: bool = conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM expenses WHERE fingerprint = ?1 \
-             OR (amount_minor = ?2 AND currency = ?3 AND spent_on = ?4 AND source NOT IN (?5, 'manual')))",
-            params![fp, p.amount_minor, p.currency, day, source],
-            |r| r.get(0),
-        )?;
+        let same_message: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM expenses WHERE fingerprint = ?1)", [&fp], |r| r.get(0))?;
+        // The same payment seen in an SMS and an email (same amount and day, and the same shop when both name one).
+        let mut stmt =
+            conn.prepare_cached("SELECT merchant FROM expenses WHERE amount_minor = ?1 AND currency = ?2 AND spent_on = ?3 AND source NOT IN (?4, 'manual')")?;
+        let others: Vec<String> = stmt.query_map(params![p.amount_minor, p.currency, day, source], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        let seen = same_message || others.iter().any(|m| same_shop(m, &p.merchant));
         if seen {
             scan.already_known += 1;
             continue;
@@ -499,6 +520,20 @@ mod tests {
         assert_eq!(p("123456 is your OTP for txn of Rs 500 at Flipkart. Do not share"), None);
         assert_eq!(p("Payment of ₹649 due on 15 Oct for your Airtel bill"), None);
         assert_eq!(p("Lunch at 1?"), None);
+        // SBI UPI: no currency written.
+        assert_eq!(
+            p("Dear UPI user A/C X1234 debited by 150.0 on date 10Oct26 trf to SWIGGY Refno 4321. If not u? call 1800111109. -SBI"),
+            Some((15000, "INR".into(), "SWIGGY".into()))
+        );
+        // A real debit that only warns about OTPs, and shops whose names contain those letters.
+        assert_eq!(p("Rs 500 debited from A/c XX1 to VPA zomato@hdfc. Never share OTP with anyone").map(|x| x.0), Some(50000));
+        assert_eq!(p("Rs 450 spent at FOOTPRINT CAFE on 10-10").map(|x| x.2), Some("FOOTPRINT CAFE".into()));
+        assert_eq!(p("INR 300 debited from card XX9 at HOTPOT KITCHEN").map(|x| x.0), Some(30000));
+        // The balance isn't the amount spent.
+        assert_eq!(p("Avl Bal Rs 12,000.00. Rs 250 debited to VPA x@y").map(|x| x.0), Some(25000));
+        assert_eq!(p("for 2 users 500 debited"), None, "\"users 500\" is not \"Rs 500\"");
+        assert_eq!(category("Microsoft Teams", ""), "Other");
+        assert_eq!(category("Team Sports", ""), "Other");
         assert_eq!(category("swiggy", ""), "Food");
         assert_eq!(category("Steam Games", ""), "Entertainment");
         assert_eq!(category("Uber India", ""), "Transport");
@@ -517,6 +552,9 @@ mod tests {
         let s = record(&c, "phone", &[sms.clone(), otp]).unwrap();
         assert_eq!((s.added.len(), s.not_payments), (1, 1));
         assert_eq!(record(&c, "phone", &[sms]).unwrap().already_known, 1);
+        // A different shop, same amount and day, is a different payment.
+        let chai = Found { id: Some("e2".into()), text: "You paid ₹250 to Chai Point".into(), date: day };
+        assert_eq!(record(&c, "email", &[chai]).unwrap().added.len(), 1);
         // The same payment's email doesn't count twice.
         let email = Found { id: Some("e1".into()), text: "Payment successful — Rs 250.00 paid to Swiggy".into(), date: day };
         assert_eq!(record(&c, "email", &[email]).unwrap().already_known, 1);
@@ -524,7 +562,7 @@ mod tests {
         add_manual(&c, 30000, "inr", "Lunch with team", "food", day).unwrap();
         assert!(add_manual(&c, 100, "INR", "x", "Gadgets", day).is_err());
         let t = totals(&c, day, day).unwrap();
-        assert_eq!(t, vec![Total { currency: "INR".into(), category: "Food".into(), amount_minor: 55000, count: 2 }]);
+        assert_eq!(t, vec![Total { currency: "INR".into(), category: "Food".into(), amount_minor: 80000, count: 3 }]);
         let id = list(&c, day, day).unwrap()[0].id;
         assert_eq!(set_category(&c, id, "other").unwrap().category, "Other");
         delete(&c, id).unwrap();

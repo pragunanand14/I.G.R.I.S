@@ -61,14 +61,13 @@ impl Tool for TidyDownloadsTool {
     }
     async fn execute(&self, i: &Value) -> ToolResultT {
         let dir = self.dir.clone().ok_or_else(|| ToolError::refused("There's no Downloads folder on this device."))?;
-        let conn = self.db.conn().map_err(|e| ToolError::failed(e.to_string()))?;
         match i["action"].as_str().unwrap_or("preview") {
             "undo" => {
-                let n = tidy::undo_last(&conn).map_err(|e| ToolError::failed(e.to_string()))?;
+                let n = tidy::undo_last(&self.db).map_err(|e| ToolError::failed(e.to_string()))?;
                 out(format!("Put {n} file(s) back in Downloads."), format!("{n} back"))
             }
             "tidy" => {
-                let (done, errors) = tidy::run(&conn, &dir).map_err(|e| ToolError::failed(e.to_string()))?;
+                let (done, errors) = tidy::run(&self.db, &dir).map_err(|e| ToolError::failed(e.to_string()))?;
                 if done.is_empty() && errors.is_empty() {
                     return out("Downloads is already tidy.".into(), "Already tidy");
                 }

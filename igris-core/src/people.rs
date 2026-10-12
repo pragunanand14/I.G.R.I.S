@@ -121,7 +121,12 @@ pub fn list(conn: &Connection) -> AppResult<Vec<Person>> {
 /// People whose name, relation or notes contain any word of `query`
 /// ("mom", "Rahul", "manager"); everyone when it's empty.
 pub fn find(conn: &Connection, query: &str) -> AppResult<Vec<Person>> {
-    let words: Vec<String> = query.split_whitespace().map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()).filter(|w| w.len() > 1).collect();
+    const STOP: [&str; 12] = ["my", "the", "a", "an", "to", "for", "of", "me", "his", "her", "is", "who"];
+    let words: Vec<String> = query
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .filter(|w| w.chars().count() > 1 && !STOP.contains(&w.as_str()))
+        .collect();
     let all = list(conn)?;
     if words.is_empty() {
         return Ok(all);
@@ -129,8 +134,10 @@ pub fn find(conn: &Connection, query: &str) -> AppResult<Vec<Person>> {
     Ok(all
         .into_iter()
         .filter(|p| {
+            // Whole words only ("al" doesn't find "Rahul", "me" doesn't find everyone with "meeting" in their notes).
             let hay = format!("{} {} {}", p.name, p.relation, p.notes).to_lowercase();
-            words.iter().any(|w| hay.contains(w.as_str()))
+            let hay: Vec<&str> = hay.split(|c: char| !c.is_alphanumeric()).collect();
+            words.iter().any(|w| hay.contains(&w.as_str()))
         })
         .collect())
 }

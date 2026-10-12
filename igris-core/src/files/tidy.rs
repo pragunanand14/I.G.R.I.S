@@ -121,23 +121,42 @@ pub fn describe(moves: &[Move]) -> String {
     format!("{} file{}: {}", moves.len(), if moves.len() == 1 { "" } else { "s" }, parts.join(", "))
 }
 
-/// Tidy `dir` now and remember what moved (for undo). Returns the moves done and any errors.
-pub fn run(conn: &rusqlite::Connection, dir: &Path) -> crate::error::AppResult<(Vec<Move>, Vec<String>)> {
+/// The most moves kept for undo (older ones are forgotten).
+const UNDO_CAP: usize = 1000;
+
+/// Tidy `dir` now and remember what moved (for undo — every tidy since the last undo, so an automatic tidy
+/// doesn't make the user's own one impossible to undo). Returns the moves done and any errors.
+///
+/// The database is only touched to save the result, never while files are being moved.
+pub fn run(db: &crate::db::Database, dir: &Path) -> crate::error::AppResult<(Vec<Move>, Vec<String>)> {
     let moves = plan(dir, SystemTime::now()).map_err(|e| crate::error::AppError::validation(format!("Couldn't read {}: {e}", dir.display())))?;
     let (done, errors) = apply(&moves);
     if !done.is_empty() {
-        crate::settings::set_extra(conn, LAST_KEY, &done)?;
+        let conn = db.conn()?;
+        let mut all: Vec<Move> = crate::settings::get_extra(&conn, LAST_KEY)?.unwrap_or_default();
+        all.extend(done.iter().cloned());
+        let skip = all.len().saturating_sub(UNDO_CAP);
+        crate::settings::set_extra(&conn, LAST_KEY, &all[skip..].to_vec())?;
         tracing::info!(event = "DOWNLOADS_TIDIED", count = done.len());
     }
     Ok((done, errors))
 }
 
-/// Undo the last tidy. Returns how many files went back.
-pub fn undo_last(conn: &rusqlite::Connection) -> crate::error::AppResult<usize> {
-    let last: Vec<Move> = crate::settings::get_extra(conn, LAST_KEY)?.unwrap_or_default();
-    let n = undo(&last);
-    crate::settings::set_extra(conn, LAST_KEY, &Vec::<Move>::new())?;
-    Ok(n)
+/// Undo every tidy since the last undo (newest first). Returns how many files went back.
+pub fn undo_last(db: &crate::db::Database) -> crate::error::AppResult<usize> {
+    let mut last: Vec<Move> = {
+        let conn = db.conn()?;
+        let last = crate::settings::get_extra(&conn, LAST_KEY)?.unwrap_or_default();
+        crate::settings::set_extra(&conn, LAST_KEY, &Vec::<Move>::new())?;
+        last
+    };
+    last.reverse();
+    Ok(undo(&last))
+}
+
+/// How many moves an undo would put back.
+pub fn undoable(conn: &rusqlite::Connection) -> crate::error::AppResult<usize> {
+    Ok(crate::settings::get_extra::<Vec<Move>>(conn, LAST_KEY)?.map_or(0, |v| v.len()))
 }
 
 #[cfg(test)]
@@ -168,5 +187,23 @@ mod tests {
 
         assert_eq!(undo(&done), 4);
         assert!(d.path().join("report.pdf").is_file() && d.path().join("setup.exe").is_file());
+    }
+
+    #[test]
+    fn undo_puts_back_every_tidy_since_the_last_undo() {
+        let d = tempfile::tempdir().unwrap();
+        let db = crate::db::Database::open_in_memory().unwrap();
+        let old = SystemTime::now() - SETTLE - Duration::from_secs(5);
+        for n in ["a.pdf", "b.jpg"] {
+            let f = std::fs::File::create(d.path().join(n)).unwrap();
+            f.set_modified(old).unwrap();
+            drop(f);
+            // One file per tidy (the second arrives after the first tidy).
+            assert_eq!(run(&db, d.path()).unwrap().0.len(), 1);
+        }
+        assert_eq!(undoable(&db.conn().unwrap()).unwrap(), 2);
+        assert_eq!(undo_last(&db).unwrap(), 2);
+        assert!(d.path().join("a.pdf").is_file() && d.path().join("b.jpg").is_file());
+        assert_eq!(undoable(&db.conn().unwrap()).unwrap(), 0);
     }
 }

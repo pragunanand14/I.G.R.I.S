@@ -30,17 +30,26 @@ pub struct TidyStatus {
     pub last: usize,
 }
 
+/// Runs `f` off the UI thread (listing and moving files can take a while on a big Downloads folder).
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> AppResult<T> + Send + 'static) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| AppError::internal(e.to_string()))?
+}
+
 #[tauri::command]
-pub fn tidy_status(state: State<'_, AppState>) -> AppResult<TidyStatus> {
-    let conn = state.db.conn()?;
-    let dir = downloads_dir();
-    let pending = dir.as_deref().and_then(|d| tidy::plan(d, std::time::SystemTime::now()).ok()).filter(|m| !m.is_empty()).map(|m| tidy::describe(&m));
-    Ok(TidyStatus {
-        dir: dir.map(|d| d.to_string_lossy().into_owned()),
-        auto: crate::settings::get_extra::<bool>(&conn, tidy::AUTO_KEY)?.unwrap_or(false),
-        pending,
-        last: crate::settings::get_extra::<Vec<tidy::Move>>(&conn, tidy::LAST_KEY)?.map_or(0, |v| v.len()),
+pub async fn tidy_status(state: State<'_, AppState>) -> AppResult<TidyStatus> {
+    let db = state.db.clone();
+    blocking(move || {
+        let dir = downloads_dir();
+        let pending = dir.as_deref().and_then(|d| tidy::plan(d, std::time::SystemTime::now()).ok()).filter(|m| !m.is_empty()).map(|m| tidy::describe(&m));
+        let conn = db.conn()?;
+        Ok(TidyStatus {
+            dir: dir.map(|d| d.to_string_lossy().into_owned()),
+            auto: crate::settings::get_extra::<bool>(&conn, tidy::AUTO_KEY)?.unwrap_or(false),
+            pending,
+            last: tidy::undoable(&conn)?,
+        })
     })
+    .await
 }
 
 #[derive(Debug, Serialize)]
@@ -52,15 +61,17 @@ pub struct TidyResult {
 }
 
 #[tauri::command]
-pub fn tidy_now(state: State<'_, AppState>) -> AppResult<TidyResult> {
+pub async fn tidy_now(state: State<'_, AppState>) -> AppResult<TidyResult> {
     let dir = downloads_dir().ok_or_else(|| AppError::validation("There's no Downloads folder on this device."))?;
-    let (done, errors) = tidy::run(&*state.db.conn()?, &dir)?;
+    let db = state.db.clone();
+    let (done, errors) = blocking(move || tidy::run(&db, &dir)).await?;
     Ok(TidyResult { moved: done.len(), summary: if done.is_empty() { String::new() } else { tidy::describe(&done) }, errors })
 }
 
 #[tauri::command]
-pub fn tidy_undo(state: State<'_, AppState>) -> AppResult<usize> {
-    tidy::undo_last(&*state.db.conn()?)
+pub async fn tidy_undo(state: State<'_, AppState>) -> AppResult<usize> {
+    let db = state.db.clone();
+    blocking(move || tidy::undo_last(&db)).await
 }
 
 #[tauri::command]
@@ -74,9 +85,10 @@ pub fn watch(db: std::sync::Arc<crate::db::Database>) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(600)).await;
-            let Ok(conn) = db.conn() else { continue };
-            if crate::settings::get_extra::<bool>(&conn, tidy::AUTO_KEY).ok().flatten().unwrap_or(false) {
-                if let Err(e) = tidy::run(&conn, &dir) {
+            let on = db.conn().ok().and_then(|c| crate::settings::get_extra::<bool>(&c, tidy::AUTO_KEY).ok().flatten()).unwrap_or(false);
+            if on {
+                let (db, dir) = (db.clone(), dir.clone());
+                if let Ok(Err(e)) = tauri::async_runtime::spawn_blocking(move || tidy::run(&db, &dir)).await {
                     tracing::warn!(event = "DOWNLOADS_TIDY_FAILED", error = %e);
                 }
             }
