@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::plugin::{PluginApi, PluginHandle};
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, GoogleSetupInfo, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, RecordRules, Result, ScreenRead, WakeStatus};
+use crate::{Contact, Error, GoogleSetupInfo, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, RecordRules, Result, Scan, ScreenRead, WakeStatus};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(_app: &AppHandle<R>, api: PluginApi<R, C>) -> std::result::Result<Device<R>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "android")]
@@ -148,8 +148,15 @@ impl<R: Runtime> Device<R> {
         self.0.run_mobile_plugin::<Empty>("openAccessibilitySettings", ()).map(|_| ()).map_err(failed)
     }
 
-    pub fn screen_read(&self) -> Result<ScreenRead> {
-        self.0.run_mobile_plugin::<ScreenRead>("screenRead", ()).map_err(failed)
+    /// The screen's items, and a screenshot too when `screenshot` (Android 11+).
+    pub fn screen_read(&self, screenshot: bool) -> Result<ScreenRead> {
+        self.0.run_mobile_plugin::<ScreenRead>("screenRead", ScreenArgs { screenshot, ..Default::default() }).map_err(failed)
+    }
+
+    /// Open a page of Android's settings: location, wifi, bluetooth, mobile_data, internet, display, sound,
+    /// battery, do_not_disturb, apps or settings.
+    pub fn screen_settings_page(&self, page: &str) -> Result<()> {
+        self.screen("screenSettingsPage", ScreenArgs { action: Some(page.into()), ..Default::default() })
     }
 
     fn screen(&self, cmd: &str, args: ScreenArgs) -> Result<()> {
@@ -412,6 +419,7 @@ struct ScreenArgs {
     direction: Option<String>,
     action: Option<String>,
     show: bool,
+    screenshot: bool,
 }
 
 impl<R: Runtime> Device<R> {
@@ -434,5 +442,25 @@ impl<R: Runtime> Device<R> {
 
     pub fn google_setup_info(&self) -> Result<GoogleSetupInfo> {
         self.0.run_mobile_plugin::<GoogleSetupInfo>("googleSetupInfo", ()).map_err(failed)
+    }
+
+    /// Ask Android to add the IGRIS Quick Settings tile: "added", "already", "not_added" or "unsupported".
+    pub fn add_quick_tile(&self) -> Result<String> {
+        #[derive(Deserialize)]
+        struct R {
+            result: String,
+        }
+        self.0.run_mobile_plugin::<R>("addQuickTile", ()).map(|r| r.result).map_err(failed)
+    }
+
+    /// Take a photo with the camera app (blocks until the user is done): JPEG base64, or None if they backed out.
+    pub fn camera_capture(&self) -> Result<Option<String>> {
+        self.0.run_mobile_plugin::<Picked>("cameraCapture", ()).map(|p| p.data).map_err(failed)
+    }
+
+    /// Scan a document with Google's scanner (blocks until the user is done); None if they cancelled.
+    pub fn scan_document(&self) -> Result<Option<Scan>> {
+        let s = self.0.run_mobile_plugin::<Scan>("scanDocument", ()).map_err(failed)?;
+        Ok((s.page_count > 0 || !s.pages.is_empty()).then_some(s))
     }
 }

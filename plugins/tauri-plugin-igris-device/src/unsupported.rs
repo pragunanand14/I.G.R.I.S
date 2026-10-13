@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use tauri::{AppHandle, Runtime};
 
-use crate::{Contact, Error, GoogleSetupInfo, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, RecordRules, Result, ScreenRead, WakeStatus};
+use crate::{Contact, Error, GoogleSetupInfo, Location, PhoneApp, PhoneMessage, PhoneStatus, RecordPoll, RecordRules, Result, Scan, ScreenRead, WakeStatus};
 
 /// Not a phone: every call says so.
 pub struct Device<R: Runtime>(PhantomData<fn() -> R>);
@@ -68,7 +68,11 @@ impl<R: Runtime> Device<R> {
         Err(Error::Unsupported)
     }
 
-    pub fn screen_read(&self) -> Result<ScreenRead> {
+    pub fn screen_read(&self, _screenshot: bool) -> Result<ScreenRead> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn screen_settings_page(&self, _page: &str) -> Result<()> {
         Err(Error::Unsupported)
     }
 
@@ -194,6 +198,18 @@ impl<R: Runtime> Device<R> {
     }
 
     pub fn google_setup_info(&self) -> Result<GoogleSetupInfo> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn add_quick_tile(&self) -> Result<String> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn camera_capture(&self) -> Result<Option<String>> {
+        Err(Error::Unsupported)
+    }
+
+    pub fn scan_document(&self) -> Result<Option<Scan>> {
         Err(Error::Unsupported)
     }
 }

@@ -96,6 +96,19 @@
             </intent-filter>
         </activity>
 
+        <!-- The IGRIS tile in Quick Settings: opens the assistant panel, listening. -->
+        <service
+            android:name="dev.igris.device.IgrisTileService"
+            android:exported="true"
+            android:icon="@drawable/igris_tile"
+            android:label="@string/igris_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
+
         <!-- Google's sign-in sheet is started from here (GoogleAuthActivity.kt). -->
         <activity
             android:name="dev.igris.device.GoogleAuthActivity"

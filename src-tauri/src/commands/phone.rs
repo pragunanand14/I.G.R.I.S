@@ -74,6 +74,30 @@ pub fn phone_set_messages_all_apps(state: tauri::State<'_, crate::state::AppStat
     Ok(on)
 }
 
+/// Screen control: ask before taps that send or delete (default: no — an approved task runs through).
+#[tauri::command]
+pub fn phone_screen_ask_risky(state: tauri::State<'_, crate::state::AppState>) -> AppResult<bool> {
+    Ok(crate::settings::get_extra::<bool>(&*state.db.conn()?, crate::tools::phone_screen::ASK_RISKY_KEY)?.unwrap_or(false))
+}
+
+#[tauri::command]
+pub fn phone_set_screen_ask_risky(state: tauri::State<'_, crate::state::AppState>, on: bool) -> AppResult<bool> {
+    crate::settings::set_extra(&*state.db.conn()?, crate::tools::phone_screen::ASK_RISKY_KEY, &on)?;
+    Ok(on)
+}
+
+/// Ask Android to add the IGRIS tile to Quick Settings.
+#[tauri::command]
+pub async fn phone_add_quick_tile(#[allow(unused_variables)] app: tauri::AppHandle) -> AppResult<String> {
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_igris_device::IgrisDeviceExt;
+        return on_phone(move || app.igris_device().add_quick_tile()).await;
+    }
+    #[cfg(not(mobile))]
+    Err(AppError::validation("This is for the phone app."))
+}
+
 /// Run a phone call off the main thread; on a computer, say it's for the phone.
 #[cfg(mobile)]
 async fn on_phone<T: Send + 'static>(f: impl FnOnce() -> Result<T, tauri_plugin_igris_device::Error> + Send + 'static) -> AppResult<T> {

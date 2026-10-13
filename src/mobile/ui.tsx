@@ -24,7 +24,12 @@ export function Screen({
       {back || action ? (
         <div className="mb-3 flex min-h-11 items-center justify-between">
           {back ? (
-            <button type="button" onClick={() => void navigate(back, nav())} className="m-icon-button -ml-3" aria-label="Back">
+            <button
+              type="button"
+              onClick={() => void navigate(back, nav())}
+              className="m-icon-button -ml-3"
+              aria-label="Back"
+            >
               <ChevronLeft className="size-6" />
             </button>
           ) : (
@@ -45,7 +50,15 @@ export function Screen({
 }
 
 /** A group of content with a small label above it. */
-export function Section({ title, children, aside }: { title?: string; children: ReactNode; aside?: ReactNode }) {
+export function Section({
+  title,
+  children,
+  aside,
+}: {
+  title?: string;
+  children: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
     <section className="space-y-2">
       {(title || aside) && (
@@ -60,9 +73,19 @@ export function Section({ title, children, aside }: { title?: string; children: 
 }
 
 /** A grouped list. */
-export function Group({ children, label }: { children: ReactNode; label?: string }) {
+export function Group({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label?: string;
+}) {
   return (
-    <div className="m-group" role={label ? "list" : undefined} aria-label={label}>
+    <div
+      className="m-group"
+      role={label ? "list" : undefined}
+      aria-label={label}
+    >
       {children}
     </div>
   );
@@ -89,9 +112,13 @@ export function Row({
       {icon && <span className="m-muted shrink-0">{icon}</span>}
       <div className="min-w-0 flex-1">
         <div className="font-medium break-words">{title}</div>
-        {detail && <div className="m-muted mt-0.5 text-sm break-words">{detail}</div>}
+        {detail && (
+          <div className="m-muted mt-0.5 text-sm break-words">{detail}</div>
+        )}
       </div>
-      {value !== undefined && <span className="m-muted shrink-0 text-[15px]">{value}</span>}
+      {value !== undefined && (
+        <span className="m-muted shrink-0 text-[15px]">{value}</span>
+      )}
       {(to || onClick) && <ChevronRight className="m-faint size-5 shrink-0" />}
     </>
   );
@@ -111,7 +138,17 @@ export function Row({
 }
 
 /** A bottom sheet. */
-export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Sheet({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -122,7 +159,12 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   return (
     <>
       <div className="m-sheet-backdrop" onClick={onClose} aria-hidden="true" />
-      <div className="m-sheet" role="dialog" aria-modal="true" aria-label={title}>
+      <div
+        className="m-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="m-sheet-handle" />
         <h2 className="mb-4 text-xl font-semibold">{title}</h2>
         {children}
@@ -133,10 +175,20 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
 
 export type Tone = "ok" | "warn" | "bad";
 
-const TONE_COLOR: Record<Tone, string> = { ok: "var(--m-ok)", warn: "var(--m-warn)", bad: "var(--m-bad)" };
+const TONE_COLOR: Record<Tone, string> = {
+  ok: "var(--m-ok)",
+  warn: "var(--m-warn)",
+  bad: "var(--m-bad)",
+};
 
 export function Dot({ tone }: { tone: Tone }) {
-  return <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: TONE_COLOR[tone] }} aria-hidden="true" />;
+  return (
+    <span
+      className="inline-block size-2 shrink-0 rounded-full"
+      style={{ background: TONE_COLOR[tone] }}
+      aria-hidden="true"
+    />
+  );
 }
 
 /** A short error line. */
@@ -166,7 +218,9 @@ export function Switch({
     <label className="m-row cursor-pointer">
       <div className="min-w-0 flex-1">
         <div className="font-medium">{label}</div>
-        {description && <div className="m-muted mt-0.5 text-sm">{description}</div>}
+        {description && (
+          <div className="m-muted mt-0.5 text-sm">{description}</div>
+        )}
       </div>
       <button
         type="button"

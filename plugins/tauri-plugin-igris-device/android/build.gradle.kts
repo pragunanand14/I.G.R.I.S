@@ -34,5 +34,7 @@ dependencies {
     implementation("com.alphacephei:vosk-model-en:0.3.38")
     // Google sign-in with the account already on the phone (Google Play services' account picker).
     implementation("com.google.android.gms:play-services-auth:21.3.0")
+    // Scanning documents with Google's scanner (edge finding, several pages, PDF); runs in Play services.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
     implementation(project(":tauri-android"))
 }

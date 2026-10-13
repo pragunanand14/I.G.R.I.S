@@ -84,6 +84,7 @@ class ScreenArgs {
     var direction: String? = null
     var action: String? = null
     var show: Boolean = false
+    var screenshot: Boolean = false
 }
 
 @InvokeArg
@@ -407,6 +408,95 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * Take a photo with the phone's camera app for IGRIS to look at. `{data}` (JPEG, base64, at most 1600 px)
+     * or `{}` when the user backs out.
+     */
+    @Command
+    fun cameraCapture(invoke: Invoke) {
+        try {
+            val f = Camera.photoFile(activity)
+            val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                .putExtra(MediaStore.EXTRA_OUTPUT, Camera.photoUri(activity, f))
+                .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivityForResult(invoke, intent, "cameraCaptureResult")
+        } catch (e: Exception) {
+            invoke.reject("Couldn't open the camera: ${e.javaClass.simpleName}")
+        }
+    }
+
+    @ActivityCallback
+    fun cameraCaptureResult(invoke: Invoke, result: ActivityResult) {
+        val f = java.io.File(activity.cacheDir, "igris-camera.jpg")
+        if (result.resultCode != Activity.RESULT_OK || !f.exists() || f.length() == 0L) {
+            invoke.resolve(JSObject())
+            return
+        }
+        try {
+            val data = Camera.encode(activity, android.net.Uri.fromFile(f), 1600) ?: throw IllegalStateException("unreadable")
+            val ret = JSObject()
+            ret.put("data", data)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Couldn't read the photo: ${e.javaClass.simpleName}")
+        } finally {
+            f.delete()
+        }
+    }
+
+    /**
+     * Scan a document with Google's scanner (finds the page edges, straightens it, several pages). The PDF is
+     * saved to Documents/IGRIS. `{saved, pageCount, pages: [JPEG base64, first 5]}`, or `{}` when cancelled.
+     */
+    @Command
+    fun scanDocument(invoke: Invoke) {
+        val options = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(20)
+            .setResultFormats(
+                com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
+                com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF,
+            )
+            .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+        com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
+            .addOnSuccessListener { sender ->
+                try {
+                    val intent = Intent(activity, GoogleAuthActivity::class.java).putExtra(GoogleAuthActivity.EXTRA_SENDER, sender)
+                    startActivityForResult(invoke, intent, "scanDocumentResult")
+                } catch (e: Exception) {
+                    invoke.reject("Couldn't open the scanner: ${e.javaClass.simpleName}")
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.w("IGRIS", "IGRIS_SCAN failed to start: ${e.javaClass.simpleName}")
+                invoke.reject("The document scanner isn't available on this phone (it needs Google Play services). Take a photo instead.")
+            }
+    }
+
+    @ActivityCallback
+    fun scanDocumentResult(invoke: Invoke, result: ActivityResult) {
+        val scan = com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+        if (result.resultCode != Activity.RESULT_OK || scan == null) {
+            invoke.resolve(JSObject())
+            return
+        }
+        try {
+            val ret = JSObject()
+            scan.pdf?.let { pdf ->
+                ret.put("saved", Camera.savePdf(activity, pdf.uri))
+                ret.put("pageCount", pdf.pageCount)
+            }
+            val pages = JSArray()
+            scan.pages?.take(5)?.forEach { page -> Camera.encode(activity, page.imageUri, 1600)?.let { pages.put(it) } }
+            ret.put("pages", pages)
+            if (!ret.has("pageCount")) ret.put("pageCount", scan.pages?.size ?: 0)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Couldn't keep the scan: ${e.javaClass.simpleName}")
+        }
+    }
+
     /** The package name and signing fingerprint Google needs for IGRIS's Android sign-in entry. */
     @Command
     fun googleSetupInfo(invoke: Invoke) {
@@ -648,6 +738,17 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             ret.put("width", screen.width)
             ret.put("height", screen.height)
             ret.put("items", items)
+            // A picture too, when asked: for icons without a label, images and maps. Coordinates in it are the
+            // screen's divided by `scale`.
+            val want = try { invoke.parseArgs(ScreenArgs::class.java).screenshot } catch (e: Exception) { false }
+            if (want) {
+                s.screenshot(1280)?.let { shot ->
+                    ret.put("image", Base64.encodeToString(shot.jpeg, Base64.NO_WRAP))
+                    ret.put("imageWidth", shot.width)
+                    ret.put("imageHeight", shot.height)
+                    ret.put("scale", shot.scale.toDouble())
+                }
+            }
             invoke.resolve(ret)
         } catch (e: Exception) {
             invoke.reject(e.message ?: e.javaClass.simpleName)
@@ -676,6 +777,34 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     fun screenButton(invoke: Invoke) {
         val a = invoke.parseArgs(ScreenArgs::class.java)
         act(invoke) { s -> s.global(a.action ?: "") }
+    }
+
+    /**
+     * During phone control: open a page of Android's settings (where a switch can then be tapped). Android
+     * doesn't let apps flip location, Wi-Fi or Bluetooth themselves.
+     */
+    @Command
+    fun screenSettingsPage(invoke: Invoke) {
+        val a = invoke.parseArgs(ScreenArgs::class.java)
+        val action = when (a.action) {
+            "location" -> android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS
+            "wifi" -> android.provider.Settings.ACTION_WIFI_SETTINGS
+            "bluetooth" -> android.provider.Settings.ACTION_BLUETOOTH_SETTINGS
+            "mobile_data" -> android.provider.Settings.ACTION_DATA_ROAMING_SETTINGS
+            "internet" -> if (Build.VERSION.SDK_INT >= 29) android.provider.Settings.Panel.ACTION_INTERNET_CONNECTIVITY else android.provider.Settings.ACTION_WIRELESS_SETTINGS
+            "display" -> android.provider.Settings.ACTION_DISPLAY_SETTINGS
+            "sound" -> android.provider.Settings.ACTION_SOUND_SETTINGS
+            "battery" -> android.provider.Settings.ACTION_BATTERY_SAVER_SETTINGS
+            "do_not_disturb" -> android.provider.Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS
+            "apps" -> android.provider.Settings.ACTION_APPLICATION_SETTINGS
+            "settings" -> android.provider.Settings.ACTION_SETTINGS
+            else -> null
+        }
+        if (action == null) {
+            invoke.reject("Unknown settings page.")
+            return
+        }
+        openSettings(invoke, Intent(action), Intent(android.provider.Settings.ACTION_SETTINGS))
     }
 
     /** Show (with a status) or hide the Stop pill. */
@@ -1087,6 +1216,43 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             }
         }
         invoke.reject("Couldn't open Android's settings.")
+    }
+
+    /**
+     * Ask Android to add the IGRIS tile to Quick Settings (Android 13+: one "Add" prompt). `{result}`:
+     * "added", "already", "not_added" or "unsupported" (older Android: add it by hand).
+     */
+    @Command
+    fun addQuickTile(invoke: Invoke) {
+        val ret = JSObject()
+        if (Build.VERSION.SDK_INT < 33) {
+            ret.put("result", "unsupported")
+            invoke.resolve(ret)
+            return
+        }
+        try {
+            val sbm = activity.getSystemService(android.app.StatusBarManager::class.java)
+            sbm.requestAddTileService(
+                android.content.ComponentName(activity, IgrisTileService::class.java),
+                activity.getString(R.string.igris_tile_label),
+                android.graphics.drawable.Icon.createWithResource(activity, R.drawable.igris_tile),
+                activity.mainExecutor,
+            ) { code ->
+                ret.put(
+                    "result",
+                    when (code) {
+                        android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "added"
+                        android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "already"
+                        android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "not_added"
+                        else -> "unsupported"
+                    },
+                )
+                invoke.resolve(ret)
+            }
+        } catch (e: Exception) {
+            ret.put("result", "unsupported")
+            invoke.resolve(ret)
+        }
     }
 
     /** IGRIS's App info page (where Android puts "Allow restricted settings", under ⋮). */

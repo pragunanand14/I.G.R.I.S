@@ -2,6 +2,9 @@ package dev.igris.device
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -17,6 +20,9 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
 import android.widget.TextView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -38,7 +44,7 @@ class IgrisAccessibilityService : AccessibilityService() {
         @Volatile
         var stopRequested = false
 
-        const val MAX_NODES = 120
+        const val MAX_NODES = 220
     }
 
     data class Node(val info: AccessibilityNodeInfo, val label: String, val role: String, val rect: Rect)
@@ -68,14 +74,82 @@ class IgrisAccessibilityService : AccessibilityService() {
 
     data class Screen(val packageName: String, val nodes: List<Node>, val width: Int, val height: Int)
 
+    /**
+     * Everything on screen, top window first: pop-ups and Android's own dialogs ("Allow location?",
+     * "Turn on device location") come before the app under them. The keyboard and IGRIS's own Stop pill
+     * are left out.
+     */
     fun read(): Screen {
-        val root = rootInActiveWindow ?: throw IllegalStateException("Can't see the screen right now (the phone may be locked).")
         val found = ArrayList<Node>()
-        walk(root, found, 0)
+        var pkg = ""
+        val wins = try { windows } catch (e: Exception) { emptyList<AccessibilityWindowInfo>() }
+        val shown = wins
+            .filter { it.type != AccessibilityWindowInfo.TYPE_INPUT_METHOD && it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY }
+            .sortedByDescending { it.layer }
+        for (w in shown) {
+            val root = w.root ?: continue
+            if (w.type == AccessibilityWindowInfo.TYPE_APPLICATION && pkg.isEmpty()) pkg = root.packageName?.toString().orEmpty()
+            walk(root, found, 0)
+        }
+        if (found.isEmpty()) {
+            val root = rootInActiveWindow ?: throw IllegalStateException("Can't see the screen right now (the phone may be locked).")
+            pkg = root.packageName?.toString().orEmpty()
+            walk(root, found, 0)
+        }
+        if (pkg.isEmpty()) pkg = rootInActiveWindow?.packageName?.toString().orEmpty()
         nodes = found
         val metrics = resources.displayMetrics
-        return Screen(root.packageName?.toString() ?: "", found, metrics.widthPixels, metrics.heightPixels)
+        return Screen(pkg, found, metrics.widthPixels, metrics.heightPixels)
     }
+
+    /**
+     * A JPEG of the screen, its longest side at most [maxSide] (Android 11+). Null when Android won't give
+     * one (secure screens such as banking apps show black, so they're skipped too).
+     */
+    fun screenshot(maxSide: Int): Shot? {
+        if (Build.VERSION.SDK_INT < 30) return null
+        for (attempt in 0 until 2) {
+            val done = CountDownLatch(1)
+            var bitmap: Bitmap? = null
+            var tooSoon = false
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, shotExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    try {
+                        val hw = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+                        bitmap = hw?.copy(Bitmap.Config.ARGB_8888, false)
+                        hw?.recycle()
+                    } finally {
+                        result.hardwareBuffer.close()
+                        done.countDown()
+                    }
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    tooSoon = errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT
+                    done.countDown()
+                }
+            })
+            if (!done.await(3, TimeUnit.SECONDS)) return null
+            val full = bitmap
+            if (full == null) {
+                if (tooSoon && attempt == 0) { Thread.sleep(400); continue }
+                return null
+            }
+            val scale = maxOf(1f, maxOf(full.width, full.height) / maxSide.toFloat())
+            val small = if (scale > 1f) Bitmap.createScaledBitmap(full, (full.width / scale).toInt(), (full.height / scale).toInt(), true) else full
+            val out = ByteArrayOutputStream()
+            small.compress(Bitmap.CompressFormat.JPEG, 70, out)
+            val shot = Shot(out.toByteArray(), small.width, small.height, scale)
+            if (small !== full) small.recycle()
+            full.recycle()
+            return shot
+        }
+        return null
+    }
+
+    data class Shot(val jpeg: ByteArray, val width: Int, val height: Int, val scale: Float)
+
+    private val shotExecutor by lazy { Executors.newSingleThreadExecutor() }
 
     private fun walk(n: AccessibilityNodeInfo?, out: MutableList<Node>, depth: Int) {
         if (n == null || out.size >= MAX_NODES || depth > 40) return
@@ -166,7 +240,13 @@ class IgrisAccessibilityService : AccessibilityService() {
         if (index != null) n.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val existing = if (Build.VERSION.SDK_INT >= 26 && n.isShowingHintText) "" else n.text?.toString().orEmpty()
         val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, existing + text) }
-        if (!n.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) throw IllegalStateException("That field didn't accept the text.")
+        if (!n.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+            // Some apps (web pages, custom text boxes) refuse "set text": paste it instead, like a person would.
+            val clip = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clip.setPrimaryClip(ClipData.newPlainText("IGRIS", text))
+            n.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            if (!n.performAction(AccessibilityNodeInfo.ACTION_PASTE)) throw IllegalStateException("That field didn't accept the text.")
+        }
         if (enter) {
             if (Build.VERSION.SDK_INT < 30) throw IllegalStateException("Pressing Enter needs Android 11 or newer.")
             n.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)

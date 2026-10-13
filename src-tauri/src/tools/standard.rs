@@ -125,6 +125,8 @@ pub fn registry(d: Deps) -> ToolRegistry {
     tools.register(Arc::new(OpenPathTool::new(db.clone(), open_path)));
     tools.register(Arc::new(ListProcessesTool::default()));
     tools.register(Arc::new(CloseApplicationTool::new(db.clone())));
+    tools.register(Arc::new(super::power::PcPowerTool::default()));
+    tools.register(Arc::new(super::travel::DirectionsTool::new(open_url.clone())));
     tools.register(Arc::new(OpenUrlTool::new(open_url)));
     tools.register(Arc::new(ListProjectsTool::new(db.clone())));
     tools.register(Arc::new(ProjectContextTool::new(db.clone())));
@@ -193,7 +195,7 @@ pub fn registry(d: Deps) -> ToolRegistry {
         tools.register(t);
     }
     tools.register(Arc::new(igris_core::tools::weather::WeatherTool::new(db.clone())));
-    for t in super::phone_screen::all(&super::phone_screen::ScreenTools::new(screen, operator)) {
+    for t in super::phone_screen::all(&super::phone_screen::ScreenTools::new(screen, operator, db.clone())) {
         tools.register(t);
     }
     for t in super::media::all(&media) {
@@ -210,11 +212,14 @@ pub fn registry(d: Deps) -> ToolRegistry {
     tools.register(Arc::new(CalculatorTool::default()));
     tools.register(Arc::new(DeviceStatusTool::new(phone.clone())));
     tools.register(Arc::new(ListPhoneAppsTool::new(phone.clone())));
+    tools.register(Arc::new(super::travel::BookRideTool::new(phone.clone())));
+    tools.register(Arc::new(super::phone_camera::PhoneCameraTool::new(phone.clone())));
     tools.register(Arc::new(OpenPhoneAppTool::new(phone)));
     tools.register(Arc::new(RememberTool::new(db.clone())));
     tools.register(Arc::new(SearchMemoryTool::new(db.clone())));
     tools.register(Arc::new(UpdateMemoryTool::new(db.clone())));
     tools.register(Arc::new(ForgetMemoryTool::new(db.clone())));
+    tools.register(Arc::new(super::travel::DirectionsTool::new(open_url.clone())));
     tools.register(Arc::new(OpenUrlTool::new(open_url)));
     tools.register(Arc::new(DateTimeTool::default()));
     tools.register(Arc::new(AddTaskTool::new(db.clone())));

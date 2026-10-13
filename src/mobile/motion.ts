@@ -1,1 +1,7 @@
-export { nav, reducedMotion, rememberTheme, restoreTheme, useIntro } from "@/hooks/motion";
+export {
+  nav,
+  reducedMotion,
+  rememberTheme,
+  restoreTheme,
+  useIntro,
+} from "@/hooks/motion";

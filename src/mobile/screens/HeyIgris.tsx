@@ -11,6 +11,7 @@ import { Dot, Group, Row, Section, Switch } from "../ui";
 export function HeyIgris({ ready }: { ready: boolean }) {
   const [s, setS] = useState<WakeStatus | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [tile, setTile] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api
@@ -133,6 +134,28 @@ export function HeyIgris({ ready }: { ready: boolean }) {
             }
             value={s.assistant ? undefined : "Set"}
             onClick={() => open("assistant")}
+          />
+          <Row
+            title="IGRIS in Quick Settings"
+            detail={
+              tile ??
+              "A tile in the swipe-down panel: one tap opens IGRIS listening, from any app."
+            }
+            value="Add"
+            onClick={() =>
+              api
+                .phoneAddQuickTile()
+                .then((r) =>
+                  setTile(
+                    r === "added" || r === "already"
+                      ? "Added — swipe down from the top to find it."
+                      : r === "not_added"
+                        ? "Not added. Tap Add again whenever you like."
+                        : "Swipe down twice → ✎ (edit) → drag the IGRIS tile into your tiles.",
+                  ),
+                )
+                .catch((err) => setNote(BackendError.from(err).message))
+            }
           />
         </Group>
         <p className="m-faint px-1 text-sm">

@@ -373,6 +373,9 @@ pub fn run() {
             commands::phone::phone_messages_access,
             commands::phone::phone_messages_settings,
             commands::phone::phone_messages_all_apps,
+            commands::phone::phone_screen_ask_risky,
+            commands::phone::phone_add_quick_tile,
+            commands::phone::phone_set_screen_ask_risky,
             commands::phone::phone_set_messages_all_apps,
             commands::phone::phone_screen_settings,
             commands::widgets::widget_launch_action,
@@ -488,6 +491,14 @@ mod platform {
             use tauri_plugin_igris_device::IgrisDeviceExt;
             self.0.igris_device().status().map_err(|e| e.to_string())
         }
+        fn camera(&self) -> Result<Option<String>, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().camera_capture().map_err(|e| e.to_string())
+        }
+        fn scan(&self) -> Result<Option<tauri_plugin_igris_device::Scan>, String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().scan_document().map_err(|e| e.to_string())
+        }
     }
 
     /// The phone's battery, for the system monitor.
@@ -587,9 +598,13 @@ mod platform {
             use tauri_plugin_igris_device::IgrisDeviceExt;
             self.0.igris_device().screen_access().unwrap_or(false)
         }
-        fn read(&self) -> Result<crate::tools::phone_screen::ScreenRead, String> {
+        fn read(&self, screenshot: bool) -> Result<crate::tools::phone_screen::ScreenRead, String> {
             use tauri_plugin_igris_device::IgrisDeviceExt;
-            self.0.igris_device().screen_read().map_err(|e| e.to_string())
+            self.0.igris_device().screen_read(screenshot).map_err(|e| e.to_string())
+        }
+        fn settings_page(&self, page: &str) -> Result<(), String> {
+            use tauri_plugin_igris_device::IgrisDeviceExt;
+            self.0.igris_device().screen_settings_page(page).map_err(|e| e.to_string())
         }
         fn tap(&self, index: Option<usize>, x: f32, y: f32, long: bool) -> Result<(), String> {
             use tauri_plugin_igris_device::IgrisDeviceExt;

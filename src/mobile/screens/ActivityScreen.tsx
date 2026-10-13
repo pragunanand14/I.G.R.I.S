@@ -23,20 +23,41 @@ export function ActivityScreen() {
   }, [ready]);
 
   return (
-    <Screen title="Activity" subtitle="Every action IGRIS has taken, and whether you approved it." back="/settings">
+    <Screen
+      title="Activity"
+      subtitle="Every action IGRIS has taken, and whether you approved it."
+      back="/settings"
+    >
       {error && <ErrorText>{error}</ErrorText>}
       {!ready ? (
         <p className="m-muted">Activity appears here once IGRIS is running.</p>
       ) : (
         <ul className="m-group" aria-label="Activity">
-          {items?.length === 0 && <li className="m-row m-muted">Nothing yet.</li>}
+          {items?.length === 0 && (
+            <li className="m-row m-muted">Nothing yet.</li>
+          )}
           {items?.map((e) => {
             const o = outcome(e);
-            const Icon = o.tone === "ok" ? CheckCircle2 : o.tone === "bad" ? XCircle : e.approval === "denied" ? CircleSlash : Clock;
-            const color = o.tone === "ok" ? "var(--m-ok)" : o.tone === "bad" ? "var(--m-bad)" : "var(--m-faint)";
+            const Icon =
+              o.tone === "ok"
+                ? CheckCircle2
+                : o.tone === "bad"
+                  ? XCircle
+                  : e.approval === "denied"
+                    ? CircleSlash
+                    : Clock;
+            const color =
+              o.tone === "ok"
+                ? "var(--m-ok)"
+                : o.tone === "bad"
+                  ? "var(--m-bad)"
+                  : "var(--m-faint)";
             return (
               <li key={e.id} className="m-row items-start">
-                <Icon className="mt-0.5 size-[18px] shrink-0" style={{ color }} />
+                <Icon
+                  className="mt-0.5 size-[18px] shrink-0"
+                  style={{ color }}
+                />
                 <div className="min-w-0 flex-1">
                   <p className="break-words">{e.description}</p>
                   <p className="m-faint mt-0.5 text-sm">

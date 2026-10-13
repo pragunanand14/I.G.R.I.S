@@ -1,4 +1,11 @@
-import { ArrowUp, CalendarCheck, MessagesSquare, Mic, Settings, Tv } from "lucide-react";
+import {
+  ArrowUp,
+  CalendarCheck,
+  MessagesSquare,
+  Mic,
+  Settings,
+  Tv,
+} from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { AiCore } from "@/components/core/AiCore";
@@ -23,7 +30,10 @@ export function HomeScreen() {
   const [entering] = useState(intro === "playing");
   const enter = (i: number, base: string) =>
     entering
-      ? { className: `${base} ${intro === "playing" ? "m-intro-wait" : "m-intro-in"}`, style: { animationDelay: `${i * 70}ms` } }
+      ? {
+          className: `${base} ${intro === "playing" ? "m-intro-wait" : "m-intro-in"}`,
+          style: { animationDelay: `${i * 70}ms` },
+        }
       : { className: base };
   const core = useCoreState();
   const userName = useSettingsStore((s) => s.settings.userName).trim();
@@ -46,7 +56,11 @@ export function HomeScreen() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
-        <div data-orb="home" className="m-home-orb" style={{ opacity: intro === "playing" ? 0 : 1 }}>
+        <div
+          data-orb="home"
+          className="m-home-orb"
+          style={{ opacity: intro === "playing" ? 0 : 1 }}
+        >
           <AiCore state={core} size="100%" />
         </div>
         <h1 {...enter(1, "mt-7 text-[26px] font-semibold tracking-tight")}>
@@ -65,18 +79,45 @@ export function HomeScreen() {
         </div>
       </div>
 
-      <div {...enter(3, "shrink-0 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))]")}>
+      <div
+        {...enter(
+          3,
+          "shrink-0 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))]",
+        )}
+      >
         <AskBar />
       </div>
     </div>
   );
 }
 
-function IconLink({ to, label, children, dot }: { to: string; label: string; children: ReactNode; dot?: boolean }) {
+function IconLink({
+  to,
+  label,
+  children,
+  dot,
+}: {
+  to: string;
+  label: string;
+  children: ReactNode;
+  dot?: boolean;
+}) {
   return (
-    <Link to={to} viewTransition={nav().viewTransition} className="m-icon-button relative" aria-label={label} title={label}>
+    <Link
+      to={to}
+      viewTransition={nav().viewTransition}
+      className="m-icon-button relative"
+      aria-label={label}
+      title={label}
+    >
       {children}
-      {dot && <span className="absolute top-2.5 right-2.5 size-2 rounded-full" style={{ background: "var(--m-accent)" }} aria-hidden="true" />}
+      {dot && (
+        <span
+          className="absolute top-2.5 right-2.5 size-2 rounded-full"
+          style={{ background: "var(--m-accent)" }}
+          aria-hidden="true"
+        />
+      )}
     </Link>
   );
 }
@@ -92,7 +133,15 @@ function TodayLink() {
       Promise.all([api.listReminders(), api.listTasks("open")])
         .then(([r, t]) => {
           const soon = Date.now() + 86400000;
-          if (live) setBusy(t.length > 0 || r.some((x) => x.status === "pending" && new Date(x.dueAt).getTime() < soon));
+          if (live)
+            setBusy(
+              t.length > 0 ||
+                r.some(
+                  (x) =>
+                    x.status === "pending" &&
+                    new Date(x.dueAt).getTime() < soon,
+                ),
+            );
         })
         .catch(() => undefined);
     void load();
@@ -115,19 +164,31 @@ function StatusLine() {
   const phase = useVoiceStore((s) => s.phase);
   if (!status.ready)
     return (
-      <div className="m-card m-pop mx-auto mt-3 max-w-sm px-4 py-3 text-left" role="status">
+      <div
+        className="m-card m-pop mx-auto mt-3 max-w-sm px-4 py-3 text-left"
+        role="status"
+      >
         <p className="flex items-center gap-2 font-medium">
           <Dot tone={status.tone} /> {status.title}
         </p>
         <p className="m-muted mt-1 text-sm break-words">{status.detail}</p>
         {status.needsSetup && (
-          <Link to="/settings/ai" viewTransition={nav().viewTransition} className="m-link mt-2 inline-flex min-h-9 items-center text-[15px]">
+          <Link
+            to="/settings/ai"
+            viewTransition={nav().viewTransition}
+            className="m-link mt-2 inline-flex min-h-9 items-center text-[15px]"
+          >
             How to set it up
           </Link>
         )}
       </div>
     );
-  const text = phase === "listening" ? "Listening… tap the mic when you're done" : phase === "transcribing" ? "Writing down what you said…" : status.title;
+  const text =
+    phase === "listening"
+      ? "Listening… tap the mic when you're done"
+      : phase === "transcribing"
+        ? "Writing down what you said…"
+        : status.title;
   return (
     <p key={text} className="m-muted m-fade-in text-[15px]" role="status">
       {text}
@@ -154,8 +215,16 @@ function AskBar() {
     setText("");
     void ask(t);
   };
-  const micLabel = listening ? "Stop listening" : phase === "transcribing" ? "Writing down what you said…" : can.ok ? "Talk to IGRIS" : (can.reason ?? "Voice isn't available");
-  const disabled = typing ? !status.ready : (!status.ready || !can.ok || phase === "transcribing") && !listening;
+  const micLabel = listening
+    ? "Stop listening"
+    : phase === "transcribing"
+      ? "Writing down what you said…"
+      : can.ok
+        ? "Talk to IGRIS"
+        : (can.reason ?? "Voice isn't available");
+  const disabled = typing
+    ? !status.ready
+    : (!status.ready || !can.ok || phase === "transcribing") && !listening;
 
   return (
     <form onSubmit={submit} className="m-ask">

@@ -14,6 +14,14 @@ pub trait Phone: Send + Sync {
     fn apps(&self) -> Result<Vec<PhoneApp>, String>;
     fn open(&self, package: &str) -> Result<(), String>;
     fn status(&self) -> Result<PhoneStatus, String>;
+    /// A photo from the camera app (JPEG base64); None if the user backed out. Blocks until they're done.
+    fn camera(&self) -> Result<Option<String>, String> {
+        Err("There's no camera here.".into())
+    }
+    /// A document scanned with Google's scanner; None if the user cancelled. Blocks until they're done.
+    fn scan(&self) -> Result<Option<tauri_plugin_igris_device::Scan>, String> {
+        Err("There's no document scanner here.".into())
+    }
 }
 
 pub type SharedPhone = Arc<dyn Phone>;

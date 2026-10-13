@@ -6,8 +6,16 @@ import { Screen } from "../ui";
 export function PermissionsScreen() {
   const ready = useAppStore((s) => s.backend) === "ready";
   return (
-    <Screen title="Always allowed" subtitle="IGRIS does these without asking. Remove one and it asks again next time." back="/settings">
-      {ready ? <AllowedActions phone /> : <p className="m-muted">This appears once IGRIS is running.</p>}
+    <Screen
+      title="Always allowed"
+      subtitle="IGRIS does these without asking. Remove one and it asks again next time."
+      back="/settings"
+    >
+      {ready ? (
+        <AllowedActions phone />
+      ) : (
+        <p className="m-muted">This appears once IGRIS is running.</p>
+      )}
     </Screen>
   );
 }

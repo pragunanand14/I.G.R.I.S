@@ -7,9 +7,9 @@ import android.os.Build
 import android.os.Bundle
 
 /**
- * Shows Google's own sign-in / consent sheet (a PendingIntent from Google Play services) and hands its
- * result back to the plugin. Invisible itself; it only exists because the sheet has to be started "for a
- * result" from an activity.
+ * Shows a screen from Google Play services — the sign-in / consent sheet (a PendingIntent) or the document
+ * scanner (an IntentSender) — and hands its result back to the plugin. Invisible itself; it only exists
+ * because those screens have to be started "for a result" from an activity.
  */
 class GoogleAuthActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,13 +22,19 @@ class GoogleAuthActivity : Activity() {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra(EXTRA_PENDING)
         }
-        if (pending == null) {
+        val sender: android.content.IntentSender? = pending?.intentSender ?: if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(EXTRA_SENDER, android.content.IntentSender::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(EXTRA_SENDER)
+        }
+        if (sender == null) {
             setResult(RESULT_CANCELED)
             finish()
             return
         }
         try {
-            startIntentSenderForResult(pending.intentSender, REQUEST, null, 0, 0, 0)
+            startIntentSenderForResult(sender, REQUEST, null, 0, 0, 0)
         } catch (e: Exception) {
             setResult(RESULT_CANCELED)
             finish()
@@ -45,6 +51,7 @@ class GoogleAuthActivity : Activity() {
 
     companion object {
         const val EXTRA_PENDING = "igris.google.pending"
+        const val EXTRA_SENDER = "igris.google.sender"
         private const val REQUEST = 7301
     }
 }

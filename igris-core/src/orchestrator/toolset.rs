@@ -92,11 +92,13 @@ pub fn capability(name: &str) -> Option<Capability> {
         "list_projects" | "get_project_context" => Projects,
         "list_directory" | "search_files" | "read_file" => FilesRead,
         "create_file" | "create_folder" | "write_file" | "move_path" | "copy_path" | "trash_path" | "tidy_downloads" => FileChanges,
-        "launch_application" | "close_application" | "open_url" | "open_path" | "open_phone_app" => Apps,
+        "launch_application" | "close_application" | "open_url" | "open_path" | "open_phone_app" | "pc_power" | "directions" | "book_ride" | "phone_camera" => {
+            Apps
+        }
         "run_command" => Terminal,
         "take_screenshot" | "read_phone_screen" => Screen,
         "phone_control_start" => Operator,
-        "phone_control_finish" | "phone_tap" | "phone_type" | "phone_swipe" | "phone_button" => OperatorSession,
+        "phone_control_finish" | "phone_tap" | "phone_type" | "phone_swipe" | "phone_button" | "phone_wait" | "phone_settings_page" => OperatorSession,
         "operator_start" => Operator,
         "operator_update" | "operator_finish" => OperatorSession,
         n if n.starts_with("computer_") || n.starts_with("browser_") => OperatorSession,

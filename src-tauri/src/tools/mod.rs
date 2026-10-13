@@ -12,14 +12,17 @@ pub mod computer;
 pub mod files;
 pub mod media;
 pub mod phone;
+pub mod phone_camera;
 pub mod phone_messages;
 pub mod phone_places;
 pub mod phone_screen;
+pub mod power;
 pub mod processes;
 pub mod screen;
 pub mod standard;
 pub mod system_info;
 pub mod terminal;
+pub mod travel;
 
 #[cfg(test)]
 mod tests {

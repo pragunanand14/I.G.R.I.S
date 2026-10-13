@@ -51,7 +51,7 @@ pub struct ScreenItem {
 }
 
 /// What's on the phone's screen: the app in front and its visible items.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenRead {
     pub package: String,
@@ -59,6 +59,16 @@ pub struct ScreenRead {
     pub width: i32,
     pub height: i32,
     pub items: Vec<ScreenItem>,
+    /// A JPEG of the screen (base64), when asked for and Android allows it.
+    #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub image_width: i32,
+    #[serde(default)]
+    pub image_height: i32,
+    /// Screen pixels per screenshot pixel (1 without a screenshot).
+    #[serde(default)]
+    pub scale: f32,
 }
 
 /// A message notification (one-time codes already hidden).
@@ -125,6 +135,15 @@ pub struct GoogleSetupInfo {
     pub package_name: String,
     /// The app's signing certificate, SHA-1, as Google shows it ("AB:CD:…").
     pub sha1: String,
+}
+
+/// A scanned document: where its PDF was saved and its first pages (JPEG, base64).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Scan {
+    pub saved: Option<String>,
+    pub page_count: u32,
+    pub pages: Vec<String>,
 }
 
 /// Where the phone is.

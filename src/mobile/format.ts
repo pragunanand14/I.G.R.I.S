@@ -4,8 +4,10 @@ export function whenText(iso: string, now: Date = new Date()): string {
   if (Number.isNaN(d.getTime())) return "";
   const mins = Math.round((d.getTime() - now.getTime()) / 60000);
   const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (mins >= 0 && mins < 60) return mins <= 1 ? "in a minute" : `in ${mins} min`;
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  if (mins >= 0 && mins < 60)
+    return mins <= 1 ? "in a minute" : `in ${mins} min`;
+  const day = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((day(d) - day(now)) / 86400000);
   if (days === 0) return `today at ${time}`;
   if (days === 1) return `tomorrow at ${time}`;

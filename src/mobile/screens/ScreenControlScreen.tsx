@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
-import { Dot, ErrorText, Group, Screen, Section } from "../ui";
+import { Dot, ErrorText, Group, Screen, Section, Switch } from "../ui";
 import { RestrictedHelp } from "../RestrictedHelp";
 
 /**
@@ -13,6 +13,15 @@ export function ScreenControlScreen() {
   const ready = useAppStore((s) => s.backend) === "ready";
   const [on, setOn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [askRisky, setAskRisky] = useState(false);
+
+  useEffect(() => {
+    if (!ready) return;
+    api
+      .phoneScreenAskRisky()
+      .then(setAskRisky)
+      .catch(() => undefined);
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -53,6 +62,21 @@ export function ScreenControlScreen() {
       </Group>
       {error && <ErrorText>{error}</ErrorText>}
 
+      <Group>
+        <Switch
+          label="Ask before sending or deleting"
+          description="Off: once you approve a task, IGRIS does it all the way through. On: it also checks with you before it sends, deletes or posts something."
+          checked={askRisky}
+          disabled={!ready}
+          onChange={(v) =>
+            api
+              .phoneSetScreenAskRisky(v)
+              .then(setAskRisky)
+              .catch((err) => setError(BackendError.from(err).message))
+          }
+        />
+      </Group>
+
       <Section title="What it does">
         <ul className="m-muted list-disc space-y-1.5 pl-6 text-[15px]">
           <li>
@@ -60,15 +84,18 @@ export function ScreenControlScreen() {
             the app in front.
           </li>
           <li>
-            “Turn on dark mode”, “reply to Mom saying I&apos;ll be late” — IGRIS
-            asks you first, then taps, types and swipes.
+            “Find Amul milk on Blinkit and add it to the cart”, “turn on dark
+            mode” — you approve the task once, then IGRIS taps, types, scrolls,
+            allows what the app asks for, turns on location and retries until
+            it&apos;s done.
           </li>
           <li>
             A <b>Stop</b> pill stays at the top while it works. Tap it any time.
           </li>
           <li>
-            Sending, paying, deleting and similar always ask you again. Password
-            fields are never read or typed.
+            <b>IGRIS never pays.</b> It stops at the payment step and leaves it
+            to you; payment and banking apps are off limits. Passwords, PINs,
+            card details and one-time codes are never read or typed.
           </li>
           <li>
             What&apos;s on screen goes to your AI provider while IGRIS works,

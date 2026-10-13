@@ -85,6 +85,14 @@ export const api = {
   phoneMessagesAccess: () => call<boolean>("phone_messages_access"),
   phoneMessagesSettings: () => call<void>("phone_messages_settings"),
   phoneMessagesAllApps: () => call<boolean>("phone_messages_all_apps"),
+  phoneScreenAskRisky: () => call<boolean>("phone_screen_ask_risky"),
+  /** Ask Android to add the IGRIS Quick Settings tile. */
+  phoneAddQuickTile: () =>
+    call<"added" | "already" | "not_added" | "unsupported">(
+      "phone_add_quick_tile",
+    ),
+  phoneSetScreenAskRisky: (on: boolean) =>
+    call<boolean>("phone_set_screen_ask_risky", { on }),
   phoneSetMessagesAllApps: (on: boolean) =>
     call<boolean>("phone_set_messages_all_apps", { on }),
   /** A named UI moment for IGRIS's log (no user content). */

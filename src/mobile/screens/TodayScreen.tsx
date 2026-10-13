@@ -1,4 +1,12 @@
-import { Bell, CalendarDays, Check, Circle, Timer, Trash2, X } from "lucide-react";
+import {
+  Bell,
+  CalendarDays,
+  Check,
+  Circle,
+  Timer,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTimePreview } from "@/hooks/useTimePreview";
 import { api } from "@/services/api";
@@ -18,8 +26,18 @@ async function fetchDay(): Promise<Day> {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const end = new Date(start.getTime() + 86400000);
-  const [reminders, tasks, events] = await Promise.all([api.listReminders(), api.listTasks("open"), api.listEvents(start.toISOString(), end.toISOString())]);
-  return { reminders: reminders.filter((r) => r.status === "pending").sort((a, b) => a.dueAt.localeCompare(b.dueAt)), tasks, events };
+  const [reminders, tasks, events] = await Promise.all([
+    api.listReminders(),
+    api.listTasks("open"),
+    api.listEvents(start.toISOString(), end.toISOString()),
+  ]);
+  return {
+    reminders: reminders
+      .filter((r) => r.status === "pending")
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
+    tasks,
+    events,
+  };
 }
 
 /** Reminders, timers, to-dos and today's events in one list. */
@@ -64,9 +82,19 @@ export function TodayScreen() {
   };
 
   return (
-    <Screen title="Today" back="/" subtitle={new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}>
+    <Screen
+      title="Today"
+      back="/"
+      subtitle={new Date().toLocaleDateString([], {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      })}
+    >
       {backend !== "ready" ? (
-        <p className="m-muted">Your reminders and to-dos appear here once IGRIS is running.</p>
+        <p className="m-muted">
+          Your reminders and to-dos appear here once IGRIS is running.
+        </p>
       ) : (
         <>
           <AddBox onAdded={load} onError={setError} />
@@ -74,15 +102,28 @@ export function TodayScreen() {
 
           <Section title="Reminders">
             <Group>
-              {day?.reminders.length === 0 && <p className="m-row m-muted">Nothing scheduled.</p>}
+              {day?.reminders.length === 0 && (
+                <p className="m-row m-muted">Nothing scheduled.</p>
+              )}
               {day?.reminders.map((r) => (
                 <div key={r.id} className="m-row">
-                  <span className="m-muted shrink-0">{r.kind === "timer" ? <Timer className="size-[18px]" /> : <Bell className="size-[18px]" />}</span>
+                  <span className="m-muted shrink-0">
+                    {r.kind === "timer" ? (
+                      <Timer className="size-[18px]" />
+                    ) : (
+                      <Bell className="size-[18px]" />
+                    )}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{r.title}</div>
                     <div className="m-muted text-sm">{whenText(r.dueAt)}</div>
                   </div>
-                  <button type="button" className="m-icon-button -mr-2" aria-label={`Cancel ${r.title}`} onClick={() => void act(() => api.cancelReminder(r.id))}>
+                  <button
+                    type="button"
+                    className="m-icon-button -mr-2"
+                    aria-label={`Cancel ${r.title}`}
+                    onClick={() => void act(() => api.cancelReminder(r.id))}
+                  >
                     <X className="m-faint size-[18px]" />
                   </button>
                 </div>
@@ -92,7 +133,9 @@ export function TodayScreen() {
 
           <Section title="To-do">
             <Group>
-              {day?.tasks.length === 0 && <p className="m-row m-muted">Your list is empty.</p>}
+              {day?.tasks.length === 0 && (
+                <p className="m-row m-muted">Your list is empty.</p>
+              )}
               {day?.tasks.map((t) => (
                 <div key={t.id} className="m-row">
                   <button
@@ -105,9 +148,18 @@ export function TodayScreen() {
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{t.title}</div>
-                    {t.dueAt && <div className="m-muted text-sm">Due {whenText(t.dueAt)}</div>}
+                    {t.dueAt && (
+                      <div className="m-muted text-sm">
+                        Due {whenText(t.dueAt)}
+                      </div>
+                    )}
                   </div>
-                  <button type="button" className="m-icon-button -mr-2" aria-label={`Delete ${t.title}`} onClick={() => void act(() => api.deleteTask(t.id))}>
+                  <button
+                    type="button"
+                    className="m-icon-button -mr-2"
+                    aria-label={`Delete ${t.title}`}
+                    onClick={() => void act(() => api.deleteTask(t.id))}
+                  >
                     <Trash2 className="m-faint size-[18px]" />
                   </button>
                 </div>
@@ -136,7 +188,13 @@ export function TodayScreen() {
 }
 
 /** One box: what, and optionally when. A reminder needs a time; a to-do doesn't. */
-function AddBox({ onAdded, onError }: { onAdded: () => Promise<void>; onError: (m: string | null) => void }) {
+function AddBox({
+  onAdded,
+  onError,
+}: {
+  onAdded: () => Promise<void>;
+  onError: (m: string | null) => void;
+}) {
   const [what, setWhat] = useState("");
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
@@ -149,7 +207,13 @@ function AddBox({ onAdded, onError }: { onAdded: () => Promise<void>; onError: (
     onError(null);
     try {
       if (kind === "reminder") await api.addReminder(title, when.trim());
-      else await api.addTask({ title, notes: "", dueAt: preview.state === "ok" ? preview.parsed.at : "", priority: "normal" });
+      else
+        await api.addTask({
+          title,
+          notes: "",
+          dueAt: preview.state === "ok" ? preview.parsed.at : "",
+          priority: "normal",
+        });
       setWhat("");
       setWhen("");
       await onAdded();
@@ -169,27 +233,52 @@ function AddBox({ onAdded, onError }: { onAdded: () => Promise<void>; onError: (
     <form onSubmit={submit} className="space-y-3">
       <div className="m-group">
         <div className="m-row py-0">
-          <input className="m-field" value={what} onChange={(e) => setWhat(e.target.value)} placeholder="Add a reminder or to-do" aria-label="What" />
+          <input
+            className="m-field"
+            value={what}
+            onChange={(e) => setWhat(e.target.value)}
+            placeholder="Add a reminder or to-do"
+            aria-label="What"
+          />
         </div>
         <div className="m-row py-0">
-          <input className="m-field" value={when} onChange={(e) => setWhen(e.target.value)} placeholder="When? e.g. in 20 min, 6pm" aria-label="When" />
+          <input
+            className="m-field"
+            value={when}
+            onChange={(e) => setWhen(e.target.value)}
+            placeholder="When? e.g. in 20 min, 6pm"
+            aria-label="When"
+          />
         </div>
       </div>
       <p className="m-muted min-h-5 px-1 text-sm" aria-live="polite">
         {preview.state === "ok" && (
           <span className="inline-flex items-center gap-1">
-            <Check className="size-4" style={{ color: "var(--m-ok)" }} /> {preview.parsed.description}
+            <Check className="size-4" style={{ color: "var(--m-ok)" }} />{" "}
+            {preview.parsed.description}
           </span>
         )}
-        {preview.state === "error" && <span style={{ color: "var(--m-warn)" }}>{preview.message}</span>}
+        {preview.state === "error" && (
+          <span style={{ color: "var(--m-warn)" }}>{preview.message}</span>
+        )}
         {preview.state === "empty" && "No time? It goes on your to-do list."}
       </p>
       {what.trim() && (
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" className="m-button m-button-primary" disabled={busy || preview.state !== "ok"} onClick={() => void run("reminder")}>
+          <button
+            type="button"
+            className="m-button m-button-primary"
+            disabled={busy || preview.state !== "ok"}
+            onClick={() => void run("reminder")}
+          >
             Remind me
           </button>
-          <button type="button" className="m-button" disabled={busy} onClick={() => void run("todo")}>
+          <button
+            type="button"
+            className="m-button"
+            disabled={busy}
+            onClick={() => void run("todo")}
+          >
             Add to-do
           </button>
         </div>
