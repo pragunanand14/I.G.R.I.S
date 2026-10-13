@@ -3,6 +3,7 @@ import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
 import { Dot, ErrorText, Group, Screen, Section, Switch } from "../ui";
+import { RestrictedHelp } from "../RestrictedHelp";
 
 /**
  * Settings → Messages: let IGRIS read message notifications (summaries,
@@ -38,11 +39,16 @@ export function MessagesScreen() {
       .catch((err) => setError(BackendError.from(err).message));
 
   return (
-    <Screen title="Messages" subtitle="Let IGRIS catch you up on messages and reply for you." back="/settings">
+    <Screen
+      title="Messages"
+      subtitle="Let IGRIS catch you up on messages and reply for you."
+      back="/settings"
+    >
       <Group>
         <div className="m-row">
           <span className="flex flex-1 items-center gap-2 text-[15px]">
-            <Dot tone={on ? "ok" : "warn"} /> {on === null ? "Checking…" : on ? "On" : "Off"}
+            <Dot tone={on ? "ok" : "warn"} />{" "}
+            {on === null ? "Checking…" : on ? "On" : "Off"}
           </span>
           <button type="button" className="m-chip" onClick={open}>
             {on ? "Turn off" : "Turn on"}
@@ -65,11 +71,25 @@ export function MessagesScreen() {
 
       <Section title="What it does">
         <ul className="m-muted list-disc space-y-1.5 pl-6 text-[15px]">
-          <li>“Any messages?” — a quick summary: who wrote, and what they need.</li>
-          <li>“Reply to Mom that I’ll be there at 8” — through WhatsApp/SMS’s own reply. You confirm every reply.</li>
-          <li>“Text Dad I’m running late” — opens the chat with the message typed in. “Call Dad” — asks first, then calls.</li>
-          <li>One-time codes (OTPs) are hidden before IGRIS sees them. Messages are kept on the phone for a day, in memory only.</li>
-          <li>The messages IGRIS reads go to your AI provider so it can summarise them.</li>
+          <li>
+            “Any messages?” — a quick summary: who wrote, and what they need.
+          </li>
+          <li>
+            “Reply to Mom that I’ll be there at 8” — through WhatsApp/SMS’s own
+            reply. You confirm every reply.
+          </li>
+          <li>
+            “Text Dad I’m running late” — opens the chat with the message typed
+            in. “Call Dad” — asks first, then calls.
+          </li>
+          <li>
+            One-time codes (OTPs) are hidden before IGRIS sees them. Messages
+            are kept on the phone for a day, in memory only.
+          </li>
+          <li>
+            The messages IGRIS reads go to your AI provider so it can summarise
+            them.
+          </li>
         </ul>
       </Section>
 
@@ -79,11 +99,11 @@ export function MessagesScreen() {
             <li>
               Tap <b>Turn on</b> above → find <b>IGRIS messages</b> → allow.
             </li>
+            <RestrictedHelp setting="IGRIS messages" />
             <li>
-              If Android says it&apos;s a <b>restricted setting</b>: Settings → Apps → IGRIS → ⋮ (top right) → <b>Allow restricted settings</b>, then try
-              again.
+              The first time you ask IGRIS to text or call someone by name,
+              Android asks to let it see your contacts / make calls.
             </li>
-            <li>The first time you ask IGRIS to text or call someone by name, Android asks to let it see your contacts / make calls.</li>
           </ol>
         </Section>
       )}

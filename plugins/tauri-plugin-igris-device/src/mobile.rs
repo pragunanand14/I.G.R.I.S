@@ -278,6 +278,7 @@ impl<R: Runtime> Device<R> {
             "overlay" => "openOverlaySettings",
             "battery" => "openBatterySettings",
             "assistant" => "openAssistantSettings",
+            "app_info" => "openAppInfo",
             _ => return Err(Error::Unsupported),
         };
         self.0.run_mobile_plugin::<Empty>(cmd, ()).map(|_| ()).map_err(failed)

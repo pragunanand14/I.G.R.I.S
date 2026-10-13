@@ -12,18 +12,34 @@ interface Props {
 }
 
 /** Assistant text with tool calls shown where they happened. */
-export function AssistantBody({ text, activities, onAnswer, streaming }: Props) {
+export function AssistantBody({
+  text,
+  activities,
+  onAnswer,
+  streaming,
+}: Props) {
   const parts = interleave(text, activities);
   const lastText = parts.map((p) => p.kind).lastIndexOf("text");
   return (
     <div className="space-y-2">
       {parts.map((p, i) =>
         p.kind === "text" ? (
-          <div key={i} className={streaming && i === lastText && i === parts.length - 1 ? "stream-caret" : undefined}>
+          <div
+            key={i}
+            className={
+              streaming && i === lastText && i === parts.length - 1
+                ? "stream-caret"
+                : undefined
+            }
+          >
             <Markdown text={p.text} />
           </div>
         ) : (
-          <ToolActivityList key={i} activities={p.activities} onAnswer={onAnswer} />
+          <ToolActivityList
+            key={i}
+            activities={p.activities}
+            onAnswer={onAnswer}
+          />
         ),
       )}
     </div>

@@ -1,8 +1,25 @@
-import { Check, Circle, CircleDot, ListChecks, Loader2, Pause, Play, RotateCcw, Square, TriangleAlert, X } from "lucide-react";
+import {
+  Check,
+  Circle,
+  CircleDot,
+  ListChecks,
+  Loader2,
+  Pause,
+  Play,
+  RotateCcw,
+  Square,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { api } from "@/services/api";
 import { latestTask, useTaskStore } from "@/stores/taskStore";
-import { FINAL_STATES, type StepStatus, type TaskEventRow, type TaskInfo } from "@/types/task";
+import {
+  FINAL_STATES,
+  type StepStatus,
+  type TaskEventRow,
+  type TaskInfo,
+} from "@/types/task";
 
 function stateLabel(t: TaskInfo): string {
   switch (t.state) {
@@ -14,7 +31,11 @@ function stateLabel(t: TaskInfo): string {
     case "executing":
       return "Working";
     case "paused":
-      return t.live ? "Paused" : t.context.interrupted ? "Interrupted" : "Paused";
+      return t.live
+        ? "Paused"
+        : t.context.interrupted
+          ? "Interrupted"
+          : "Paused";
     case "verifying":
       return "Checking the result";
     case "recovering":
@@ -71,13 +92,23 @@ function Activity({ taskId }: { taskId: string }) {
   const shown = (events ?? []).filter((e) => e.kind in EVENT_TEXT).slice(-12);
   return (
     <div className="mt-1.5">
-      <button type="button" className="text-[11px] text-faint underline-offset-2 hover:text-fg hover:underline" onClick={toggle} aria-expanded={open}>
+      <button
+        type="button"
+        className="text-[11px] text-faint underline-offset-2 hover:text-fg hover:underline"
+        onClick={toggle}
+        aria-expanded={open}
+      >
         {open ? "Hide what happened" : "What happened"}
       </button>
       {open && (
-        <ul className="mt-1 space-y-0.5 font-mono text-[10.5px] text-muted" aria-label="Task activity">
+        <ul
+          className="mt-1 space-y-0.5 font-mono text-[10.5px] text-muted"
+          aria-label="Task activity"
+        >
           {events === null && <li>Loading…</li>}
-          {events !== null && shown.length === 0 && <li>No recorded activity.</li>}
+          {events !== null && shown.length === 0 && (
+            <li>No recorded activity.</li>
+          )}
           {shown.map((e, i) => (
             <li key={i} className="truncate" title={e.detail ?? undefined}>
               {EVENT_TEXT[e.kind]}
@@ -110,22 +141,54 @@ export function TaskCard({ conversationId, onResume, busy }: Props) {
   if (!t) return null;
 
   const final = FINAL_STATES.includes(t.state);
-  const waitingForUser = !t.live && (t.state === "paused" || t.state === "failed");
+  const waitingForUser =
+    !t.live && (t.state === "paused" || t.state === "failed");
   const step = t.currentStep !== null ? t.plan[t.currentStep] : undefined;
-  const tone = t.state === "failed" ? "border-danger/30" : t.state === "completed" ? "border-success/30" : "border-line";
-  const btn = "flex items-center gap-1.5 rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover disabled:opacity-50";
+  const tone =
+    t.state === "failed"
+      ? "border-danger/30"
+      : t.state === "completed"
+        ? "border-success/30"
+        : "border-line";
+  const btn =
+    "flex items-center gap-1.5 rounded-full bg-surface-strong px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-hover disabled:opacity-50";
 
   return (
-    <div role="status" aria-label="Task" data-testid="task-card" className={`mb-2 rounded-xl border ${tone} bg-surface/70 px-3.5 py-2.5 text-sm`}>
+    <div
+      role="status"
+      aria-label="Task"
+      data-testid="task-card"
+      className={`mb-2 rounded-xl border ${tone} bg-surface/70 px-3.5 py-2.5 text-sm`}
+    >
       <div className="flex items-center gap-2">
-        {t.live && !final && t.state !== "paused" ? <Loader2 className="size-3.5 animate-spin text-accent" /> : <ListChecks className="size-3.5 text-muted" />}
-        <span className="font-mono text-[11px] uppercase tracking-wider text-muted">{stateLabel(t)}</span>
-        {t.project && <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-faint">{t.project.name}</span>}
+        {t.live && !final && t.state !== "paused" ? (
+          <Loader2 className="size-3.5 animate-spin text-accent" />
+        ) : (
+          <ListChecks className="size-3.5 text-muted" />
+        )}
+        <span className="font-mono text-[11px] uppercase tracking-wider text-muted">
+          {stateLabel(t)}
+        </span>
+        {t.project && (
+          <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-faint">
+            {t.project.name}
+          </span>
+        )}
         <span className="min-w-0 flex-1" />
         {t.live && !final && (
           <>
-            <button type="button" className={btn} onClick={() => void control(t.id, t.state === "paused" ? "resume" : "pause")}>
-              {t.state === "paused" ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+            <button
+              type="button"
+              className={btn}
+              onClick={() =>
+                void control(t.id, t.state === "paused" ? "resume" : "pause")
+              }
+            >
+              {t.state === "paused" ? (
+                <Play className="size-3.5" />
+              ) : (
+                <Pause className="size-3.5" />
+              )}
               {t.state === "paused" ? "Resume" : "Pause"}
             </button>
             <button
@@ -139,19 +202,37 @@ export function TaskCard({ conversationId, onResume, busy }: Props) {
         )}
         {waitingForUser && t.conversationId && (
           <>
-            <button type="button" className={btn} disabled={busy} onClick={() => onResume(t.id, t.conversationId!)}>
-              {t.state === "failed" ? <RotateCcw className="size-3.5" /> : <Play className="size-3.5" />}
+            <button
+              type="button"
+              className={btn}
+              disabled={busy}
+              onClick={() => onResume(t.id, t.conversationId!)}
+            >
+              {t.state === "failed" ? (
+                <RotateCcw className="size-3.5" />
+              ) : (
+                <Play className="size-3.5" />
+              )}
               {t.state === "failed" ? "Try again" : "Resume"}
             </button>
             {t.state === "paused" && (
-              <button type="button" className={btn} onClick={() => void control(t.id, "stop")}>
+              <button
+                type="button"
+                className={btn}
+                onClick={() => void control(t.id, "stop")}
+              >
                 Dismiss
               </button>
             )}
           </>
         )}
         {final && (
-          <button type="button" aria-label="Close" className="text-faint hover:text-fg" onClick={() => hide(t.id)}>
+          <button
+            type="button"
+            aria-label="Close"
+            className="text-faint hover:text-fg"
+            onClick={() => hide(t.id)}
+          >
             <X className="size-3.5" />
           </button>
         )}
@@ -167,19 +248,47 @@ export function TaskCard({ conversationId, onResume, busy }: Props) {
       {t.plan.length > 1 && (
         <ol className="mt-1.5 space-y-0.5" aria-label="Plan">
           {t.plan.map((s, i) => (
-            <li key={i} className="flex items-center gap-1.5 text-xs text-muted">
+            <li
+              key={i}
+              className="flex items-center gap-1.5 text-xs text-muted"
+            >
               {STEP_ICON[s.status]}
-              <span className={s.status === "completed" || s.status === "skipped" ? "line-through opacity-70" : ""}>{s.title}</span>
+              <span
+                className={
+                  s.status === "completed" || s.status === "skipped"
+                    ? "line-through opacity-70"
+                    : ""
+                }
+              >
+                {s.title}
+              </span>
             </li>
           ))}
         </ol>
       )}
-      {t.live && t.activity && !final && <p className="mt-1 truncate font-mono text-[11px] text-faint">{t.activity}</p>}
-      {t.pauseReason && t.state === "paused" && <p className="mt-1 text-xs text-warning">{t.pauseReason}</p>}
-      {t.failures > 0 && !final && <p className="mt-1 text-xs text-warning">{t.failures === 1 ? "1 step failed" : `${t.failures} steps failed`} so far</p>}
+      {t.live && t.activity && !final && (
+        <p className="mt-1 truncate font-mono text-[11px] text-faint">
+          {t.activity}
+        </p>
+      )}
+      {t.pauseReason && t.state === "paused" && (
+        <p className="mt-1 text-xs text-warning">{t.pauseReason}</p>
+      )}
+      {t.failures > 0 && !final && (
+        <p className="mt-1 text-xs text-warning">
+          {t.failures === 1 ? "1 step failed" : `${t.failures} steps failed`} so
+          far
+        </p>
+      )}
       {error && <p className="mt-1 text-xs text-danger">{error}</p>}
       {!t.live && <Activity taskId={t.id} />}
-      {final && (t.error ?? t.result) && <p className={`mt-1 text-xs ${t.state === "failed" ? "text-danger" : "text-muted"}`}>{t.error ?? t.result}</p>}
+      {final && (t.error ?? t.result) && (
+        <p
+          className={`mt-1 text-xs ${t.state === "failed" ? "text-danger" : "text-muted"}`}
+        >
+          {t.error ?? t.result}
+        </p>
+      )}
     </div>
   );
 }

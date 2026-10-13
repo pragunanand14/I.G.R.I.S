@@ -1,4 +1,12 @@
-import { Ban, Check, CircleSlash, Loader2, ShieldQuestion, TriangleAlert, X } from "lucide-react";
+import {
+  Ban,
+  Check,
+  CircleSlash,
+  Loader2,
+  ShieldQuestion,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
 import { StoredImage } from "@/components/attachments/AttachmentView";
 import { SourceLinks } from "./SourceLinks";
@@ -39,13 +47,22 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
     <ul className="space-y-1.5" aria-label="Tool activity">
       {activities.map((a) =>
         a.status === "awaitingApproval" && onAnswer ? (
-          <li key={a.id} className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5" role="alertdialog" aria-label={`Approve: ${a.description}`}>
+          <li
+            key={a.id}
+            className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5"
+            role="alertdialog"
+            aria-label={`Approve: ${a.description}`}
+          >
             <div className="flex items-center gap-2 text-sm text-fg">
               <ShieldQuestion className="size-4 shrink-0 text-warning" />
-              <span className="min-w-0 flex-1 font-medium">{a.description}</span>
+              <span className="min-w-0 flex-1 font-medium">
+                {a.description}
+              </span>
               {a.permission && <PermissionBadge level={a.permission} />}
             </div>
-            <p className="mt-1 pl-6 text-xs text-muted">IGRIS wants to do this. Nothing happens unless you allow it.</p>
+            <p className="mt-1 pl-6 text-xs text-muted">
+              IGRIS wants to do this. Nothing happens unless you allow it.
+            </p>
             <div className="mt-2 flex flex-wrap gap-2 pl-6">
               <button
                 type="button"
@@ -72,27 +89,51 @@ export function ToolActivityList({ activities, onAnswer }: Props) {
                 Deny
               </button>
             </div>
-            {a.allowRule && <p className="mt-1.5 pl-6 text-[11px] text-faint">“Always allow” covers: {a.allowRule.label}</p>}
+            {a.allowRule && (
+              <p className="mt-1.5 pl-6 text-[11px] text-faint">
+                “Always allow” covers: {a.allowRule.label}
+              </p>
+            )}
           </li>
         ) : (
-          <li key={a.id} className="rounded-xl bg-surface-strong px-3 py-1.5 text-xs">
+          <li
+            key={a.id}
+            className="rounded-xl bg-surface-strong px-3 py-1.5 text-xs"
+          >
             <div className="flex items-center gap-2">
-            {ICONS[a.status]}
-            <span className="min-w-0 truncate text-fg" title={a.tool}>
-              {a.description}
-            </span>
-            {(a.result || STATUS_TEXT[a.status]) && (
-              <span className={`min-w-0 flex-1 truncate ${a.status === "completed" ? "text-muted" : "text-faint"}`} title={a.result ?? undefined}>
-                — {a.status === "completed" ? a.result : (a.result ?? STATUS_TEXT[a.status])}
+              {ICONS[a.status]}
+              <span className="min-w-0 truncate text-fg" title={a.tool}>
+                {a.description}
               </span>
-            )}
-            {a.durationMs != null && <span className="ml-auto shrink-0 font-mono text-[10px] text-faint">{a.durationMs} ms</span>}
+              {(a.result || STATUS_TEXT[a.status]) && (
+                <span
+                  className={`min-w-0 flex-1 truncate ${a.status === "completed" ? "text-muted" : "text-faint"}`}
+                  title={a.result ?? undefined}
+                >
+                  —{" "}
+                  {a.status === "completed"
+                    ? a.result
+                    : (a.result ?? STATUS_TEXT[a.status])}
+                </span>
+              )}
+              {a.durationMs != null && (
+                <span className="ml-auto shrink-0 font-mono text-[10px] text-faint">
+                  {a.durationMs} ms
+                </span>
+              )}
             </div>
-            {a.sources && a.sources.length > 0 && <SourceLinks sources={a.sources} />}
+            {a.sources && a.sources.length > 0 && (
+              <SourceLinks sources={a.sources} />
+            )}
             {a.attachments && a.attachments.length > 0 && (
               <div className="mt-1.5 flex flex-wrap gap-2">
                 {a.attachments.map((id) => (
-                  <StoredImage key={id} id={id} name="Screenshot" className="h-20" />
+                  <StoredImage
+                    key={id}
+                    id={id}
+                    name="Screenshot"
+                    className="h-20"
+                  />
                 ))}
               </div>
             )}

@@ -19,7 +19,9 @@ describe("ToolActivityList", () => {
   it("asks for approval with allow and deny", async () => {
     const onAnswer = vi.fn();
     render(<ToolActivityList activities={[base]} onAnswer={onAnswer} />);
-    expect(screen.getByRole("alertdialog", { name: "Approve: Open VS Code" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("alertdialog", { name: "Approve: Open VS Code" }),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Deny" }));
     expect(onAnswer).toHaveBeenCalledWith("t1", false);
     await userEvent.click(screen.getByRole("button", { name: "Allow" }));
@@ -28,9 +30,18 @@ describe("ToolActivityList", () => {
 
   it("offers Always allow only when the backend offered a rule, and says what it covers", async () => {
     const onAnswer = vi.fn();
-    const { rerender } = render(<ToolActivityList activities={[base]} onAnswer={onAnswer} />);
+    const { rerender } = render(
+      <ToolActivityList activities={[base]} onAnswer={onAnswer} />,
+    );
     expect(screen.queryByRole("button", { name: "Always allow" })).toBeNull();
-    rerender(<ToolActivityList activities={[{ ...base, allowRule: { scope: "spotify", label: "Close Spotify" } }]} onAnswer={onAnswer} />);
+    rerender(
+      <ToolActivityList
+        activities={[
+          { ...base, allowRule: { scope: "spotify", label: "Close Spotify" } },
+        ]}
+        onAnswer={onAnswer}
+      />,
+    );
     expect(screen.getByText(/covers: Close Spotify/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Always allow" }));
     expect(onAnswer).toHaveBeenCalledWith("t1", true, true);
@@ -51,7 +62,10 @@ describe("ToolActivityList", () => {
             description: 'Search the web for "rust"',
             status: "completed",
             result: "5 results",
-            sources: [1, 2, 3, 4, 5].map((i) => ({ title: `Result ${i}`, url: `https://www.site${i}.example/p` })),
+            sources: [1, 2, 3, 4, 5].map((i) => ({
+              title: `Result ${i}`,
+              url: `https://www.site${i}.example/p`,
+            })),
           },
         ]}
       />,
@@ -67,8 +81,21 @@ describe("ToolActivityList", () => {
     render(
       <ToolActivityList
         activities={[
-          { ...base, id: "a", tool: "calculator", description: "Calculate 6*7", status: "completed", result: "= 42", durationMs: 2 },
-          { ...base, id: "b", status: "failed", result: "VS Code started but exited immediately (exit code 1)." },
+          {
+            ...base,
+            id: "a",
+            tool: "calculator",
+            description: "Calculate 6*7",
+            status: "completed",
+            result: "= 42",
+            durationMs: 2,
+          },
+          {
+            ...base,
+            id: "b",
+            status: "failed",
+            result: "VS Code started but exited immediately (exit code 1).",
+          },
           { ...base, id: "c", status: "denied", result: "Denied" },
         ]}
       />,

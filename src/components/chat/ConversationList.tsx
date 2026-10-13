@@ -13,7 +13,10 @@ function relative(iso: string): string {
   if (h < 24) return `${h}h`;
   const d = Math.round(h / 24);
   if (d < 7) return `${d}d`;
-  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 interface Props {
@@ -27,15 +30,21 @@ interface Props {
   onClose?: () => void;
 }
 
-export function ConversationList({ conversations, activeId, busyId, onSelect, onRename, onDelete, onClose }: Props) {
+export function ConversationList({
+  conversations,
+  activeId,
+  busyId,
+  onSelect,
+  onRename,
+  onDelete,
+  onClose,
+}: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   return (
-    <aside
-      className="flex h-full w-full flex-col border-r border-line bg-elevated"
-    >
+    <aside className="flex h-full w-full flex-col border-r border-line bg-elevated">
       <div className="flex items-center gap-2 p-3">
         <button
           type="button"
@@ -46,14 +55,26 @@ export function ConversationList({ conversations, activeId, busyId, onSelect, on
           New conversation
         </button>
         {onClose && (
-          <button type="button" onClick={onClose} aria-label="Close history" className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-hover hover:text-fg">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close history"
+            className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-hover hover:text-fg"
+          >
             <X className="size-4" />
           </button>
         )}
       </div>
       <p className="text-label px-4 pt-1 pb-2">History</p>
-      <ul className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3" aria-label="Conversations">
-        {conversations.length === 0 && <li className="px-3 py-2 text-xs text-faint">No conversations yet.</li>}
+      <ul
+        className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3"
+        aria-label="Conversations"
+      >
+        {conversations.length === 0 && (
+          <li className="px-3 py-2 text-xs text-faint">
+            No conversations yet.
+          </li>
+        )}
         {conversations.map((c) => {
           const active = c.id === activeId;
           if (editingId === c.id) {
@@ -75,10 +96,19 @@ export function ConversationList({ conversations, activeId, busyId, onSelect, on
                     aria-label="Conversation title"
                     className="min-w-0 flex-1 bg-transparent text-sm text-fg focus:outline-none"
                   />
-                  <button type="submit" aria-label="Save title" className="text-muted hover:text-fg">
+                  <button
+                    type="submit"
+                    aria-label="Save title"
+                    className="text-muted hover:text-fg"
+                  >
                     <Check className="size-3.5" />
                   </button>
-                  <button type="button" aria-label="Cancel rename" onClick={() => setEditingId(null)} className="text-muted hover:text-fg">
+                  <button
+                    type="button"
+                    aria-label="Cancel rename"
+                    onClick={() => setEditingId(null)}
+                    className="text-muted hover:text-fg"
+                  >
                     <X className="size-3.5" />
                   </button>
                 </form>
@@ -92,14 +122,21 @@ export function ConversationList({ conversations, activeId, busyId, onSelect, on
                 onClick={() => onSelect(c.id)}
                 aria-current={active ? "page" : undefined}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                  active ? "bg-surface-strong text-fg" : "text-muted hover:bg-surface-hover hover:text-fg"
+                  active
+                    ? "bg-surface-strong text-fg"
+                    : "text-muted hover:bg-surface-hover hover:text-fg"
                 }`}
               >
                 <span className="min-w-0 flex-1 truncate">{c.title}</span>
                 {busyId === c.id ? (
-                  <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent" aria-label="Responding" />
+                  <span
+                    className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent"
+                    aria-label="Responding"
+                  />
                 ) : (
-                  <span className="shrink-0 text-[10px] text-faint group-hover:invisible">{relative(c.updatedAt)}</span>
+                  <span className="shrink-0 text-[10px] text-faint group-hover:invisible">
+                    {relative(c.updatedAt)}
+                  </span>
                 )}
               </button>
               <div className="absolute top-1/2 right-1.5 hidden -translate-y-1/2 items-center gap-0.5 rounded-md bg-elevated group-hover:flex">

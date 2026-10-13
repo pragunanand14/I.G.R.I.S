@@ -20,18 +20,35 @@ const base: Message = {
 };
 
 const renderItem = (m: Partial<Message>, isLast = true) =>
-  render(<MessageItem message={{ ...base, ...m }} isLastAssistant={isLast} busy={false} onRegenerate={() => undefined} onEdit={async () => true} />);
+  render(
+    <MessageItem
+      message={{ ...base, ...m }}
+      isLastAssistant={isLast}
+      busy={false}
+      onRegenerate={() => undefined}
+      onEdit={async () => true}
+    />,
+  );
 
 describe("MessageItem", () => {
   it("shows the real error and offers retry for failed turns", () => {
-    renderItem({ status: "error", error: "Anthropic rejected the API key. Check AI_API_KEY in your .env file." });
+    renderItem({
+      status: "error",
+      error:
+        "Anthropic rejected the API key. Check AI_API_KEY in your .env file.",
+    });
     expect(screen.getByRole("alert")).toHaveTextContent("AI_API_KEY");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("labels refusals and stopped responses honestly", () => {
-    renderItem({ status: "refused", error: "The model declined this request." });
-    expect(screen.getByText("The model declined this request.")).toBeInTheDocument();
+    renderItem({
+      status: "refused",
+      error: "The model declined this request.",
+    });
+    expect(
+      screen.getByText("The model declined this request."),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 

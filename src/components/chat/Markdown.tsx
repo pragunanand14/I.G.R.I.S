@@ -12,14 +12,18 @@ function textOf(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(textOf).join("");
-  if (typeof node === "object" && "props" in node) return textOf((node.props as { children?: ReactNode }).children);
+  if (typeof node === "object" && "props" in node)
+    return textOf((node.props as { children?: ReactNode }).children);
   return "";
 }
 
 function CodeBlock({ children }: { children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const child = Array.isArray(children) ? children[0] : children;
-  const className = (child && typeof child === "object" && "props" in child ? (child.props as { className?: string }).className : "") ?? "";
+  const className =
+    (child && typeof child === "object" && "props" in child
+      ? (child.props as { className?: string }).className
+      : "") ?? "";
   const lang = /language-([\w+#-]+)/.exec(className)?.[1];
   const copy = async () => {
     try {
@@ -34,8 +38,17 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     <div className="md-code group">
       <div className="md-code__bar">
         <span>{lang ?? "text"}</span>
-        <button type="button" onClick={() => void copy()} aria-label="Copy code" className="md-code__copy">
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label="Copy code"
+          className="md-code__copy"
+        >
+          {copied ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
@@ -53,7 +66,8 @@ const components: Components = {
       onClick={(e) => {
         // Never navigate the app window; open http(s) links in the system browser.
         e.preventDefault();
-        if (href && /^https?:\/\//i.test(href) && hasBackend()) void openUrl(href);
+        if (href && /^https?:\/\//i.test(href) && hasBackend())
+          void openUrl(href);
       }}
     >
       {children}
@@ -73,7 +87,13 @@ const components: Components = {
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md" data-selectable>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[
+          [rehypeHighlight, { detect: false, ignoreMissing: true }],
+        ]}
+        components={components}
+      >
         {text}
       </ReactMarkdown>
     </div>

@@ -122,8 +122,8 @@ export const api = {
   phoneWakeSet: (on: boolean, chargingOnly: boolean) =>
     call<void>("phone_wake_set", { on, chargingOnly }),
   phoneWakeHold: (on: boolean) => call<void>("phone_wake_hold", { on }),
-  /** "overlay" (Display over other apps), "battery", "assistant" (digital assistant app). */
-  phoneOpenSettings: (page: "overlay" | "battery" | "assistant") =>
+  /** "overlay" (Display over other apps), "battery", "assistant" (digital assistant app), "app_info" (IGRIS's App info). */
+  phoneOpenSettings: (page: "overlay" | "battery" | "assistant" | "app_info") =>
     call<void>("phone_open_settings", { page }),
   phoneScreenAccess: () => call<boolean>("phone_screen_access"),
   phoneScreenSettings: () => call<void>("phone_screen_settings"),
@@ -173,7 +173,8 @@ export const api = {
   /** Opens Google's sign-in in the browser; resolves when the user finishes (up to 5 minutes). */
   googleConnect: () => call<GoogleStatus>("google_connect"),
   googleDisconnect: () => call<GoogleStatus>("google_disconnect"),
-  googleSetClient: (id: string, secret: string) => call<GoogleStatus>("google_set_client", { id, secret }),
+  googleSetClient: (id: string, secret: string) =>
+    call<GoogleStatus>("google_set_client", { id, secret }),
   googleClearClient: () => call<GoogleStatus>("google_clear_client"),
   googleSetupInfo: () => call<GoogleSetupInfo>("google_setup_info"),
   mediaNowPlaying: () => call<NowPlaying>("media_now_playing"),

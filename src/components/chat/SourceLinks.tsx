@@ -12,7 +12,11 @@ function host(url: string): string {
 }
 
 /** Source links under a web tool result; open in the system browser. */
-export function SourceLinks({ sources }: { sources: { title: string; url: string }[] }) {
+export function SourceLinks({
+  sources,
+}: {
+  sources: { title: string; url: string }[];
+}) {
   const [all, setAll] = useState(false);
   const shown = all ? sources : sources.slice(0, 4);
   return (
@@ -24,7 +28,8 @@ export function SourceLinks({ sources }: { sources: { title: string; url: string
             title={s.url}
             onClick={(e) => {
               e.preventDefault();
-              if (/^https?:\/\//i.test(s.url) && hasBackend()) void openUrl(s.url);
+              if (/^https?:\/\//i.test(s.url) && hasBackend())
+                void openUrl(s.url);
             }}
             className="flex max-w-56 items-center gap-1 rounded-full bg-surface-strong px-2 py-0.5 text-[10px] text-muted hover:bg-surface-hover hover:text-fg"
           >
@@ -36,7 +41,11 @@ export function SourceLinks({ sources }: { sources: { title: string; url: string
       ))}
       {sources.length > 4 && !all && (
         <li>
-          <button type="button" onClick={() => setAll(true)} className="rounded-md px-1.5 py-0.5 text-[10px] text-faint hover:text-fg">
+          <button
+            type="button"
+            onClick={() => setAll(true)}
+            className="rounded-md px-1.5 py-0.5 text-[10px] text-faint hover:text-fg"
+          >
             +{sources.length - 4} more
           </button>
         </li>

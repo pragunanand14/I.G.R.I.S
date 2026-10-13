@@ -3,6 +3,7 @@ import { api } from "@/services/api";
 import { BackendError } from "@/services/backend";
 import { useAppStore } from "@/stores/appStore";
 import { Dot, ErrorText, Group, Screen, Section } from "../ui";
+import { RestrictedHelp } from "../RestrictedHelp";
 
 /**
  * Settings → Screen control: lets IGRIS read your screen and, for tasks you
@@ -34,11 +35,16 @@ export function ScreenControlScreen() {
       .catch((err) => setError(BackendError.from(err).message));
 
   return (
-    <Screen title="Screen control" subtitle="Let IGRIS read your screen and use your phone for you." back="/settings">
+    <Screen
+      title="Screen control"
+      subtitle="Let IGRIS read your screen and use your phone for you."
+      back="/settings"
+    >
       <Group>
         <div className="m-row">
           <span className="flex flex-1 items-center gap-2 text-[15px]">
-            <Dot tone={on ? "ok" : "warn"} /> {on === null ? "Checking…" : on ? "On" : "Off"}
+            <Dot tone={on ? "ok" : "warn"} />{" "}
+            {on === null ? "Checking…" : on ? "On" : "Off"}
           </span>
           <button type="button" className="m-chip" onClick={open}>
             {on ? "Turn off" : "Turn on"}
@@ -49,11 +55,25 @@ export function ScreenControlScreen() {
 
       <Section title="What it does">
         <ul className="m-muted list-disc space-y-1.5 pl-6 text-[15px]">
-          <li>“What&apos;s on my screen?” — IGRIS reads the text and buttons of the app in front.</li>
-          <li>“Turn on dark mode”, “reply to Mom saying I&apos;ll be late” — IGRIS asks you first, then taps, types and swipes.</li>
-          <li>A <b>Stop</b> pill stays at the top while it works. Tap it any time.</li>
-          <li>Sending, paying, deleting and similar always ask you again. Password fields are never read or typed.</li>
-          <li>What&apos;s on screen goes to your AI provider while IGRIS works, like a screenshot would.</li>
+          <li>
+            “What&apos;s on my screen?” — IGRIS reads the text and buttons of
+            the app in front.
+          </li>
+          <li>
+            “Turn on dark mode”, “reply to Mom saying I&apos;ll be late” — IGRIS
+            asks you first, then taps, types and swipes.
+          </li>
+          <li>
+            A <b>Stop</b> pill stays at the top while it works. Tap it any time.
+          </li>
+          <li>
+            Sending, paying, deleting and similar always ask you again. Password
+            fields are never read or typed.
+          </li>
+          <li>
+            What&apos;s on screen goes to your AI provider while IGRIS works,
+            like a screenshot would.
+          </li>
         </ul>
       </Section>
 
@@ -61,12 +81,10 @@ export function ScreenControlScreen() {
         <Section title="How to turn it on">
           <ol className="m-muted list-decimal space-y-1.5 pl-6 text-[15px]">
             <li>
-              Tap <b>Turn on</b> above → <b>Installed apps</b> → <b>IGRIS screen control</b> → switch it on.
+              Tap <b>Turn on</b> above → <b>Installed apps</b> →{" "}
+              <b>IGRIS screen control</b> → switch it on.
             </li>
-            <li>
-              If Android says it&apos;s a <b>restricted setting</b> (apps installed from a file): open Settings → Apps → IGRIS → ⋮ (top right) →{" "}
-              <b>Allow restricted settings</b>, then try again.
-            </li>
+            <RestrictedHelp setting="IGRIS screen control" />
           </ol>
         </Section>
       )}

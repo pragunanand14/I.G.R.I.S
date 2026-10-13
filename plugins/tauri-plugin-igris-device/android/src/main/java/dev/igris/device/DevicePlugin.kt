@@ -1089,6 +1089,13 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         invoke.reject("Couldn't open Android's settings.")
     }
 
+    /** IGRIS's App info page (where Android puts "Allow restricted settings", under ⋮). */
+    @Command
+    fun openAppInfo(invoke: Invoke) {
+        val uri = android.net.Uri.parse("package:" + activity.packageName)
+        openSettings(invoke, Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri))
+    }
+
     /** "Display over other apps": lets IGRIS open itself when it hears its name. */
     @Command
     fun openOverlaySettings(invoke: Invoke) {
